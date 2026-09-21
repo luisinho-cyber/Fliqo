@@ -148,3 +148,109 @@ describe('alertas e consumo de IA respeitam a RLS', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('a RLS sem force protege a aplicação do mesmo jeito', () => {
+  it('a clínica B não LÊ o número da clínica A', async () => {
+    const vistos = await withClinic(
+      c.clinicB,
+      (trx) => trx.selectFrom('app.whatsapp_numbers').select(['phone_number_id']).execute(),
+      db,
+    );
+    expect(vistos.map((v) => v.phone_number_id)).toEqual([NUMERO_B]);
+    expect(vistos.map((v) => v.phone_number_id)).not.toContain(NUMERO_A);
+  });
+
+  it('a clínica B não GRAVA número carimbado para a clínica A', async () => {
+    // O `with check` da política barra a escrita cruzada.
+    await expect(
+      withClinic(
+        c.clinicB,
+        (trx) =>
+          trx
+            .insertInto('app.whatsapp_numbers')
+            .values({ clinic_id: c.clinicA, phone_number_id: 'roubado-pela-B' })
+            .execute(),
+        db,
+      ),
+    ).rejects.toThrow();
+
+    const existe = await owner.query(
+      'select id from app.whatsapp_numbers where phone_number_id = $1',
+      ['roubado-pela-B'],
+    );
+    expect(existe.rows).toHaveLength(0);
+  });
+
+  it('a clínica B não ALTERA nem APAGA o número da clínica A', async () => {
+    const efeito = await withClinic(
+      c.clinicB,
+      async (trx) => {
+        const alterados = await trx
+          .updateTable('app.whatsapp_numbers')
+          .set({ active: false })
+          .where('phone_number_id', '=', NUMERO_A)
+          .executeTakeFirst();
+        const apagados = await trx
+          .deleteFrom('app.whatsapp_numbers')
+          .where('phone_number_id', '=', NUMERO_A)
+          .executeTakeFirst();
+        return {
+          alterados: Number(alterados.numUpdatedRows),
+          apagados: Number(apagados.numDeletedRows),
+        };
+      },
+      db,
+    );
+
+    // A RLS não deixa a linha nem ser enxergada, então nada é afetado.
+    expect(efeito).toEqual({ alterados: 0, apagados: 0 });
+
+    const daA = await owner.query<{ active: boolean }>(
+      'select active from app.whatsapp_numbers where phone_number_id = $1',
+      [NUMERO_A],
+    );
+    expect(daA.rows[0]?.active).toBe(true);
+  });
+});
+
+describe('propriedades da função security definer', () => {
+  it('é security definer, devolve só um uuid e tem search_path fixo', async () => {
+    const { rows } = await owner.query<{
+      security_definer: boolean;
+      retorno: string;
+      argumentos: string;
+      config: string[] | null;
+    }>(
+      `select p.prosecdef            as security_definer,
+              pg_get_function_result(p.oid)    as retorno,
+              pg_get_function_arguments(p.oid) as argumentos,
+              p.proconfig                      as config
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'app' and p.proname = 'clinic_by_phone_number_id'`,
+    );
+
+    expect(rows).toHaveLength(1);
+    const f = rows[0];
+    expect(f?.security_definer).toBe(true);
+    // Devolve o uuid da clínica e nada mais — nenhuma outra coluna da tabela sai daqui.
+    expect(f?.retorno).toBe('uuid');
+    expect(f?.argumentos).toBe('p_phone_number_id text');
+    // search_path fixo: sem isso, um schema malicioso no caminho poderia sequestrar
+    // o nome `whatsapp_numbers` dentro de uma função que roda como dono.
+    expect(f?.config ?? []).toContain('search_path=app, pg_temp');
+  });
+
+  it('execute está revogado de public e concedido só a fliqo_app', async () => {
+    const { rows } = await owner.query<{ publico: boolean; app: boolean }>(
+      `select has_function_privilege('public', p.oid, 'execute') as publico,
+              has_function_privilege('fliqo_app', p.oid, 'execute') as app
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'app' and p.proname = 'clinic_by_phone_number_id'`,
+    );
+
+    expect(rows[0]?.publico).toBe(false);
+    expect(rows[0]?.app).toBe(true);
+  });
+});

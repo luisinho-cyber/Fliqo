@@ -144,6 +144,21 @@ describe('assinatura', () => {
     expect(r.statusCode).toBe(401);
   });
 
+  it('corpo alterado depois de assinado devolve 401', async () => {
+    // Assina um corpo e envia outro: é o ataque que a assinatura existe para barrar.
+    const assinado = eventoDeTexto('wamid.ORIGINAL', '5511999990001', 'confirmo');
+    const adulterado = eventoDeTexto('wamid.ORIGINAL', '5511999990001', 'cancela minha consulta');
+
+    const r = await postar(adulterado, assinar(assinado));
+    expect(r.statusCode).toBe(401);
+
+    // E nada do corpo adulterado foi gravado.
+    const { rows } = await owner.query('select id from app.messages where wamid = $1', [
+      'wamid.ORIGINAL',
+    ]);
+    expect(rows).toHaveLength(0);
+  });
+
   it('assinatura calculada sobre o corpo bruto é aceita', async () => {
     const corpo = eventoDeTexto('wamid.OK1', '5511999990001', 'quero marcar');
     const r = await postar(corpo, assinar(corpo));
