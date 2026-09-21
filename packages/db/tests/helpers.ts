@@ -5,6 +5,9 @@ import pg from 'pg';
 // Banco descartável para testes. Nunca aponte para produção.
 const ADMIN_URL = process.env.DATABASE_ADMIN_URL ?? 'postgresql://postgres@localhost:5432/postgres';
 const TEST_DB = 'fliqo_test';
+// O papel de teste tem senha porque a conexão é por TCP: sem ela, quem decide se o
+// teste roda é o pg_hba do servidor, e "trust" no loopback não é universal.
+const TESTER_PASSWORD = 'fliqo_tester';
 
 const migrationsDir = fileURLToPath(new URL('../migrations/', import.meta.url));
 // Todas as migrações, em ordem — o teste roda contra o schema completo, como produção.
@@ -27,7 +30,9 @@ export async function resetDatabase(): Promise<void> {
   await admin.query(`create database ${TEST_DB}`);
   await admin.query(`do $$ begin
       if not exists (select 1 from pg_roles where rolname = 'fliqo_tester') then
-        create role fliqo_tester login;
+        create role fliqo_tester login password '${TESTER_PASSWORD}';
+      else
+        alter role fliqo_tester login password '${TESTER_PASSWORD}';
       end if; end $$`);
   await admin.end();
 
@@ -47,6 +52,7 @@ export function ownerPool(): pg.Pool {
 export function appPool(): pg.Pool {
   const u = new URL(withDb(ADMIN_URL, TEST_DB));
   u.username = 'fliqo_tester';
+  u.password = TESTER_PASSWORD;
   return new pg.Pool({ connectionString: u.toString(), max: 8 });
 }
 
