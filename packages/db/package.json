@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./fila": "./scripts/fila.mjs",
+    "./testing": "./src/testing.ts"
   }
 }
