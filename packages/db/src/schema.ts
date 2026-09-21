@@ -203,6 +203,54 @@ export interface TabelaAvisosAtraso {
   sent_at: ComDefault<Date>;
 }
 
+export interface TabelaNumerosWhatsapp {
+  id: ComDefault<string>;
+  clinic_id: string;
+  phone_number_id: string;
+  display_phone_e164: string | null;
+  waba_id: string | null;
+  active: ComDefault<boolean>;
+  created_at: Automatico<Date>;
+}
+
+export type TipoAlerta =
+  | 'consulta_em_risco'
+  | 'sem_consentimento'
+  | 'acao_falhou'
+  | 'horario_vago'
+  | 'emergencia'
+  | 'conversa_assumida'
+  | 'atraso_profissional'
+  | 'espera_longa';
+
+export type GravidadeAlerta = 'info' | 'atencao' | 'urgente';
+
+export interface TabelaAlertas {
+  id: ComDefault<string>;
+  clinic_id: string;
+  kind: TipoAlerta;
+  severity: GravidadeAlerta;
+  title: string;
+  body: string | null;
+  appointment_id: string | null;
+  conversation_id: string | null;
+  patient_id: string | null;
+  resolved_at: ColumnType<Date | null, Date | null, Date | null>;
+  created_at: Automatico<Date>;
+}
+
+export interface TabelaConsumoIa {
+  id: ComDefault<string>;
+  clinic_id: string;
+  conversation_id: string | null;
+  model: string;
+  input_tokens: ComDefault<number>;
+  output_tokens: ComDefault<number>;
+  cache_read_tokens: ComDefault<number>;
+  cache_creation_tokens: ComDefault<number>;
+  created_at: Automatico<Date>;
+}
+
 export interface Banco {
   'app.clinics': TabelaClinicas;
   'app.clinic_members': TabelaMembros;
@@ -219,6 +267,9 @@ export interface Banco {
   'app.payment_methods': TabelaFormasPagamento;
   'app.cash_entries': TabelaCaixa;
   'app.delay_notices': TabelaAvisosAtraso;
+  'app.whatsapp_numbers': TabelaNumerosWhatsapp;
+  'app.alerts': TabelaAlertas;
+  'app.ai_usage': TabelaConsumoIa;
 }
 
 /**
@@ -377,5 +428,38 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     channel: true,
     delay_minutes: true,
     sent_at: true,
+  },
+  'app.whatsapp_numbers': {
+    id: true,
+    clinic_id: true,
+    phone_number_id: true,
+    display_phone_e164: true,
+    waba_id: true,
+    active: true,
+    created_at: true,
+  },
+  'app.alerts': {
+    id: true,
+    clinic_id: true,
+    kind: true,
+    severity: true,
+    title: true,
+    body: true,
+    appointment_id: true,
+    conversation_id: true,
+    patient_id: true,
+    resolved_at: true,
+    created_at: true,
+  },
+  'app.ai_usage': {
+    id: true,
+    clinic_id: true,
+    conversation_id: true,
+    model: true,
+    input_tokens: true,
+    output_tokens: true,
+    cache_read_tokens: true,
+    cache_creation_tokens: true,
+    created_at: true,
   },
 };
