@@ -6,6 +6,7 @@ import type { PgBoss } from 'pg-boss';
 import { assinaturaConfere } from './assinatura';
 import type { Config } from './config';
 import { extrair, PayloadWebhook } from './payload';
+import { registrarPainel } from './rotas/painel';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -60,6 +61,23 @@ export function construirApp(dep: Dependencias): FastifyInstance {
 
     instancia.get('/health', () => ({ ok: true }));
 
+    // Painel: limite por usuário, não por IP — uma clínica inteira costuma sair do
+    // mesmo endereço, e limitar por IP puniria a recepção junto com o abuso.
+    await instancia.register(async (painel) => {
+      await painel.register(rateLimit, {
+        max: 300,
+        timeWindow: '1 minute',
+        keyGenerator: (req) => {
+          const auth = req.headers.authorization;
+          return typeof auth === 'string' ? auth.slice(-32) : req.ip;
+        },
+      });
+      registrarPainel(painel, {
+        db,
+        segredoJwt: new TextEncoder().encode(config.SUPABASE_JWT_SECRET),
+      });
+    });
+
     // Verificação da Meta: ela chama uma vez ao cadastrar o webhook.
     instancia.get('/webhooks/whatsapp', {
       config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
@@ -110,11 +128,13 @@ export function construirApp(dep: Dependencias): FastifyInstance {
             await withClinic(
               clinicId,
               async (trx) => {
-                const { paciente } = await pacientes.acharOuCriarPorTelefone(
-                  trx,
-                  clinicId,
-                  m.telefoneE164,
-                );
+                const achado = await pacientes.acharOuCriarPorTelefone(trx, clinicId, m.telefone);
+                if (!achado.ok) {
+                  // Número que não dá para salvar: registra e segue, sem derrubar o lote.
+                  req.log.warn({ clinicId, motivo: achado.motivo }, 'telefone recusado');
+                  return;
+                }
+                const paciente = achado.paciente;
                 const conversa = await conversas.acharOuCriarPorPaciente(
                   trx,
                   clinicId,
@@ -153,7 +173,7 @@ export function construirApp(dep: Dependencias): FastifyInstance {
                 });
 
                 req.log.info(
-                  { clinicId, conversaId: conversa.id, telefone: mascarar(m.telefoneE164) },
+                  { clinicId, conversaId: conversa.id, telefone: mascarar(paciente.phone_e164) },
                   'mensagem recebida e enfileirada',
                 );
               },

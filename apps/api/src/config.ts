@@ -9,6 +9,8 @@ const Ambiente = z.object({
   DATABASE_ADMIN_URL: z.string().min(1).optional(),
   WHATSAPP_APP_SECRET: z.string().min(1),
   WHATSAPP_VERIFY_TOKEN: z.string().min(1),
+  // Segredo com que o Supabase assina os tokens do painel.
+  SUPABASE_JWT_SECRET: z.string().min(1),
   PORT: z.coerce.number().int().positive().default(3000),
   LOG_LEVEL: z.string().default('info'),
 });

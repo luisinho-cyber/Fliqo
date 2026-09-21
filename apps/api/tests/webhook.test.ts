@@ -24,6 +24,7 @@ const config: Config = {
   DATABASE_URL: 'nao-usado-no-teste',
   WHATSAPP_APP_SECRET: SEGREDO,
   WHATSAPP_VERIFY_TOKEN: TOKEN_VERIFICACAO,
+  SUPABASE_JWT_SECRET: 'segredo-jwt-de-teste',
   PORT: 0,
   LOG_LEVEL: 'silent',
 };
@@ -304,6 +305,42 @@ describe('gravação e fila', () => {
 
     const { rows } = await owner.query('select id from app.messages where wamid = $1', [
       'wamid.ORFA',
+    ]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('mesmo celular com e sem o nono dígito cai na mesma ficha', async () => {
+    // A Meta entrega número brasileiro antigo sem o 9. Sem normalizar, o mesmo
+    // paciente viraria duas fichas, com duas conversas e dois históricos.
+    const comNove = eventoDeTexto('wamid.NOVE1', '5511987651234', 'oi');
+    const semNove = eventoDeTexto('wamid.NOVE2', '551187651234', 'esqueci de dizer o nome');
+    await postar(comNove, assinar(comNove));
+    await postar(semNove, assinar(semNove));
+
+    const { rows } = await owner.query<{ id: string; phone_e164: string }>(
+      `select id, phone_e164 from app.patients where phone_e164 = $1`,
+      ['+5511987651234'],
+    );
+    expect(rows).toHaveLength(1);
+
+    const conversas = await owner.query('select id from app.conversations where patient_id = $1', [
+      rows[0]?.id,
+    ]);
+    expect(conversas.rows).toHaveLength(1);
+
+    const msgs = await owner.query(
+      `select id from app.messages where wamid in ('wamid.NOVE1', 'wamid.NOVE2')`,
+    );
+    expect(msgs.rows).toHaveLength(2);
+  });
+
+  it('telefone impossível não grava nada e ainda responde 200', async () => {
+    const corpo = eventoDeTexto('wamid.RUIM', '123', 'oi');
+    const r = await postar(corpo, assinar(corpo));
+    expect(r.statusCode).toBe(200);
+
+    const { rows } = await owner.query('select id from app.messages where wamid = $1', [
+      'wamid.RUIM',
     ]);
     expect(rows).toHaveLength(0);
   });

@@ -115,7 +115,7 @@ export default tseslint.config(
   // Testes
   // ------------------------------------------------------------------
   {
-    files: ['packages/*/tests/**/*.ts'],
+    files: ['packages/*/tests/**/*.ts', 'apps/*/tests/**/*.ts'],
     rules: {
       // `pg` devolve linha como `any` — tipar isso é a camada de acesso da Fase 1,
       // não o teste. Em src/ as regras continuam valendo.
