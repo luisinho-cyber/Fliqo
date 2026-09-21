@@ -93,8 +93,8 @@ function zodParaJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       for (const [k, v] of Object.entries(shape)) {
-        properties[k] = zodParaJsonSchema(v as z.ZodTypeAny);
-        if (!(v as z.ZodTypeAny).isOptional()) required.push(k);
+        properties[k] = zodParaJsonSchema(v);
+        if (!v.isOptional()) required.push(k);
       }
       return { type: 'object', properties, required, additionalProperties: false };
     }

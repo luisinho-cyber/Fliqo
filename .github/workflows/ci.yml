@@ -1,0 +1,43 @@
+name: CI
+
+on: push
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Sem o health check, os passos começam antes de o banco aceitar conexão
+        # e o primeiro teste de banco falha por "connection refused".
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Mesma URL que o docker-compose.yml local. Os testes de packages/db criam e
+      # derrubam bancos descartáveis, então precisam do superusuário.
+      DATABASE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm test

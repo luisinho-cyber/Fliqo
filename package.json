@@ -2,19 +2,31 @@
   "name": "fliqo",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:core": "vitest run packages/core packages/ai",
     "test:db": "vitest run packages/db",
     "db:migrate": "node packages/db/scripts/migrate.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
     "pg": "^8.13.1",
+    "prettier": "^3.9.8",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^2.1.8",
     "zod": "^3.24.1"
   }
