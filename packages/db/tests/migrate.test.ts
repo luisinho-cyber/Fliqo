@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-// @ts-expect-error — script de linha de comando em JS puro, sem tipos.
 import { migrar } from '../scripts/migrate.mjs';
 
 const ADMIN_URL = process.env.DATABASE_ADMIN_URL ?? 'postgresql://postgres@localhost:5432/postgres';
