@@ -1,0 +1,13 @@
+# Banco local para desenvolvimento e testes.
+# Depois de subir:  export DATABASE_ADMIN_URL=postgresql://postgres:postgres@localhost:5432/postgres
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
