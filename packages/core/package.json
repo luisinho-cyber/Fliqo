@@ -1,1 +1,8 @@
-{ "name": "@fliqo/core", "private": true, "type": "module" }
+{
+  "name": "@fliqo/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

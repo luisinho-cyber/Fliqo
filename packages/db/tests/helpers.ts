@@ -48,12 +48,17 @@ export function ownerPool(): pg.Pool {
   return new pg.Pool({ connectionString: withDb(ADMIN_URL, TEST_DB), max: 4 });
 }
 
-/** Conexão como a aplicação (sujeita à RLS), igual à API em produção. */
-export function appPool(): pg.Pool {
+/** URL do papel da aplicação — sujeita à RLS, como a API em produção. */
+export function urlDoTester(): string {
   const u = new URL(withDb(ADMIN_URL, TEST_DB));
   u.username = 'fliqo_tester';
   u.password = TESTER_PASSWORD;
-  return new pg.Pool({ connectionString: u.toString(), max: 8 });
+  return u.toString();
+}
+
+/** Conexão como a aplicação (sujeita à RLS), igual à API em produção. */
+export function appPool(): pg.Pool {
+  return new pg.Pool({ connectionString: urlDoTester(), max: 8 });
 }
 
 /** Executa `fn` numa transação já "dentro" da clínica — o padrão que a API deve seguir. */
@@ -81,18 +86,22 @@ export interface Scenario {
   clinicA: string;
   clinicB: string;
   profA: string;
-  procEletivo: string;   // 60 min, prioridade 0
-  procUrgente: string;   // 30 min, prioridade 3
-  procLongo: string;     // 120 min
-  patients: string[];    // 4 pacientes na clínica A
-  patientB: string;      // 1 paciente na clínica B
+  procEletivo: string; // 60 min, prioridade 0
+  procUrgente: string; // 30 min, prioridade 3
+  procLongo: string; // 120 min
+  patients: string[]; // 4 pacientes na clínica A
+  patientB: string; // 1 paciente na clínica B
 }
 
 export async function seed(owner: pg.Pool): Promise<Scenario> {
-  const one = async (sql: string, p: unknown[] = []) => (await owner.query(sql, p)).rows[0].id as string;
+  const one = async (sql: string, p: unknown[] = []) =>
+    (await owner.query(sql, p)).rows[0].id as string;
   const clinicA = await one(`insert into app.clinics (name) values ('Clínica A') returning id`);
   const clinicB = await one(`insert into app.clinics (name) values ('Clínica B') returning id`);
-  const profA = await one(`insert into app.professionals (clinic_id, name) values ($1, 'Dra. Ana') returning id`, [clinicA]);
+  const profA = await one(
+    `insert into app.professionals (clinic_id, name) values ($1, 'Dra. Ana') returning id`,
+    [clinicA],
+  );
   const proc = (name: string, dur: number, price: number, prio: number) =>
     one(
       `insert into app.procedures (clinic_id, name, duration_minutes, price_cents, priority_level)
