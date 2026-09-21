@@ -46,6 +46,8 @@ export function checarSaida(texto: string, precosPermitidosCentavos: number[]): 
     .trim();
 
   const valores = [...limpo.matchAll(/R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:,\d{2})?)/g)].map((m) =>
+    // O grupo 1 existe sempre que houve casamento — é a única parte capturada do padrão.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     Math.round(Number(m[1]!.replace(/\./g, '').replace(',', '.')) * 100),
   );
   const inventado = valores.find((v) => !precosPermitidosCentavos.includes(v));

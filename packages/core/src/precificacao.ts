@@ -17,6 +17,9 @@ export interface PercentuaisSobrePreco {
 export function precoPorMarkupDivisor(custo: Cents, p: PercentuaisSobrePreco): Cents {
   assertCents(custo, 'custo');
   const soma = p.impostoBp + p.taxaCartaoBp + p.comissaoBp + p.lucroBp;
+  // Object.entries sobre interface sem índice cai na sobrecarga que devolve any;
+  // assertBp valida em runtime, que é justamente o ponto desta linha.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   for (const [k, v] of Object.entries(p)) assertBp(v, k);
   if (soma >= BP_100) {
     throw new RangeError(`Percentuais somam ${soma / 100}% — o preço tenderia ao infinito. Revise a margem.`);

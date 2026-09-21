@@ -134,6 +134,8 @@ export function esperandoDemais(
   return consultas
     .filter((c) => c.pacienteChegouEm && !c.iniciadaEm && c.status !== 'cancelado')
     .map((c) => {
+      // O filter acima já garante pacienteChegouEm; o TS não estreita através dele.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const referencia = Math.max(c.pacienteChegouEm!.getTime(), c.inicioAgendado.getTime());
       return { consultaId: c.id, esperandoMin: Math.floor((agora.getTime() - referencia) / MIN) };
     })
@@ -152,6 +154,8 @@ export function sugerirDuracao(
   if (duracoesReaisMin.length < opcoes.amostraMinima) return { sugerir: false };
   const ord = [...duracoesReaisMin].sort((a, b) => a - b);
   const meio = Math.floor(ord.length / 2);
+  // amostraMinima >= 1 garante que meio e meio-1 estão dentro do array.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const mediana = ord.length % 2 ? ord[meio]! : (ord[meio - 1]! + ord[meio]!) / 2;
   if (Math.abs(mediana - duracaoNaAgendaMin) < opcoes.diferencaMinimaMin) return { sugerir: false };
   const nova = Math.ceil(mediana / opcoes.arredondarPara) * opcoes.arredondarPara;

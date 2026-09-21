@@ -59,5 +59,5 @@ ${faq ? `\nPERGUNTAS FREQUENTES\n${faq}` : ''}`.trim();
 }
 
 function brl(centavos: number): string {
-  return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(/ /g, ' ');
+  return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(/\u00a0/g, ' ');
 }
