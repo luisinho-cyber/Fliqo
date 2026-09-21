@@ -15,17 +15,17 @@ export interface ConsultaDoDia {
   id: string;
   inicioAgendado: Date;
   fimAgendado: Date;
-  duracaoEsperadaMin: number;   // duração real histórica (ou a da agenda, se não houver histórico)
-  iniciadaEm?: Date;            // profissional/recepção apertou "iniciar atendimento"
+  duracaoEsperadaMin: number; // duração real histórica (ou a da agenda, se não houver histórico)
+  iniciadaEm?: Date; // profissional/recepção apertou "iniciar atendimento"
   finalizadaEm?: Date;
-  pacienteChegouEm?: Date;      // check-in na recepção
+  pacienteChegouEm?: Date; // check-in na recepção
   status: 'agendado' | 'confirmado' | 'em_risco' | 'realizado' | 'cancelado' | 'faltou';
 }
 
 export interface PrevisaoConsulta {
   id: string;
   inicioPrevisto: Date;
-  atrasoMin: number;            // 0 quando no horário
+  atrasoMin: number; // 0 quando no horário
   situacao: 'finalizada' | 'em_atendimento' | 'aguardando';
 }
 
@@ -44,18 +44,33 @@ export function projetarDia(consultas: ConsultaDoDia[], agora: Date): PrevisaoCo
   for (const c of ativas) {
     if (c.finalizadaEm) {
       const inicio = c.iniciadaEm ?? c.inicioAgendado;
-      out.push({ id: c.id, inicioPrevisto: inicio, atrasoMin: atraso(inicio, c.inicioAgendado), situacao: 'finalizada' });
+      out.push({
+        id: c.id,
+        inicioPrevisto: inicio,
+        atrasoMin: atraso(inicio, c.inicioAgendado),
+        situacao: 'finalizada',
+      });
       continue;
     }
     if (c.iniciadaEm) {
       // Em atendimento: termina no mínimo "agora"; se ainda está dentro da duração esperada, termina no esperado.
       const fimEsperado = c.iniciadaEm.getTime() + c.duracaoEsperadaMin * MIN;
       livreEm = Math.max(agora.getTime(), fimEsperado);
-      out.push({ id: c.id, inicioPrevisto: c.iniciadaEm, atrasoMin: atraso(c.iniciadaEm, c.inicioAgendado), situacao: 'em_atendimento' });
+      out.push({
+        id: c.id,
+        inicioPrevisto: c.iniciadaEm,
+        atrasoMin: atraso(c.iniciadaEm, c.inicioAgendado),
+        situacao: 'em_atendimento',
+      });
       continue;
     }
     const inicio = Math.max(c.inicioAgendado.getTime(), livreEm);
-    out.push({ id: c.id, inicioPrevisto: new Date(inicio), atrasoMin: atraso(new Date(inicio), c.inicioAgendado), situacao: 'aguardando' });
+    out.push({
+      id: c.id,
+      inicioPrevisto: new Date(inicio),
+      atrasoMin: atraso(new Date(inicio), c.inicioAgendado),
+      situacao: 'aguardando',
+    });
     livreEm = inicio + c.duracaoEsperadaMin * MIN;
   }
   return out;
@@ -66,10 +81,10 @@ function atraso(real: Date, agendado: Date): number {
 }
 
 export interface ConfigAtrasos {
-  limiarAvisoMin: number;          // só avisa a partir de X min de atraso (padrão 15)
-  janelaAvisoHoras: number;        // avisa quem tem consulta nas próximas X horas (padrão 3)
+  limiarAvisoMin: number; // só avisa a partir de X min de atraso (padrão 15)
+  janelaAvisoHoras: number; // avisa quem tem consulta nas próximas X horas (padrão 3)
   variacaoParaReavisarMin: number; // reavisa só se o atraso mudou X min ou mais (padrão 10)
-  arredondarParaMin: number;       // "cerca de 20 min", nunca "17 min" (padrão 5)
+  arredondarParaMin: number; // "cerca de 20 min", nunca "17 min" (padrão 5)
 }
 
 export const CONFIG_ATRASOS_PADRAO: ConfigAtrasos = {
@@ -80,7 +95,13 @@ export const CONFIG_ATRASOS_PADRAO: ConfigAtrasos = {
 };
 
 export type Aviso =
-  | { para: 'paciente'; consultaId: string; atrasoMin: number; novoHorario: Date; tipo: 'atraso' | 'normalizou' }
+  | {
+      para: 'paciente';
+      consultaId: string;
+      atrasoMin: number;
+      novoHorario: Date;
+      tipo: 'atraso' | 'normalizou';
+    }
   | { para: 'recepcao'; consultaId: string; atrasoMin: number; motivo: 'paciente_ja_na_sala' };
 
 /**
@@ -105,18 +126,40 @@ export function decidirAvisos(
     const c = porId.get(p.id);
     if (!c || c.inicioAgendado.getTime() > limiteJanela) continue;
 
-    const atrasoArredondado = Math.round(p.atrasoMin / cfg.arredondarParaMin) * cfg.arredondarParaMin;
+    const atrasoArredondado =
+      Math.round(p.atrasoMin / cfg.arredondarParaMin) * cfg.arredondarParaMin;
     const anterior = jaAvisado.get(p.id);
 
     if (p.atrasoMin >= cfg.limiarAvisoMin) {
-      if (anterior !== undefined && Math.abs(atrasoArredondado - anterior) < cfg.variacaoParaReavisarMin) continue;
+      if (
+        anterior !== undefined &&
+        Math.abs(atrasoArredondado - anterior) < cfg.variacaoParaReavisarMin
+      )
+        continue;
       if (c.pacienteChegouEm) {
-        avisos.push({ para: 'recepcao', consultaId: p.id, atrasoMin: atrasoArredondado, motivo: 'paciente_ja_na_sala' });
+        avisos.push({
+          para: 'recepcao',
+          consultaId: p.id,
+          atrasoMin: atrasoArredondado,
+          motivo: 'paciente_ja_na_sala',
+        });
       } else {
-        avisos.push({ para: 'paciente', consultaId: p.id, atrasoMin: atrasoArredondado, novoHorario: p.inicioPrevisto, tipo: 'atraso' });
+        avisos.push({
+          para: 'paciente',
+          consultaId: p.id,
+          atrasoMin: atrasoArredondado,
+          novoHorario: p.inicioPrevisto,
+          tipo: 'atraso',
+        });
       }
     } else if (anterior !== undefined && anterior > 0 && !c.pacienteChegouEm) {
-      avisos.push({ para: 'paciente', consultaId: p.id, atrasoMin: 0, novoHorario: c.inicioAgendado, tipo: 'normalizou' });
+      avisos.push({
+        para: 'paciente',
+        consultaId: p.id,
+        atrasoMin: 0,
+        novoHorario: c.inicioAgendado,
+        tipo: 'normalizou',
+      });
     }
   }
   return avisos;
@@ -150,7 +193,9 @@ export function sugerirDuracao(
   duracoesReaisMin: number[],
   duracaoNaAgendaMin: number,
   opcoes = { amostraMinima: 8, diferencaMinimaMin: 10, arredondarPara: 5 },
-): { sugerir: false } | { sugerir: true; novaDuracaoMin: number; medianaMin: number; amostra: number } {
+):
+  | { sugerir: false }
+  | { sugerir: true; novaDuracaoMin: number; medianaMin: number; amostra: number } {
   if (duracoesReaisMin.length < opcoes.amostraMinima) return { sugerir: false };
   const ord = [...duracoesReaisMin].sort((a, b) => a - b);
   const meio = Math.floor(ord.length / 2);
@@ -168,5 +213,9 @@ export function pontualidade(previsoesFinalizadas: PrevisaoConsulta[], toleranci
   if (n === 0) return { atendimentos: 0, noHorarioPct: 0, atrasoMedioMin: 0 };
   const noHorario = previsoesFinalizadas.filter((p) => p.atrasoMin <= toleranciaMin).length;
   const soma = previsoesFinalizadas.reduce((s, p) => s + p.atrasoMin, 0);
-  return { atendimentos: n, noHorarioPct: Math.round((noHorario / n) * 100), atrasoMedioMin: Math.round(soma / n) };
+  return {
+    atendimentos: n,
+    noHorarioPct: Math.round((noHorario / n) * 100),
+    atrasoMedioMin: Math.round(soma / n),
+  };
 }

@@ -5,9 +5,9 @@
 
 export interface ConfigFila {
   modo: 'lote' | 'sequencial';
-  tamanhoLote: number;          // quantos da fila recebem a oferta ao mesmo tempo (modo lote)
-  timeoutMin: number;           // quanto tempo a oferta fica de pé
-  antecedenciaMinimaMin: number;// não oferece vaga que começa antes disso (ninguém chega em 10 min)
+  tamanhoLote: number; // quantos da fila recebem a oferta ao mesmo tempo (modo lote)
+  timeoutMin: number; // quanto tempo a oferta fica de pé
+  antecedenciaMinimaMin: number; // não oferece vaga que começa antes disso (ninguém chega em 10 min)
 }
 
 export type PlanoDeOferta =
@@ -22,9 +22,14 @@ export function planejarOferta(cfg: ConfigFila, inicioDaVaga: Date, agora: Date)
 
   const expira = Math.min(agora.getTime() + cfg.timeoutMin * MIN, limiteParaAceitar);
   // Menos de 5 minutos para responder não é oferta, é pegadinha.
-  if (expira - agora.getTime() < 5 * MIN) return { ofertar: false, motivo: 'sem_tempo_para_resposta' };
+  if (expira - agora.getTime() < 5 * MIN)
+    return { ofertar: false, motivo: 'sem_tempo_para_resposta' };
 
-  return { ofertar: true, quantos: cfg.modo === 'lote' ? cfg.tamanhoLote : 1, expiraEm: new Date(expira) };
+  return {
+    ofertar: true,
+    quantos: cfg.modo === 'lote' ? cfg.tamanhoLote : 1,
+    expiraEm: new Date(expira),
+  };
 }
 
 /**
@@ -44,7 +49,10 @@ export const PAYLOAD_BOTOES = {
   REMARCAR: 'REMARCAR_CONSULTA',
 } as const;
 
-export function interpretarResposta(msg: { payloadBotao?: string; texto?: string }): RespostaConfirmacao {
+export function interpretarResposta(msg: {
+  payloadBotao?: string;
+  texto?: string;
+}): RespostaConfirmacao {
   switch (msg.payloadBotao) {
     case PAYLOAD_BOTOES.CONFIRMAR:
       return { tipo: 'confirmou' };

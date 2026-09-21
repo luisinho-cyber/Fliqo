@@ -214,9 +214,9 @@ describe('pacientes e consentimento', () => {
       db,
     );
 
-    expect(r.novo).toBe(true);
-    expect(r.paciente.name).toBe(pacientes.NOME_A_CONFIRMAR);
-    expect(r.paciente.whatsapp_consent_at).toBeNull();
+    expect(r.ok && r.novo).toBe(true);
+    expect(r.ok && r.paciente.name).toBe(pacientes.NOME_A_CONFIRMAR);
+    expect(r.ok && r.paciente.whatsapp_consent_at).toBeNull();
   });
 
   it('acha o mesmo paciente na segunda mensagem', async () => {
@@ -225,7 +225,7 @@ describe('pacientes e consentimento', () => {
       (trx) => pacientes.acharOuCriarPorTelefone(trx, c.clinicA, '+5511977776666'),
       db,
     );
-    expect(r.novo).toBe(false);
+    expect(r.ok && r.novo).toBe(false);
   });
 
   it('registra o consentimento uma vez e não sobrescreve a data', async () => {
@@ -235,14 +235,11 @@ describe('pacientes e consentimento', () => {
     const p = await withClinic(
       c.clinicA,
       async (trx) => {
-        const { paciente } = await pacientes.acharOuCriarPorTelefone(
-          trx,
-          c.clinicA,
-          '+5511955554444',
-        );
-        await pacientes.registrarConsentimento(trx, paciente.id, primeiro);
-        await pacientes.registrarConsentimento(trx, paciente.id, segundo);
-        return pacientes.porId(trx, paciente.id);
+        const achado = await pacientes.acharOuCriarPorTelefone(trx, c.clinicA, '+5511955554444');
+        if (!achado.ok) throw new Error('telefone do cenário deveria ser válido');
+        await pacientes.registrarConsentimento(trx, achado.paciente.id, primeiro);
+        await pacientes.registrarConsentimento(trx, achado.paciente.id, segundo);
+        return pacientes.porId(trx, achado.paciente.id);
       },
       db,
     );

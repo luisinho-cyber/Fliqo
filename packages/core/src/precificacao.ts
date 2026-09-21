@@ -22,7 +22,9 @@ export function precoPorMarkupDivisor(custo: Cents, p: PercentuaisSobrePreco): C
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   for (const [k, v] of Object.entries(p)) assertBp(v, k);
   if (soma >= BP_100) {
-    throw new RangeError(`Percentuais somam ${soma / 100}% — o preço tenderia ao infinito. Revise a margem.`);
+    throw new RangeError(
+      `Percentuais somam ${soma / 100}% — o preço tenderia ao infinito. Revise a margem.`,
+    );
   }
   return Math.round((custo * BP_100) / (BP_100 - soma));
 }
