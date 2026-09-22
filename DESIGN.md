@@ -1,6 +1,6 @@
 # DESIGN.md — linguagem visual da Fliqo
 
-Leia junto com o CLAUDE.md antes de qualquer tela. Referência viva: `docs/referencia/demo.html`.
+Leia junto com o CLAUDE.md antes de qualquer tela. Referência viva: `docs/referencia/fliqo-demo.html`.
 
 ## A ideia
 **A agenda é receita.** Toda tela responde a uma pergunta de dinheiro ou de tempo do dono da clínica.
