@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { decidirAvisos, esperandoDemais, pontualidade, projetarDia, sugerirDuracao, type ConsultaDoDia } from '../src';
+import {
+  decidirAvisos,
+  esperandoDemais,
+  pontualidade,
+  projetarDia,
+  sugerirDuracao,
+  type ConsultaDoDia,
+} from '../src';
 
 const h = (hh: number, mm = 0) => new Date(Date.UTC(2026, 10, 10, hh, mm));
 
@@ -18,7 +25,7 @@ function dia(): ConsultaDoDia[] {
     c('c2', h(9, 40), { pacienteChegouEm: h(9, 30) }),
     c('c3', h(10, 20)),
     c('c4', h(11, 30)), // buraco de 30 min antes dela absorve parte do atraso
-    c('c5', h(16)),     // fora da janela de aviso de 3h
+    c('c5', h(16)), // fora da janela de aviso de 3h
   ];
 }
 
@@ -62,14 +69,32 @@ describe('quem avisar', () => {
   });
 
   it('não reavisa por variação pequena', () => {
-    const avisos = decidirAvisos(consultas, prev, new Map([['c3', 30], ['c4', 20], ['c2', 20]]), agora);
+    const avisos = decidirAvisos(
+      consultas,
+      prev,
+      new Map([
+        ['c3', 30],
+        ['c4', 20],
+        ['c2', 20],
+      ]),
+      agora,
+    );
     expect(avisos).toEqual([]);
   });
 
   it('se o atraso some depois do aviso, avisa que pode vir no horário normal', () => {
-    const normal = projetarDia(dia().map((c) => ({ ...c, duracaoEsperadaMin: 40 })), agora);
+    const normal = projetarDia(
+      dia().map((c) => ({ ...c, duracaoEsperadaMin: 40 })),
+      agora,
+    );
     const avisos = decidirAvisos(consultas, normal, new Map([['c4', 20]]), agora);
-    expect(avisos).toContainEqual({ para: 'paciente', consultaId: 'c4', atrasoMin: 0, novoHorario: h(11, 30), tipo: 'normalizou' });
+    expect(avisos).toContainEqual({
+      para: 'paciente',
+      consultaId: 'c4',
+      atrasoMin: 0,
+      novoHorario: h(11, 30),
+      tipo: 'normalizou',
+    });
   });
 });
 
@@ -79,7 +104,12 @@ describe('sala de espera e causa raiz', () => {
   });
 
   it('sugere corrigir a duração do procedimento na agenda', () => {
-    expect(sugerirDuracao([50, 55, 52, 60, 48, 55, 58, 53], 40)).toEqual({ sugerir: true, novaDuracaoMin: 55, medianaMin: 54, amostra: 8 });
+    expect(sugerirDuracao([50, 55, 52, 60, 48, 55, 58, 53], 40)).toEqual({
+      sugerir: true,
+      novaDuracaoMin: 55,
+      medianaMin: 54,
+      amostra: 8,
+    });
   });
 
   it('não sugere com pouca amostra nem por diferença pequena', () => {

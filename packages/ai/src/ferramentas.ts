@@ -25,7 +25,8 @@ export const Ferramentas = {
     }),
   },
   marcar_consulta: {
-    descricao: 'Marca a consulta num horário que veio de buscar_horarios. Só use depois que o paciente escolheu.',
+    descricao:
+      'Marca a consulta num horário que veio de buscar_horarios. Só use depois que o paciente escolheu.',
     entrada: z.object({ procedimento_id: z.string().uuid(), inicio: isoDateTime }),
   },
   minhas_consultas: {
@@ -33,7 +34,8 @@ export const Ferramentas = {
     entrada: z.object({}),
   },
   remarcar_consulta: {
-    descricao: 'Move uma consulta do paciente para um novo horário vindo de buscar_horarios. O horário antigo só é liberado depois que o novo estiver garantido.',
+    descricao:
+      'Move uma consulta do paciente para um novo horário vindo de buscar_horarios. O horário antigo só é liberado depois que o novo estiver garantido.',
     entrada: z.object({ consulta_id: z.string().uuid(), novo_inicio: isoDateTime }),
   },
   cancelar_consulta: {
@@ -53,8 +55,18 @@ export const Ferramentas = {
       'Passa a conversa para a equipe. Use quando: o paciente pedir; houver reclamação; dúvida clínica; ' +
       'assunto de dinheiro fora da tabela; qualquer coisa que você não tenha certeza.',
     entrada: z.object({
-      motivo: z.enum(['pedido_do_paciente', 'reclamacao', 'duvida_clinica', 'financeiro', 'incerteza', 'urgencia']),
-      resumo: z.string().max(300).describe('Resumo em 1–2 frases para a recepção não precisar ler tudo'),
+      motivo: z.enum([
+        'pedido_do_paciente',
+        'reclamacao',
+        'duvida_clinica',
+        'financeiro',
+        'incerteza',
+        'urgencia',
+      ]),
+      resumo: z
+        .string()
+        .max(300)
+        .describe('Resumo em 1–2 frases para a recepção não precisar ler tudo'),
     }),
   },
 } as const;
@@ -71,15 +83,18 @@ export function definicoesParaApi() {
 }
 
 export type ResultadoValidacao =
-  | { ok: true; nome: NomeFerramenta; entrada: unknown }
-  | { ok: false; erro: string };
+  { ok: true; nome: NomeFerramenta; entrada: unknown } | { ok: false; erro: string };
 
 /** Valida a chamada da IA antes de qualquer efeito. */
 export function validarChamada(nome: string, entrada: unknown): ResultadoValidacao {
   if (!(nome in Ferramentas)) return { ok: false, erro: `ferramenta desconhecida: ${nome}` };
   const n = nome as NomeFerramenta;
   const r = Ferramentas[n].entrada.safeParse(entrada ?? {});
-  if (!r.success) return { ok: false, erro: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') };
+  if (!r.success)
+    return {
+      ok: false,
+      erro: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    };
   // Campos que não estão no schema (ex.: um clinic_id que a IA tentou mandar) são descartados pelo Zod.
   return { ok: true, nome: n, entrada: r.data };
 }

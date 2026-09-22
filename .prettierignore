@@ -3,3 +3,9 @@ dist
 .next
 coverage
 package-lock.json
+
+# O CLAUDE.md fica de fora: o Prettier indenta em 2 espaços qualquer linha que
+# siga uma lista, e isso transforma uma regra que vale para a seção inteira em
+# continuação do último item — muda o que a regra diz. Formatação não pode
+# reescrever a regra do projeto.
+CLAUDE.md

@@ -5,22 +5,35 @@ import type { PerfilClinica, ProcedimentoVisivel } from './perfil';
  * Parte FIXA (igual para todas as clínicas, versionada no código) + parte VARIÁVEL (perfil).
  * Para mudar o comportamento de UMA clínica, mude o perfil dela — nunca este arquivo.
  */
-export function montarPromptSistema(p: PerfilClinica, procedimentos: ProcedimentoVisivel[], agora: Date): string {
+export function montarPromptSistema(
+  p: PerfilClinica,
+  procedimentos: ProcedimentoVisivel[],
+  agora: Date,
+): string {
   const trat =
     p.persona.tratamento === 'senhor_senhora'
       ? 'Trate o paciente por "o senhor" ou "a senhora" até ele pedir o contrário.'
       : 'Trate o paciente por "você".';
   const tom = {
-    acolhedor: 'Seja calorosa, paciente e gentil, como uma recepcionista que conhece os pacientes pelo nome.',
-    profissional: 'Seja cordial, objetiva e elegante, como a recepção de uma clínica de alto padrão.',
+    acolhedor:
+      'Seja calorosa, paciente e gentil, como uma recepcionista que conhece os pacientes pelo nome.',
+    profissional:
+      'Seja cordial, objetiva e elegante, como a recepção de uma clínica de alto padrão.',
     descontraido: 'Seja leve e simpática, sem exageros.',
   }[p.persona.tom];
 
   const tabela = procedimentos
-    .map((pr) => `- ${pr.nome} (id ${pr.id}, ${pr.duracaoMin} min${pr.exibirPreco ? `, ${brl(pr.precoCentavos)}` : ', preço informado na avaliação'})`)
+    .map(
+      (pr) =>
+        `- ${pr.nome} (id ${pr.id}, ${pr.duracaoMin} min${pr.exibirPreco ? `, ${brl(pr.precoCentavos)}` : ', preço informado na avaliação'})`,
+    )
     .join('\n');
   const faq = p.faq.map((f) => `P: ${f.pergunta}\nR: ${f.resposta}`).join('\n\n');
-  const dataHora = agora.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' });
+  const dataHora = agora.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'full',
+    timeStyle: 'short',
+  });
 
   return `Você é ${p.persona.nome}, da recepção da ${p.clinica.nome} (${p.clinica.especialidade}). Você conversa com pacientes pelo WhatsApp.
 Agora é ${dataHora}.
@@ -59,5 +72,7 @@ ${faq ? `\nPERGUNTAS FREQUENTES\n${faq}` : ''}`.trim();
 }
 
 function brl(centavos: number): string {
-  return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(/\u00a0/g, ' ');
+  return (centavos / 100)
+    .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    .replace(/\u00a0/g, ' ');
 }
