@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { SignJWT } from 'jose';
 import type { PgBoss } from 'pg-boss';
 import type pg from 'pg';
+import { Writable } from 'node:stream';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { construirApp } from '../src/app';
 import type { Config } from '../src/config';
@@ -350,5 +351,81 @@ describe('o token só sai pelo caminho certo', () => {
     expect(lido.pelaPorta).toBeDefined();
     expect(Object.keys(lido.pelaVitrine ?? {}).join(',')).not.toContain('token');
     expect(JSON.stringify(lido.pelaVitrine)).not.toContain('ciphertext');
+  });
+});
+
+describe('o token nunca vai para o log', () => {
+  it('nada do que o pino escreve contém o token, em nenhum caminho', async () => {
+    const linhas: string[] = [];
+    const fluxo = new Writable({
+      write(pedaco: Buffer, _cod, pronto) {
+        linhas.push(pedaco.toString('utf8'));
+        pronto();
+      },
+    });
+
+    // App próprio, com o log capturado.
+    await app?.close();
+    const falsa = metaFalsa();
+    app = construirApp({
+      config,
+      db,
+      boss,
+      onboarding: falsa.onboarding,
+      fluxoDeLog: fluxo,
+    });
+    await app.ready();
+
+    // Percorre os caminhos em que o token existe em memória.
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+    await chamar('POST', '/api/whatsapp/reconectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+    await chamar('GET', '/api/whatsapp/status', { userId: DONA, clinica: c.clinicA });
+
+    // E o caminho de falha, que é onde detalhe de erro costuma vazar segredo.
+    await app.close();
+    const falha = metaFalsa({ falharNa: 'registro' });
+    app = construirApp({
+      config,
+      db,
+      boss,
+      onboarding: falha.onboarding,
+      fluxoDeLog: fluxo,
+    });
+    await app.ready();
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    const tudo = linhas.join('\n');
+    expect(tudo.length).toBeGreaterThan(0); // o log realmente escreveu algo
+    expect(tudo).not.toContain('TOKEN-SECRETO-DA-CLINICA');
+    expect(tudo).not.toContain('segredo-do-app');
+    expect(tudo).not.toContain(CHAVE_BASE64);
+  });
+
+  it('o token não vai na URL de nenhuma chamada à Meta', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    // URL vaza em log de proxy e em mensagem de erro: segredo vai no cabeçalho.
+    for (const chamada of falsa.chamadas) {
+      expect(chamada.url).not.toContain('TOKEN-SECRETO-DA-CLINICA');
+      expect(chamada.url).not.toContain('access_token=');
+    }
   });
 });

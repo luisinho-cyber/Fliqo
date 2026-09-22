@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:core": "vitest run packages/core packages/ai",
     "test:db": "vitest run packages/db",
-    "db:migrate": "node packages/db/scripts/migrate.mjs && node packages/db/scripts/fila.mjs"
+    "db:migrate": "node packages/db/scripts/migrate.mjs && node packages/db/scripts/fila.mjs",
+    "whatsapp:rotacionar-chave": "tsx apps/worker/src/rotacionar-chave.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

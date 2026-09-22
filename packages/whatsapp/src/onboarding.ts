@@ -137,9 +137,11 @@ export class OnboardingMeta {
   }
 
   async descobrirWaba(token: string): Promise<string | undefined> {
-    const { corpo: cru } = await this.#json(
-      this.#url('me/businesses') + `?access_token=${encodeURIComponent(token)}`,
-    );
+    // Token no cabeçalho, nunca na URL: URL aparece em log de proxy, em
+    // mensagem de erro e em qualquer depuração de cliente HTTP.
+    const { corpo: cru } = await this.#json(this.#url('me/businesses'), {
+      headers: { authorization: `Bearer ${token}` },
+    });
     return (cru as RespostaWabas).data?.[0]?.id;
   }
 

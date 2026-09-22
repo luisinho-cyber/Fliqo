@@ -1,0 +1,64 @@
+# Operação
+
+## Segredos
+
+Nenhum segredo fica no banco nem no repositório. Todos vêm do ambiente:
+
+| Variável                         | Para quê                                          | Quem usa    |
+| -------------------------------- | ------------------------------------------------- | ----------- |
+| `DATABASE_URL`                   | conexão da aplicação (papel `fliqo_app`)          | api, worker |
+| `DATABASE_ADMIN_URL`             | dono do schema; migrações e manutenção            | scripts     |
+| `WHATSAPP_APP_SECRET`            | validar a assinatura do webhook da Meta           | api         |
+| `WHATSAPP_VERIFY_TOKEN`          | verificação do webhook na Meta                    | api         |
+| `META_APP_ID`, `META_APP_SECRET` | trocar o código do Embedded Signup por token      | api         |
+| `WHATSAPP_TOKEN_KEY`             | cifrar o token de cada clínica (32 bytes, base64) | api, worker |
+| `SUPABASE_JWT_SECRET`            | verificar o token do painel                       | api         |
+
+`.env` está no `.gitignore`. Nenhum destes valores aparece em log — há teste
+para o token da clínica (`apps/api/tests/conexao.test.ts`, "o token nunca vai
+para o log").
+
+## Trocar a chave do token (`WHATSAPP_TOKEN_KEY`)
+
+A chave cifra o token de acesso de cada clínica. **Trocar a variável sem
+recifrar deixa todos os tokens ilegíveis** e obriga todas as clínicas a
+reconectar o WhatsApp. O procedimento abaixo evita isso.
+
+Gere a chave nova:
+
+```bash
+openssl rand -base64 32
+```
+
+Rode a rotação com as duas chaves no ambiente — a antiga para decifrar, a nova
+para regravar:
+
+```bash
+export DATABASE_ADMIN_URL="postgresql://.../fliqo"
+export WHATSAPP_TOKEN_KEY_ANTIGA="<a chave que está em uso>"
+export WHATSAPP_TOKEN_KEY="<a chave nova>"
+
+npm run whatsapp:rotacionar-chave
+```
+
+A saída diz quantos tokens foram recifrados, e lista os números que **não**
+puderam ser recifrados (essas clínicas precisam reconectar pelo painel). Nenhum
+token é impresso.
+
+Só depois que a rotação terminar sem falhas, troque `WHATSAPP_TOKEN_KEY` no
+ambiente da api e do worker e reinicie os dois. A ordem importa: se você trocar
+a variável antes de rodar a rotação, perde a chave antiga e não há como recifrar.
+
+Rodar a rotação duas vezes com a mesma chave nos dois lados é inofensivo: ela
+decifra e regrava com a mesma chave.
+
+## Migrações e fila
+
+```bash
+export DATABASE_ADMIN_URL="postgresql://.../fliqo"
+npm run db:migrate
+```
+
+Aplica as migrações pendentes em ordem, registra em `public.schema_migrations`
+e prepara as filas do pg-boss. Rodar de novo não reaplica nada. Migração já
+aplicada que foi editada faz o script parar (CLAUDE.md, regra 8).

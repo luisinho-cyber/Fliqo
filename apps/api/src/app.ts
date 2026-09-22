@@ -23,6 +23,8 @@ export interface Dependencias {
   boss: PgBoss;
   /** Injetável no teste: conectar de verdade exige a Meta do outro lado. */
   onboarding?: OnboardingMeta;
+  /** Injetável no teste, para conferir o que foi (e o que não foi) logado. */
+  fluxoDeLog?: NodeJS.WritableStream;
 }
 
 /** O que guardamos como corpo: texto, ou o payload do botão quando foi um clique. */
@@ -39,7 +41,10 @@ export function construirApp(dep: Dependencias): FastifyInstance {
   const { config, db, boss } = dep;
 
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL },
+    logger:
+      dep.fluxoDeLog === undefined
+        ? { level: config.LOG_LEVEL }
+        : { level: 'info', stream: dep.fluxoDeLog },
     // A Meta assina o corpo como enviou. Se um proxy reescrever, o hash não bate.
     bodyLimit: 2 * 1024 * 1024,
   });

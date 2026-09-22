@@ -71,3 +71,23 @@ export function segredosIguais(a: string, b: string): boolean {
   const bb = Buffer.from(b);
   return ba.length === bb.length && timingSafeEqual(ba, bb);
 }
+
+export type ResultadoRecifra =
+  { ok: true; novo: TokenCifrado } | { ok: false; motivo: 'adulterado' };
+
+/**
+ * Troca a chave de um token já guardado: decifra com a antiga e cifra com a nova.
+ *
+ * Existe porque a chave vive só em variável de ambiente, e trocar a variável sem
+ * recifrar deixaria todos os tokens ilegíveis — na prática, todas as clínicas
+ * teriam que reconectar. O procedimento está em docs/OPERACAO.md.
+ */
+export function recifrar(
+  guardado: TokenCifrado,
+  chaveAntiga: Buffer,
+  chaveNova: Buffer,
+): ResultadoRecifra {
+  const aberto = decifrar(guardado, chaveAntiga);
+  if (!aberto.ok) return { ok: false, motivo: 'adulterado' };
+  return { ok: true, novo: cifrar(aberto.token, chaveNova) };
+}

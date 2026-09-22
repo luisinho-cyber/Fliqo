@@ -3,6 +3,7 @@
 **Como usar:** abra o Claude Code na pasta `fliqo/`. Faça **uma fase por sessão**. Cole o prompt da fase, deixe ele planejar, revise o plano e só então autorize. No fim de cada fase: testes e typecheck verdes, e você faz commit.
 
 O que já está pronto e testado (não reescrever):
+
 - `packages/db/migrations/0001_init.sql` — tabelas, RLS, anti-conflito, régua de confirmação, fila (15 testes)
 - `packages/db/migrations/0002_atrasos.sql` — horários reais, avisos de atraso, duração real e pontualidade (5 testes)
 - `packages/core` — dinheiro, precificação, financeiro, agenda, fila, ritmo humano (20 testes) e atrasos (11 testes)
@@ -13,6 +14,7 @@ Estimativa honesta, trabalhando algumas horas por dia: **6 a 10 semanas até um 
 ---
 
 ## Fase 0 — Fundação (meio dia)
+
 ```
 Leia CLAUDE.md e docs/ARQUITETURA.md. Configure a fundação do monorepo:
 1. ESLint (typescript-eslint strict) + Prettier, com scripts lint e format.
@@ -22,9 +24,11 @@ Leia CLAUDE.md e docs/ARQUITETURA.md. Configure a fundação do monorepo:
    tabela public.schema_migrations; nunca reaplica.
 Não mude nenhuma regra de negócio. Mostre a saída de npm test e npm run typecheck no fim.
 ```
+
 **Pronto quando:** CI verde no GitHub.
 
 ## Fase 1 — Acesso ao banco (1–2 dias)
+
 ```
 Em packages/db, crie a camada de acesso com Kysely (tipos gerados a partir do schema):
 - withClinic(clinicId, fn): abre transação, set_config('app.clinic_id', clinicId, true), executa fn.
@@ -34,9 +38,11 @@ Em packages/db, crie a camada de acesso com Kysely (tipos gerados a partir do sc
 - remarcar: marca o novo horário e cancela o antigo NA MESMA transação.
 Testes em packages/db/tests contra Postgres real, como os existentes, conectando como fliqo_tester.
 ```
+
 **Pronto quando:** um teste prova que remarcar para um horário ocupado deixa a consulta original intacta.
 
 ## Fase 2 — API e webhook (2–3 dias)
+
 ```
 Crie apps/api com Fastify + Zod + pino:
 - POST /webhooks/whatsapp: validação HMAC com rawBody e crypto.timingSafeEqual (porte o
@@ -51,6 +57,7 @@ Testes: assinatura inválida = 401; mesmo wamid duas vezes = 1 mensagem; usuári
 ```
 
 ## Fase 3 — Worker de ações agendadas (2 dias)
+
 ```
 Crie apps/worker. Loop a cada 30 s: app.claim_due_actions(50); para cada ação, withClinic(action.clinic_id):
 - confirmacao: envia template com botões CONFIRMAR_CONSULTA / REMARCAR_CONSULTA / CANCELAR_CONSULTA.
@@ -61,9 +68,11 @@ Sucesso -> status 'feito'. Erro -> volta para 'pendente' com backoff (1, 5, 15 m
 A resposta dos botões chega pelo webhook: use interpretarResposta/efeitoDaResposta de packages/core.
 Cliente do WhatsApp em packages/whatsapp (novo), com retry e respeito ao limite de envio.
 ```
+
 **Pronto quando:** teste de integração com um cliente WhatsApp falso cobre confirmou / cancelou / silêncio.
 
 ## Fase 4 — Agente de IA (3–4 dias)
+
 ```
 Implemente o job 'conversa' no worker usando o SDK da Anthropic com tool use:
 1. Junta as mensagens do paciente que chegaram nos últimos 8 s em uma só entrada.
@@ -79,9 +88,11 @@ Implemente o job 'conversa' no worker usando o SDK da Anthropic com tool use:
 Modelo configurável por env (padrão: um modelo rápido). Registrar tokens usados por clínica.
 Testes com um cliente de LLM falso que devolve chamadas de ferramenta roteirizadas.
 ```
+
 **Pronto quando:** um teste prova que a IA pedindo um horário fora de `buscar_horarios` é recusada.
 
 ## Fase 5 — Lista de espera completa (1–2 dias)
+
 ```
 Quando uma consulta é cancelada/liberada: planejarOferta -> rank_waitlist -> cria slot_offers
 e envia a oferta (template com botão QUERO_ESTE_HORARIO) -> agenda 'expirar_oferta'.
@@ -90,6 +101,7 @@ Modo sequencial: expirou sem resposta -> próximo da fila. Nenhum interessado ->
 ```
 
 ## Fase 5B — Atrasos do profissional (2–3 dias)
+
 ```
 Use packages/core/src/atrasos.ts e a migração 0002. Implemente:
 1. Painel: botões "Paciente chegou" (checked_in_at), "Iniciar atendimento" (started_at) e
@@ -110,9 +122,11 @@ Use packages/core/src/atrasos.ts e a migração 0002. Implemente:
 6. "Prefiro remarcar" no aviso de atraso -> fluxo de remarcação da IA, sem cobrar taxa de cancelamento.
 Nunca enviar aviso de atraso fora da janela configurada nem mais de 3 avisos por consulta.
 ```
+
 **Pronto quando:** teste com relógio simulado cobre: atraso aparece -> aviso; atraso cresce 10 min -> reaviso; atraso some -> "normalizou"; paciente na sala -> só recepção.
 
 ## Fase 6 — Painel da clínica (1–2 semanas)
+
 ```
 Crie apps/web com Next.js (App Router) + Tailwind + tokens de design em um arquivo.
 Siga a seção Interface do CLAUDE.md. Telas, nesta ordem:
@@ -126,6 +140,7 @@ Cada tela com estados vazio, carregando e erro.
 ```
 
 ## Fase 7 — Painel do fundador (3–5 dias)
+
 ```
 Área /admin só para o papel 'fundador':
 1. Lista de clínicas com: mensagens/mês, custo de IA, taxa de confirmação, faltas evitadas.
@@ -138,6 +153,7 @@ Cada tela com estados vazio, carregando e erro.
 ```
 
 ## Fase 8 — Endurecimento antes da primeira clínica pagante (2–3 dias)
+
 ```
 - Teste de carga com k6: 50 webhooks/s por 5 min; nenhuma mensagem duplicada ou perdida.
 - Checklist de segurança: headers, CORS, rate limit, segredos só em env, rotação de tokens da Meta,
@@ -149,6 +165,7 @@ Cada tela com estados vazio, carregando e erro.
 ---
 
 ## Corte do MVP (o que vende primeiro)
+
 **Entra:** agenda, confirmação com botões, lista de espera, IA que responde dúvidas e marca/remarca/cancela, passar para humano, tela Hoje, custo das faltas.
 **Entra simples:** aviso de atraso ao paciente (é o que o paciente sente na pele) e financeiro com lançamento por atendimento e projeção de 30 dias.
 **Fica para depois:** Instagram, resposta em áudio, conciliação bancária, comissões por profissional, app mobile.
