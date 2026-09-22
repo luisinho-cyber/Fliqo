@@ -1,5 +1,6 @@
 import type {
   ClienteWhatsApp,
+  EnvioDeDigitando,
   EnvioDeTemplate,
   EnvioDeTexto,
   MotivoDeFalha,
@@ -83,6 +84,19 @@ export class ClienteMeta implements ClienteWhatsApp {
       to: p.paraE164,
       type: 'text',
       text: { body: p.texto },
+    });
+  }
+
+  /**
+   * Indicador de digitação. Uma tentativa só, e o erro morre aqui: a mensagem de
+   * verdade vale mais do que o enfeite, e repetir gastaria limite do número.
+   */
+  async marcarDigitando(p: EnvioDeDigitando): Promise<void> {
+    await this.#tentar(p.phoneNumberId, {
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: p.wamidRecebido,
+      typing_indicator: { type: 'text' },
     });
   }
 

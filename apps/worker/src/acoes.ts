@@ -1,5 +1,5 @@
 import { sql } from 'kysely';
-import { agenda, alertas, fila, withClinic, type Db, type Trx } from '@fliqo/db';
+import { agenda, alertas, fila, numeros, withClinic, type Db, type Trx } from '@fliqo/db';
 import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
 import { enviarAtivo } from './envio';
 
@@ -57,15 +57,6 @@ export async function devolverPresas(db: Db, limiteMin = LIMITE_PRESA_MIN): Prom
   return r.rows[0]?.requeue_stuck_actions ?? 0;
 }
 
-async function numeroDaClinica(trx: Trx): Promise<string | undefined> {
-  const linha = await trx
-    .selectFrom('app.whatsapp_numbers')
-    .select(['phone_number_id'])
-    .where('active', '=', true)
-    .executeTakeFirst();
-  return linha?.phone_number_id;
-}
-
 export type SaidaDaAcao = { ok: true } | { ok: false; motivo: string; definitivo: boolean };
 
 async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Promise<SaidaDaAcao> {
@@ -74,7 +65,7 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
   if (!consulta) return { ok: true }; // consulta sumiu: nada a fazer
   if (consulta.status !== 'agendado') return { ok: true }; // já confirmada ou cancelada
 
-  const phoneNumberId = await numeroDaClinica(trx);
+  const phoneNumberId = await numeros.ativoDaClinica(trx);
   if (phoneNumberId === undefined) {
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
@@ -103,7 +94,7 @@ async function lembreteFinal(
   if (!consulta) return { ok: true };
   if (!['agendado', 'confirmado', 'em_risco'].includes(consulta.status)) return { ok: true };
 
-  const phoneNumberId = await numeroDaClinica(trx);
+  const phoneNumberId = await numeros.ativoDaClinica(trx);
   if (phoneNumberId === undefined) {
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }

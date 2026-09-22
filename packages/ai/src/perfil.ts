@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+/** Uma faixa de atendimento: 0 = domingo … 6 = sábado, hora local da clínica. */
+const FaixaDeExpedienteSchema = z.object({
+  diaDaSemana: z.number().int().min(0).max(6),
+  de: z.string().regex(/^\d{2}:\d{2}$/),
+  ate: z.string().regex(/^\d{2}:\d{2}$/),
+});
+
+/** Comercial brasileiro: o ponto de partida do onboarding, ajustado por clínica. */
+const EXPEDIENTE_PADRAO = [1, 2, 3, 4, 5].flatMap((diaDaSemana) => [
+  { diaDaSemana, de: '08:00', ate: '12:00' },
+  { diaDaSemana, de: '13:00', ate: '19:00' },
+]);
+
 /**
  * Tudo que muda de uma clínica para outra mora AQUI — nunca no código, nunca no prompt fixo.
  * O fundador preenche isso numa tela de onboarding (20 min por clínica) e o sistema salva
@@ -19,15 +32,22 @@ export const PerfilClinicaSchema = z.object({
     usaEmoji: z.boolean().default(false),
   }),
   atendimento: z.object({
-    horarioHumano: z.string(), // 'seg a sex, 8h às 19h; sáb 8h às 12h'
+    horarioHumano: z.string(), // 'seg a sex, 8h às 19h; sáb 8h às 12h' — texto, para a IA dizer ao paciente
     iaForaDoExpediente: z.boolean().default(true), // responde de madrugada?
     respondeAudioComAudio: z.boolean().default(false),
+    // A mesma informação em forma de máquina: é daqui que saem os horários que a
+    // IA pode oferecer. Texto livre não serve para calcular vaga.
+    expediente: z.array(FaixaDeExpedienteSchema).default(EXPEDIENTE_PADRAO),
+    // Antecedência mínima entre agora e o horário oferecido: ninguém chega em 10 min.
+    antecedenciaMinimaMin: z.number().int().min(15).max(1_440).default(120),
   }),
   politicas: z.object({
     cancelamento: z.string(), // 'avisar com 24h; falta sem aviso cobra 50% na próxima'
     formasDePagamento: z.array(z.string()).min(1),
     convenios: z.array(z.string()).default([]), // vazio = só particular
     primeiraConsulta: z.string().optional(), // 'avaliação gratuita de 30 min'
+    // Algumas clínicas só falam preço na avaliação. Falso esconde a tabela da IA.
+    precoNoWhatsapp: z.boolean().default(true),
   }),
   faq: z
     .array(z.object({ pergunta: z.string().min(3), resposta: z.string().min(3) }))

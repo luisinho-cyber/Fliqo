@@ -2,11 +2,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  chamadasDaResposta,
   checarEntrada,
   checarSaida,
   definicoesParaApi,
   montarPromptSistema,
   PerfilClinicaSchema,
+  somarUso,
+  textoDaResposta,
   validarChamada,
 } from '../src';
 
@@ -113,5 +116,56 @@ describe('proteções de saída', () => {
   it('bloqueia promessa e diagnóstico', () => {
     expect(checarSaida('Resultado garantido!', []).ok).toBe(false);
     expect(checarSaida('Você tem uma inflamação, pode tomar ibuprofeno.', []).ok).toBe(false);
+  });
+});
+
+describe('expediente no perfil', () => {
+  it('perfil antigo ganha o expediente comercial padrão, sem quebrar', () => {
+    // Os perfis já salvos em app.ai_profiles não têm o campo: o default é o que
+    // impede uma clínica existente de ficar sem horário nenhum para oferecer.
+    const { expediente, antecedenciaMinimaMin } = PerfilClinicaSchema.parse({
+      ...perfilDemo,
+      atendimento: { horarioHumano: 'seg a sex, 8h às 19h' },
+    }).atendimento;
+    expect(expediente).toHaveLength(10); // segunda a sexta, manhã e tarde
+    expect(expediente[0]).toEqual({ diaDaSemana: 1, de: '08:00', ate: '12:00' });
+    expect(antecedenciaMinimaMin).toBe(120);
+  });
+
+  it('recusa hora fora do formato HH:MM', () => {
+    const r = PerfilClinicaSchema.safeParse({
+      ...perfilDemo,
+      atendimento: {
+        horarioHumano: 'seg a sex',
+        expediente: [{ diaDaSemana: 1, de: '8h', ate: '19h' }],
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('resposta do modelo', () => {
+  const resposta = {
+    blocos: [
+      { tipo: 'texto' as const, texto: 'Deixa comigo.' },
+      { tipo: 'chamada' as const, id: 't1', nome: 'buscar_horarios', entrada: {} },
+    ],
+    parada: 'ferramenta' as const,
+    modelo: 'm',
+    uso: { entrada: 10, saida: 2, cacheLido: 0, cacheCriado: 0 },
+  };
+
+  it('separa o que é texto do que é chamada de ferramenta', () => {
+    expect(textoDaResposta(resposta)).toBe('Deixa comigo.');
+    expect(chamadasDaResposta(resposta).map((c) => c.nome)).toEqual(['buscar_horarios']);
+  });
+
+  it('soma o consumo das voltas do laço', () => {
+    expect(somarUso(resposta.uso, resposta.uso)).toEqual({
+      entrada: 20,
+      saida: 4,
+      cacheLido: 0,
+      cacheCriado: 0,
+    });
   });
 });
