@@ -1,10 +1,10 @@
 import { applyBp, assertCents, splitEven, type BasisPoints, type Cents } from './dinheiro';
 
 export interface FormaDePagamento {
-  nome: string;             // 'Pix', 'Crédito 3x', 'Convênio Amil'
-  taxaBp: BasisPoints;      // taxa da maquininha / operadora
-  diasParaReceber: number;  // D+N da primeira parcela
-  parcelas: number;         // 1 = à vista
+  nome: string; // 'Pix', 'Crédito 3x', 'Convênio Amil'
+  taxaBp: BasisPoints; // taxa da maquininha / operadora
+  diasParaReceber: number; // D+N da primeira parcela
+  parcelas: number; // 1 = à vista
 }
 
 export interface LancamentoCaixa {
@@ -13,16 +13,16 @@ export interface LancamentoCaixa {
   categoria: 'procedimento' | 'taxa_pagamento' | 'comissao' | 'insumo';
   descricao: string;
   valor: Cents;
-  vencimento: string;       // AAAA-MM-DD (data local da clínica)
+  vencimento: string; // AAAA-MM-DD (data local da clínica)
   parcela?: number;
 }
 
 export interface Atendimento {
   procedimento: string;
-  preco: Cents;             // snapshot gravado na consulta
+  preco: Cents; // snapshot gravado na consulta
   custoInsumos: Cents;
   comissaoBp: BasisPoints;
-  data: string;             // AAAA-MM-DD do atendimento
+  data: string; // AAAA-MM-DD do atendimento
 }
 
 function addDays(isoDate: string, days: number): string {
@@ -34,7 +34,9 @@ function addDays(isoDate: string, days: number): string {
 function addMonths(isoDate: string, months: number): string {
   const [y, m, day] = isoDate.split('-').map(Number) as [number, number, number];
   const target = new Date(Date.UTC(y, m - 1 + months, 1, 12));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0, 12)).getUTCDate();
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0, 12),
+  ).getUTCDate();
   target.setUTCDate(Math.min(day, lastDay)); // 31/01 + 1 mês = 28 ou 29/02
   return target.toISOString().slice(0, 10);
 }
@@ -57,7 +59,10 @@ export function lancamentosDoAtendimento(a: Atendimento, fp: FormaDePagamento): 
       tipo: 'receita',
       status: 'previsto',
       categoria: 'procedimento',
-      descricao: fp.parcelas > 1 ? `${a.procedimento} (${i + 1}/${fp.parcelas}) — ${fp.nome}` : `${a.procedimento} — ${fp.nome}`,
+      descricao:
+        fp.parcelas > 1
+          ? `${a.procedimento} (${i + 1}/${fp.parcelas}) — ${fp.nome}`
+          : `${a.procedimento} — ${fp.nome}`,
       valor,
       vencimento,
       ...(fp.parcelas > 1 ? { parcela: i + 1 } : {}),
@@ -78,10 +83,24 @@ export function lancamentosDoAtendimento(a: Atendimento, fp: FormaDePagamento): 
 
   const comissao = applyBp(a.preco, a.comissaoBp);
   if (comissao > 0) {
-    out.push({ tipo: 'despesa', status: 'previsto', categoria: 'comissao', descricao: `Comissão — ${a.procedimento}`, valor: comissao, vencimento: a.data });
+    out.push({
+      tipo: 'despesa',
+      status: 'previsto',
+      categoria: 'comissao',
+      descricao: `Comissão — ${a.procedimento}`,
+      valor: comissao,
+      vencimento: a.data,
+    });
   }
   if (a.custoInsumos > 0) {
-    out.push({ tipo: 'despesa', status: 'realizado', categoria: 'insumo', descricao: `Insumos — ${a.procedimento}`, valor: a.custoInsumos, vencimento: a.data });
+    out.push({
+      tipo: 'despesa',
+      status: 'realizado',
+      categoria: 'insumo',
+      descricao: `Insumos — ${a.procedimento}`,
+      valor: a.custoInsumos,
+      vencimento: a.data,
+    });
   }
   return out;
 }
@@ -99,7 +118,11 @@ export interface TaxasComparecimento {
   emRiscoBp: BasisPoints;
 }
 
-export const TAXAS_PADRAO: TaxasComparecimento = { confirmadoBp: 9_500, agendadoBp: 8_000, emRiscoBp: 5_000 };
+export const TAXAS_PADRAO: TaxasComparecimento = {
+  confirmadoBp: 9_500,
+  agendadoBp: 8_000,
+  emRiscoBp: 5_000,
+};
 
 export interface DiaProjetado {
   data: string;
@@ -122,7 +145,11 @@ export function projetarFluxo(
   dias: number,
   taxas: TaxasComparecimento = TAXAS_PADRAO,
 ): DiaProjetado[] {
-  const bpPorStatus = { confirmado: taxas.confirmadoBp, agendado: taxas.agendadoBp, em_risco: taxas.emRiscoBp };
+  const bpPorStatus = {
+    confirmado: taxas.confirmadoBp,
+    agendado: taxas.agendadoBp,
+    em_risco: taxas.emRiscoBp,
+  };
   const out: DiaProjetado[] = [];
   let saldo = saldoInicial;
   for (let i = 0; i < dias; i++) {

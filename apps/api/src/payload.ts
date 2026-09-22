@@ -38,7 +38,8 @@ export type PayloadWebhook = z.infer<typeof PayloadWebhook>;
 
 export interface MensagemRecebida {
   wamid: string;
-  telefoneE164: string;
+  /** Como a Meta mandou. Normalizar é trabalho de normalizarTelefoneBR, no repositório. */
+  telefone: string;
   texto?: string;
   payloadBotao?: string;
   tipoMidia?: 'audio' | 'imagem' | 'documento';
@@ -55,18 +56,6 @@ const MIDIA: Record<string, 'audio' | 'imagem' | 'documento' | undefined> = {
   image: 'imagem',
   document: 'documento',
 };
-
-/**
- * A Meta manda o telefone sem '+'. O banco exige E.164.
- *
- * ATENÇÃO: números brasileiros podem vir sem o nono dígito, e aí o mesmo paciente
- * vira duas linhas. Normalizar isso é regra de negócio e ainda não foi decidida —
- * veja a nota no PR.
- */
-function paraE164(bruto: string): string {
-  const digitos = bruto.replace(/\D/g, '');
-  return `+${digitos}`;
-}
 
 /** Resposta de botão chega com id/payload fixo: sem IA, sem interpretar texto. */
 function botao(m: z.infer<typeof MensagemMeta>): string | undefined {
@@ -86,7 +75,7 @@ export function extrair(payload: PayloadWebhook): LoteRecebido[] {
       const mensagens = brutas.map((m) => {
         return {
           wamid: m.id,
-          telefoneE164: paraE164(m.from),
+          telefone: m.from,
           ...(m.text?.body === undefined ? {} : { texto: m.text.body }),
           ...(botao(m) === undefined ? {} : { payloadBotao: botao(m) }),
           ...(MIDIA[m.type] === undefined ? {} : { tipoMidia: MIDIA[m.type] }),

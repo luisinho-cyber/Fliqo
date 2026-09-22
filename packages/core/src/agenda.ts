@@ -49,10 +49,15 @@ export function horariosLivres(params: {
  * Espalha as sugestões: em vez de "14h, 14h15, 14h30", oferece opções em períodos diferentes.
  * Humano de recepção faz assim ("tenho terça de manhã ou quinta à tarde").
  */
-export function sugestoesVariadas(livres: Date[], quantidade = 3, distanciaMinimaMin = 180): Date[] {
+export function sugestoesVariadas(
+  livres: Date[],
+  quantidade = 3,
+  distanciaMinimaMin = 180,
+): Date[] {
   const out: Date[] = [];
   for (const d of livres) {
-    if (out.every((o) => Math.abs(o.getTime() - d.getTime()) >= distanciaMinimaMin * MIN)) out.push(d);
+    if (out.every((o) => Math.abs(o.getTime() - d.getTime()) >= distanciaMinimaMin * MIN))
+      out.push(d);
     if (out.length === quantidade) break;
   }
   return out;

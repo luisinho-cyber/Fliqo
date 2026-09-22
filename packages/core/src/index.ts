@@ -5,3 +5,4 @@ export * from './agenda';
 export * from './fila';
 export * from './humanizacao';
 export * from './atrasos';
+export * from './telefone';

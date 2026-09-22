@@ -5,7 +5,12 @@
     "endereco": "Rua Exemplo, 100, conj. 42 — Jardins, São Paulo/SP",
     "comoChegar": "Estacionamento conveniado no prédio ao lado, com 2h de cortesia."
   },
-  "persona": { "nome": "Juliana", "tratamento": "senhor_senhora", "tom": "profissional", "usaEmoji": false },
+  "persona": {
+    "nome": "Juliana",
+    "tratamento": "senhor_senhora",
+    "tom": "profissional",
+    "usaEmoji": false
+  },
   "atendimento": {
     "horarioHumano": "segunda a sexta, 8h às 19h; sábado, 8h às 12h",
     "iaForaDoExpediente": true,
@@ -18,8 +23,14 @@
     "primeiraConsulta": "A avaliação inicial leva 30 minutos e é abatida do valor do tratamento."
   },
   "faq": [
-    { "pergunta": "Quanto tempo dura o efeito do botox?", "resposta": "Em média de 4 a 6 meses, mas a doutora avalia cada caso na consulta." },
-    { "pergunta": "Posso ir acompanhado?", "resposta": "Claro, a sala de espera comporta acompanhantes." }
+    {
+      "pergunta": "Quanto tempo dura o efeito do botox?",
+      "resposta": "Em média de 4 a 6 meses, mas a doutora avalia cada caso na consulta."
+    },
+    {
+      "pergunta": "Posso ir acompanhado?",
+      "resposta": "Claro, a sala de espera comporta acompanhantes."
+    }
   ],
   "proibicoesExtras": ["Não comente sobre outras clínicas ou profissionais."],
   "gatilhosHumanoExtras": ["reembolso", "nota fiscal"]

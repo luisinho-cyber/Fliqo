@@ -6,5 +6,8 @@
     ".": "./src/index.ts",
     "./fila": "./scripts/fila.mjs",
     "./testing": "./src/testing.ts"
+  },
+  "dependencies": {
+    "@fliqo/core": "*"
   }
 }

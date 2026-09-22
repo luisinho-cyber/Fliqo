@@ -1,3 +1,4 @@
+import { normalizarTelefoneBR } from '@fliqo/core';
 import type { Selectable } from 'kysely';
 import type { TabelaPacientes } from '../schema';
 import type { Trx } from '../withClinic';
@@ -11,11 +12,17 @@ export async function porId(trx: Trx, id: string): Promise<Paciente | undefined>
   return trx.selectFrom('app.patients').selectAll().where('id', '=', id).executeTakeFirst();
 }
 
-export async function porTelefone(trx: Trx, telefoneE164: string): Promise<Paciente | undefined> {
+/**
+ * Busca sempre pelo número normalizado: o mesmo celular escrito com ou sem o
+ * nono dígito, ou sem o +55, tem que achar a mesma ficha.
+ */
+export async function porTelefone(trx: Trx, telefone: string): Promise<Paciente | undefined> {
+  const n = normalizarTelefoneBR(telefone);
+  if (!n.ok) return undefined;
   return trx
     .selectFrom('app.patients')
     .selectAll()
-    .where('phone_e164', '=', telefoneE164)
+    .where('phone_e164', '=', n.e164)
     .executeTakeFirst();
 }
 
@@ -26,21 +33,27 @@ export async function porTelefone(trx: Trx, telefoneE164: string): Promise<Pacie
  * (confirmação, lembrete, oferta) exige `whatsapp_consent_at` preenchido — quem
  * checa isso é quem envia, não este repositório.
  */
+export type ResultadoPaciente =
+  { ok: true; paciente: Paciente; novo: boolean } | { ok: false; motivo: 'telefone_invalido' };
+
 export async function acharOuCriarPorTelefone(
   trx: Trx,
   clinicId: string,
-  telefoneE164: string,
+  telefone: string,
   nome = NOME_A_CONFIRMAR,
-): Promise<{ paciente: Paciente; novo: boolean }> {
-  const existente = await porTelefone(trx, telefoneE164);
-  if (existente) return { paciente: existente, novo: false };
+): Promise<ResultadoPaciente> {
+  const n = normalizarTelefoneBR(telefone);
+  if (!n.ok) return { ok: false, motivo: 'telefone_invalido' };
+
+  const existente = await porTelefone(trx, n.e164);
+  if (existente) return { ok: true, paciente: existente, novo: false };
 
   const paciente = await trx
     .insertInto('app.patients')
-    .values({ clinic_id: clinicId, name: nome, phone_e164: telefoneE164 })
+    .values({ clinic_id: clinicId, name: nome, phone_e164: n.e164 })
     .returningAll()
     .executeTakeFirstOrThrow();
-  return { paciente, novo: true };
+  return { ok: true, paciente, novo: true };
 }
 
 export async function renomear(trx: Trx, id: string, nome: string): Promise<Paciente | undefined> {
