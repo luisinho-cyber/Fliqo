@@ -15,6 +15,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { PgBoss } from 'pg-boss';
+import { falhar } from './segredos.mjs';
 
 export const SCHEMA_FILA = 'pgboss';
 export const FILA_CONVERSA = 'conversa';
@@ -73,7 +74,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const filas = await prepararFila(url);
     console.log(`fila pronta: ${filas.join(', ')}`);
   } catch (erro) {
-    console.error(`falhou: ${erro.message}`);
-    process.exit(1);
+    falhar(erro, [url]);
   }
 }

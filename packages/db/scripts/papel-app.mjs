@@ -15,6 +15,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { falhar } from './segredos.mjs';
 
 export const PAPEL = 'fliqo_app';
 
@@ -76,7 +77,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       criado ? `papel ${PAPEL} criado e com senha definida` : `senha do papel ${PAPEL} definida`,
     );
   } catch (erro) {
-    console.error(`falhou: ${erro.message}`);
-    process.exit(1);
+    falhar(erro, [url, senha]);
   }
 }

@@ -1,0 +1,45 @@
+name: Migrar banco
+
+# Só na mão. Migração não acontece sozinha junto com o deploy: se dois
+# contêineres subissem ao mesmo tempo, os dois tentariam mudar o banco.
+on: workflow_dispatch
+
+# Duas execuções ao mesmo tempo esperam a vez, em vez de disputar o banco.
+concurrency: migrar-banco
+
+jobs:
+  migrar:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Falha visível em vez de job pulado: pulado fica verde e parece que rodou.
+      - name: Só a branch main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Este workflow só roda na main. Em 'Use workflow from', escolha main."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Os secrets entram só aqui, como variável de ambiente do passo. Nenhum
+      # comando imprime o valor, e os scripts limpam o que for para a saída
+      # (packages/db/scripts/segredos.mjs).
+      - name: Aplicar migrações e preparar a fila
+        env:
+          DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+        run: npm run db:migrate
+
+      # Idempotente: roda junto toda vez e, de quebra, devolve o papel da
+      # aplicação ao estado certo (sem bypassrls, sem criar schema).
+      - name: Dar senha e atributos ao papel da aplicação
+        env:
+          DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+          FLIQO_APP_PASSWORD: ${{ secrets.FLIQO_APP_PASSWORD }}
+        run: npm run db:papel-app
