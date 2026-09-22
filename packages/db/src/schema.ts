@@ -203,6 +203,8 @@ export interface TabelaAvisosAtraso {
   sent_at: ComDefault<Date>;
 }
 
+export type StatusWhatsapp = 'pendente' | 'conectado' | 'erro' | 'desconectado';
+
 export interface TabelaNumerosWhatsapp {
   id: ComDefault<string>;
   clinic_id: string;
@@ -210,6 +212,26 @@ export interface TabelaNumerosWhatsapp {
   display_phone_e164: string | null;
   waba_id: string | null;
   active: ComDefault<boolean>;
+  created_at: Automatico<Date>;
+  status: ComDefault<StatusWhatsapp>;
+  coexistencia: ComDefault<boolean>;
+  // Token cifrado (AES-256-GCM). Nunca sai daqui para o painel.
+  token_ciphertext: ColumnType<Buffer | null, Buffer | null, Buffer | null>;
+  token_iv: ColumnType<Buffer | null, Buffer | null, Buffer | null>;
+  token_tag: ColumnType<Buffer | null, Buffer | null, Buffer | null>;
+  token_updated_at: ColumnType<Date | null, Date | null, Date | null>;
+  connected_at: ColumnType<Date | null, Date | null, Date | null>;
+  last_error: ColumnType<string | null, string | null, string | null>;
+}
+
+export type TipoEventoConexao = 'conectou' | 'reconectou' | 'falhou' | 'desconectou';
+
+export interface TabelaEventosConexao {
+  id: ComDefault<string>;
+  clinic_id: string;
+  whatsapp_number_id: string | null;
+  kind: TipoEventoConexao;
+  detail: string | null;
   created_at: Automatico<Date>;
 }
 
@@ -270,6 +292,7 @@ export interface Banco {
   'app.whatsapp_numbers': TabelaNumerosWhatsapp;
   'app.alerts': TabelaAlertas;
   'app.ai_usage': TabelaConsumoIa;
+  'app.whatsapp_connection_events': TabelaEventosConexao;
 }
 
 /**
@@ -437,6 +460,14 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     waba_id: true,
     active: true,
     created_at: true,
+    status: true,
+    coexistencia: true,
+    token_ciphertext: true,
+    token_iv: true,
+    token_tag: true,
+    token_updated_at: true,
+    connected_at: true,
+    last_error: true,
   },
   'app.alerts': {
     id: true,
@@ -460,6 +491,14 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     output_tokens: true,
     cache_read_tokens: true,
     cache_creation_tokens: true,
+    created_at: true,
+  },
+  'app.whatsapp_connection_events': {
+    id: true,
+    clinic_id: true,
+    whatsapp_number_id: true,
+    kind: true,
+    detail: true,
     created_at: true,
   },
 };
