@@ -25,6 +25,9 @@ const config: Config = {
   WHATSAPP_APP_SECRET: SEGREDO,
   WHATSAPP_VERIFY_TOKEN: TOKEN_VERIFICACAO,
   SUPABASE_JWT_SECRET: 'segredo-jwt-de-teste',
+  META_APP_ID: 'app-de-teste',
+  META_APP_SECRET: 'segredo-do-app-de-teste',
+  WHATSAPP_TOKEN_KEY: Buffer.alloc(32, 7).toString('base64'),
   PORT: 0,
   LOG_LEVEL: 'silent',
 };
@@ -396,6 +399,132 @@ describe('gravação e fila', () => {
         where p.phone_e164 = '+5511955556666'`,
     );
     expect(rows[0]?.name).toBe(FILA_CONVERSA);
+  });
+
+  it('eco da clínica pelo celular põe a conversa em modo humano', async () => {
+    // Paciente escreve primeiro: a conversa nasce em modo 'ia'.
+    const doPaciente = eventoDeTexto('wamid.ANTES', '5511944443333', 'oi, queria remarcar');
+    await postar(doPaciente, assinar(doPaciente));
+
+    const antes = await owner.query<{ id: string; mode: string }>(
+      `select cv.id, cv.mode from app.conversations cv
+         join app.patients p on p.id = cv.patient_id
+        where p.phone_e164 = '+5511944443333'`,
+    );
+    expect(antes.rows[0]?.mode).toBe('ia');
+
+    // A recepção responde pelo app do celular. Chega como smb_message_echoes.
+    const eco = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              field: 'smb_message_echoes',
+              value: {
+                metadata: { phone_number_id: PHONE_NUMBER_ID },
+                message_echoes: [
+                  {
+                    id: 'wamid.ECO1',
+                    from: '5511333322221',
+                    to: '5511944443333',
+                    type: 'text',
+                    text: { body: 'claro, pode ser quinta às 15h?' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const r = await postar(eco, assinar(eco));
+    expect(r.statusCode).toBe(200);
+
+    const depois = await owner.query<{ mode: string; handover_reason: string }>(
+      'select mode, handover_reason from app.conversations where id = $1',
+      [antes.rows[0]?.id],
+    );
+    expect(depois.rows[0]?.mode).toBe('humano');
+    expect(depois.rows[0]?.handover_reason).toContain('celular');
+
+    // A mensagem da clínica entra no histórico como saída de humano.
+    const { rows: msgs } = await owner.query<{ direction: string; author: string; body: string }>(
+      `select direction, author, body from app.messages where wamid = 'wamid.ECO1'`,
+    );
+    expect(msgs[0]).toMatchObject({
+      direction: 'saida',
+      author: 'humano',
+      body: 'claro, pode ser quinta às 15h?',
+    });
+  });
+
+  it('eco repetido não reprocessa nem enfileira', async () => {
+    const eco = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              field: 'smb_message_echoes',
+              value: {
+                metadata: { phone_number_id: PHONE_NUMBER_ID },
+                message_echoes: [
+                  {
+                    id: 'wamid.ECO_REP',
+                    from: '5511333322221',
+                    to: '5511977778888',
+                    type: 'text',
+                    text: { body: 'oi' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    await postar(eco, assinar(eco));
+    await postar(eco, assinar(eco));
+
+    const { rows } = await owner.query(`select id from app.messages where wamid = 'wamid.ECO_REP'`);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('eco não vira job de IA nem de botão', async () => {
+    const eco = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              field: 'smb_message_echoes',
+              value: {
+                metadata: { phone_number_id: PHONE_NUMBER_ID },
+                message_echoes: [
+                  {
+                    id: 'wamid.ECO_FILA',
+                    from: '5511333322221',
+                    to: '5511966667777',
+                    type: 'text',
+                    text: { body: 'ok' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    await postar(eco, assinar(eco));
+
+    const { rows } = await owner.query(
+      `select j.id from ${SCHEMA_FILA}.job j
+         join app.conversations cv on cv.id::text = j.singleton_key
+         join app.patients p on p.id = cv.patient_id
+        where p.phone_e164 = '+5511966667777'`,
+    );
+    // Quem respondeu foi a recepção; não há nada para a IA fazer.
+    expect(rows).toHaveLength(0);
   });
 
   it('responde em menos de 1 s', async () => {

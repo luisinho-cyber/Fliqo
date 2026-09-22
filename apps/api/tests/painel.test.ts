@@ -17,6 +17,9 @@ const config: Config = {
   WHATSAPP_APP_SECRET: 'x',
   WHATSAPP_VERIFY_TOKEN: 'y',
   SUPABASE_JWT_SECRET: JWT_SECRET,
+  META_APP_ID: 'app-de-teste',
+  META_APP_SECRET: 'segredo-do-app-de-teste',
+  WHATSAPP_TOKEN_KEY: Buffer.alloc(32, 7).toString('base64'),
   PORT: 0,
   LOG_LEVEL: 'silent',
 };
@@ -245,7 +248,7 @@ describe('agenda pelo painel', () => {
       },
     });
     expect(criada.statusCode).toBe(201);
-    const id = (criada.json()).id;
+    const id = criada.json().id;
 
     const r = await chamar('POST', `/api/agenda/${id}/remarcar`, {
       userId: DONA_DA_A,
@@ -282,13 +285,13 @@ describe('conversas', () => {
       clinica: c.clinicA,
     });
     expect(assumir.statusCode).toBe(200);
-    expect((assumir.json()).mode).toBe('humano');
+    expect(assumir.json().mode).toBe('humano');
 
     const devolver = await chamar('POST', `/api/conversas/${conversaId}/devolver`, {
       userId: DONA_DA_A,
       clinica: c.clinicA,
     });
-    expect((devolver.json()).mode).toBe('ia');
+    expect(devolver.json().mode).toBe('ia');
   });
 
   it('usuário da B não assume conversa da A', async () => {
@@ -325,9 +328,7 @@ describe('pacientes e consentimento', () => {
       clinica: c.clinicA,
     });
     expect(semNove.json()).toHaveLength(1);
-    expect((semNove.json())[0]?.id).toBe(
-      (comNove.json())[0]?.id,
-    );
+    expect(semNove.json()[0]?.id).toBe(comNove.json()[0]?.id);
   });
 
   it('a recepção registra o consentimento e a segunda vez devolve 409', async () => {
@@ -338,7 +339,7 @@ describe('pacientes e consentimento', () => {
       corpo: {},
     });
     expect(primeira.statusCode).toBe(200);
-    expect((primeira.json()).whatsapp_consent_at).not.toBeNull();
+    expect(primeira.json().whatsapp_consent_at).not.toBeNull();
 
     const segunda = await chamar('POST', `/api/pacientes/${pacienteId}/consentimento`, {
       userId: DONA_DA_A,

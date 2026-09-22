@@ -10,10 +10,14 @@ export function buildApp() {
   app.use(helmet());
 
   // rawBody preservado para validacao HMAC — NUNCA remover
-  app.use(express.json({
-    limit: '2mb',
-    verify: (req, _res, buf) => { (req as express.Request & { rawBody?: Buffer }).rawBody = buf; },
-  }));
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
 
   app.use('/webhooks', rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true }));
   app.use('/webhooks', webhookRoutes);
@@ -23,10 +27,12 @@ export function buildApp() {
 
   // 404 e handler global — nunca vazar stack trace
   app.use((_req, res) => res.status(404).json({ error: 'not found' }));
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error('[unhandled]', err.message);
-    res.status(500).json({ error: 'internal error' });
-  });
+  app.use(
+    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      console.error('[unhandled]', err.message);
+      res.status(500).json({ error: 'internal error' });
+    },
+  );
 
   return app;
 }

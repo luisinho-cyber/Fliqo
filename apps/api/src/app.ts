@@ -3,9 +3,11 @@ import { comoConexaoDoBoss, conversas, numeros, pacientes, withClinic, type Db }
 import { FILA_BOTAO, FILA_CONVERSA } from '@fliqo/db/fila';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { PgBoss } from 'pg-boss';
+import { lerChave, OnboardingMeta } from '@fliqo/whatsapp';
 import { assinaturaConfere } from './assinatura';
 import type { Config } from './config';
-import { extrair, PayloadWebhook } from './payload';
+import { extrair, extrairEcos, PayloadWebhook } from './payload';
+import { registrarConexao } from './rotas/conexao';
 import { registrarPainel } from './rotas/painel';
 
 declare module 'fastify' {
@@ -19,6 +21,10 @@ export interface Dependencias {
   config: Config;
   db: Db;
   boss: PgBoss;
+  /** Injetável no teste: conectar de verdade exige a Meta do outro lado. */
+  onboarding?: OnboardingMeta;
+  /** Injetável no teste, para conferir o que foi (e o que não foi) logado. */
+  fluxoDeLog?: NodeJS.WritableStream;
 }
 
 /** O que guardamos como corpo: texto, ou o payload do botão quando foi um clique. */
@@ -35,7 +41,10 @@ export function construirApp(dep: Dependencias): FastifyInstance {
   const { config, db, boss } = dep;
 
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL },
+    logger:
+      dep.fluxoDeLog === undefined
+        ? { level: config.LOG_LEVEL }
+        : { level: 'info', stream: dep.fluxoDeLog },
     // A Meta assina o corpo como enviou. Se um proxy reescrever, o hash não bate.
     bodyLimit: 2 * 1024 * 1024,
   });
@@ -72,9 +81,15 @@ export function construirApp(dep: Dependencias): FastifyInstance {
           return typeof auth === 'string' ? auth.slice(-32) : req.ip;
         },
       });
-      registrarPainel(painel, {
+      const segredoJwt = new TextEncoder().encode(config.SUPABASE_JWT_SECRET);
+      registrarPainel(painel, { db, segredoJwt });
+      registrarConexao(painel, {
         db,
-        segredoJwt: new TextEncoder().encode(config.SUPABASE_JWT_SECRET),
+        segredoJwt,
+        onboarding:
+          dep.onboarding ??
+          new OnboardingMeta({ appId: config.META_APP_ID, appSecret: config.META_APP_SECRET }),
+        chaveDoToken: lerChave(config.WHATSAPP_TOKEN_KEY),
       });
     });
 
@@ -112,6 +127,59 @@ export function construirApp(dep: Dependencias): FastifyInstance {
         if (!payload.success) {
           req.log.warn('webhook com formato desconhecido');
           return reply.code(200).send({ ok: true });
+        }
+
+        // Coexistência: a clínica respondeu pelo app do celular. A IA precisa
+        // calar naquela conversa — duas respostas para a mesma pergunta, uma da
+        // recepção e outra da IA, é pior do que não responder.
+        for (const lote of extrairEcos(payload.data)) {
+          const clinicId = await numeros.clinicaDoNumero(db, lote.phoneNumberId);
+          if (clinicId === undefined) continue;
+
+          for (const eco of lote.ecos) {
+            await withClinic(
+              clinicId,
+              async (trx) => {
+                const achado = await pacientes.acharOuCriarPorTelefone(
+                  trx,
+                  clinicId,
+                  eco.paraTelefone,
+                );
+                if (!achado.ok) return;
+
+                const conversa = await conversas.acharOuCriarPorPaciente(
+                  trx,
+                  clinicId,
+                  achado.paciente.id,
+                );
+
+                const { novo } = await conversas.registrar(trx, {
+                  conversaId: conversa.id,
+                  clinicId,
+                  direcao: 'saida',
+                  autor: 'humano',
+                  wamid: eco.wamid,
+                  ...(eco.texto === undefined ? {} : { corpo: eco.texto }),
+                });
+                if (!novo) return;
+
+                if (conversa.mode !== 'humano') {
+                  await conversas.definirModo(
+                    trx,
+                    conversa.id,
+                    'humano',
+                    'clínica respondeu pelo app do celular',
+                  );
+                }
+
+                req.log.info(
+                  { clinicId, conversaId: conversa.id },
+                  'eco da clínica: conversa passou para humano',
+                );
+              },
+              db,
+            );
+          }
         }
 
         for (const lote of extrair(payload.data)) {
