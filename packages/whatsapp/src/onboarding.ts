@@ -61,6 +61,27 @@ interface RespostaNumeros {
   error?: { message?: string };
 }
 
+/**
+ * Tira segredos de um texto que veio de fora antes de ele virar log ou linha de
+ * banco.
+ *
+ * A mensagem de erro do provedor é texto que NÓS não escrevemos. Se ela ecoar a
+ * requisição — e provedores ecoam — vem junto a URL com `client_secret`. Guardar
+ * essa mensagem crua em `last_error` colocaria o segredo do app no banco e no
+ * painel. Por isso nada que chega de fora é gravado sem passar por aqui.
+ */
+export function redigirSegredos(texto: string, segredos: string[]): string {
+  let limpo = texto;
+  for (const segredo of segredos) {
+    if (segredo.length > 0) limpo = limpo.split(segredo).join('[removido]');
+  }
+  // Também qualquer par chave=valor que pareça segredo, mesmo que o valor não
+  // esteja na lista (token de outra clínica, por exemplo). O `=` sai junto: com
+  // ele, um texto redigido ainda casaria com uma busca por "client_secret=", e a
+  // garantia viraria discutível.
+  return limpo.replace(/\b(client_secret|access_token|code)=[^&\s"']+/gi, '$1 [removido]');
+}
+
 export class OnboardingMeta {
   readonly #appId: string;
   readonly #appSecret: string;
@@ -78,6 +99,11 @@ export class OnboardingMeta {
 
   #url(caminho: string): string {
     return `${this.#base}/${this.#versao}/${caminho}`;
+  }
+
+  /** Nada que veio da Meta vira log ou linha de banco sem passar por aqui. */
+  #limpar(texto: string): string {
+    return redigirSegredos(texto, [this.#appSecret]);
   }
 
   /**
@@ -102,7 +128,7 @@ export class OnboardingMeta {
     const { corpo: cru } = await this.#json(url);
     const corpo = cru as RespostaToken;
     return corpo.access_token === undefined
-      ? { ok: false, detalhe: corpo.error?.message ?? 'resposta sem access_token' }
+      ? { ok: false, detalhe: this.#limpar(corpo.error?.message ?? 'resposta sem access_token') }
       : { ok: true, token: corpo.access_token };
   }
 
@@ -116,7 +142,7 @@ export class OnboardingMeta {
     const corpo = cru as { error?: { message?: string } };
     return status >= 200 && status < 300
       ? { ok: true, detalhe: 'assinado' }
-      : { ok: false, detalhe: corpo.error?.message ?? `http ${status}` };
+      : { ok: false, detalhe: this.#limpar(corpo.error?.message ?? `http ${status}`) };
   }
 
   /** Registra o número para a Cloud API, mantendo a coexistência com o app. */
@@ -133,7 +159,7 @@ export class OnboardingMeta {
     const corpo = cru as { error?: { message?: string } };
     return status >= 200 && status < 300
       ? { ok: true, detalhe: 'registrado' }
-      : { ok: false, detalhe: corpo.error?.message ?? `http ${status}` };
+      : { ok: false, detalhe: this.#limpar(corpo.error?.message ?? `http ${status}`) };
   }
 
   async descobrirWaba(token: string): Promise<string | undefined> {

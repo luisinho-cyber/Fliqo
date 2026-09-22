@@ -53,7 +53,8 @@ function metaFalsa(opcoes: { falharNa?: 'token' | 'assinatura' | 'registro' } = 
 
     if (url.includes('oauth/access_token')) {
       return opcoes.falharNa === 'token'
-        ? responder(400, { error: { message: 'código expirado' } })
+        ? // Provedor ecoando a requisição: é assim que o client_secret escaparia.
+          responder(400, { error: { message: `Invalid code. Request was: ${url}` } })
         : responder(200, { access_token: 'TOKEN-SECRETO-DA-CLINICA' });
     }
     if (url.includes('me/businesses')) return responder(200, { data: [{ id: 'WABA-123' }] });
@@ -67,7 +68,9 @@ function metaFalsa(opcoes: { falharNa?: 'token' | 'assinatura' | 'registro' } = 
     }
     if (url.includes('/register')) {
       return opcoes.falharNa === 'registro'
-        ? responder(400, { error: { message: 'PIN incorreto' } })
+        ? responder(400, {
+            error: { message: `PIN incorreto (client_secret=segredo-do-app usado em ${url})` },
+          })
         : responder(200, {});
     }
     return responder(404, {});
@@ -427,5 +430,70 @@ describe('o token nunca vai para o log', () => {
       expect(chamada.url).not.toContain('TOKEN-SECRETO-DA-CLINICA');
       expect(chamada.url).not.toContain('access_token=');
     }
+  });
+});
+
+describe('o client_secret nunca escapa', () => {
+  it('nem para o log nem para o banco, mesmo com a Meta ecoando a URL', async () => {
+    const linhas: string[] = [];
+    const fluxo = new Writable({
+      write(pedaco: Buffer, _cod, pronto) {
+        linhas.push(pedaco.toString('utf8'));
+        pronto();
+      },
+    });
+
+    // Caminho de erro na troca do código: é a chamada que leva o client_secret
+    // na URL, e a falsa devolve essa URL dentro da mensagem de erro.
+    await app?.close();
+    app = construirApp({
+      config,
+      db,
+      boss,
+      onboarding: metaFalsa({ falharNa: 'token' }).onboarding,
+      fluxoDeLog: fluxo,
+    });
+    await app.ready();
+    const r = await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+    expect(r.statusCode).toBe(502);
+
+    // E o caminho de erro no registro, que também ecoa.
+    await app.close();
+    app = construirApp({
+      config,
+      db,
+      boss,
+      onboarding: metaFalsa({ falharNa: 'registro' }).onboarding,
+      fluxoDeLog: fluxo,
+    });
+    await app.ready();
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    const log = linhas.join('\n');
+    expect(log.length).toBeGreaterThan(0);
+    expect(log).not.toContain('segredo-do-app');
+    expect(log).not.toContain('client_secret=');
+
+    // O que ficou gravado no banco também não pode ter o segredo.
+    const { rows } = await owner.query<{ detail: string | null }>(
+      'select detail from app.whatsapp_connection_events',
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const linha of rows) {
+      expect(linha.detail ?? '').not.toContain('segredo-do-app');
+      expect(linha.detail ?? '').not.toContain('client_secret=');
+      expect(linha.detail ?? '').not.toContain('code=');
+    }
+
+    // E a resposta ao painel também não.
+    expect(r.body).not.toContain('segredo-do-app');
   });
 });
