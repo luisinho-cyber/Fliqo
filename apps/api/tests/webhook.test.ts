@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { criarDb, withClinic, type Db } from '@fliqo/db';
-import { criarFila, FILA_CONVERSA, SCHEMA_FILA } from '@fliqo/db/fila';
+import { criarFila, FILA_BOTAO, FILA_CONVERSA, SCHEMA_FILA } from '@fliqo/db/fila';
 import {
   ownerPool,
   prepararFilaDeTeste,
@@ -343,6 +343,59 @@ describe('gravação e fila', () => {
       'wamid.RUIM',
     ]);
     expect(rows).toHaveLength(0);
+  });
+
+  it('resposta de botão vai para a fila do botão, não para a da IA', async () => {
+    const corpo = JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: PHONE_NUMBER_ID },
+                messages: [
+                  {
+                    id: 'wamid.BOTAO1',
+                    from: '5511966665555',
+                    type: 'interactive',
+                    interactive: { button_reply: { id: 'CONFIRMAR_CONSULTA' } },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const r = await postar(corpo, assinar(corpo));
+    expect(r.statusCode).toBe(200);
+
+    const { rows } = await owner.query<{ name: string; data: { payloadBotao?: string } }>(
+      `select name, data from ${SCHEMA_FILA}.job where data->>'payloadBotao' = 'CONFIRMAR_CONSULTA'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toBe(FILA_BOTAO);
+
+    // O payload do botão é o que fica gravado como corpo — é o que
+    // interpretarResposta() entende na volta.
+    const { rows: msgs } = await owner.query<{ body: string }>(
+      `select body from app.messages where wamid = 'wamid.BOTAO1'`,
+    );
+    expect(msgs[0]?.body).toBe('CONFIRMAR_CONSULTA');
+  });
+
+  it('mensagem de texto continua indo para a fila da conversa', async () => {
+    const corpo = eventoDeTexto('wamid.TEXTO1', '5511955556666', 'bom dia');
+    await postar(corpo, assinar(corpo));
+
+    const { rows } = await owner.query<{ name: string }>(
+      `select j.name from ${SCHEMA_FILA}.job j
+         join app.conversations cv on cv.id::text = j.singleton_key
+         join app.patients p on p.id = cv.patient_id
+        where p.phone_e164 = '+5511955556666'`,
+    );
+    expect(rows[0]?.name).toBe(FILA_CONVERSA);
   });
 
   it('responde em menos de 1 s', async () => {

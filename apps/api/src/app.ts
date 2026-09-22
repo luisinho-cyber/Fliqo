@@ -1,6 +1,6 @@
 import rateLimit from '@fastify/rate-limit';
 import { comoConexaoDoBoss, conversas, numeros, pacientes, withClinic, type Db } from '@fliqo/db';
-import { FILA_CONVERSA } from '@fliqo/db/fila';
+import { FILA_BOTAO, FILA_CONVERSA } from '@fliqo/db/fila';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { PgBoss } from 'pg-boss';
 import { assinaturaConfere } from './assinatura';
@@ -166,11 +166,26 @@ export function construirApp(dep: Dependencias): FastifyInstance {
                 await conversas.marcarEntrada(trx, conversa.id, new Date());
 
                 // Enfileira na MESMA transação: ou a mensagem e o job existem, ou nenhum dos dois.
-                await boss.send({
-                  name: FILA_CONVERSA,
-                  data: { conversationId: conversa.id, clinicId },
-                  options: { singletonKey: conversa.id, db: comoConexaoDoBoss(trx) },
-                });
+                // Botão tem payload fixo e efeito decidido por packages/core, sem IA.
+                // Fila própria para não interpretar texto onde não há texto.
+                if (m.payloadBotao !== undefined) {
+                  await boss.send({
+                    name: FILA_BOTAO,
+                    data: {
+                      clinicId,
+                      conversationId: conversa.id,
+                      pacienteId: paciente.id,
+                      payloadBotao: m.payloadBotao,
+                    },
+                    options: { db: comoConexaoDoBoss(trx) },
+                  });
+                } else {
+                  await boss.send({
+                    name: FILA_CONVERSA,
+                    data: { conversationId: conversa.id, clinicId },
+                    options: { singletonKey: conversa.id, db: comoConexaoDoBoss(trx) },
+                  });
+                }
 
                 req.log.info(
                   { clinicId, conversaId: conversa.id, telefone: mascarar(paciente.phone_e164) },
