@@ -1,0 +1,54 @@
+/*
+ * Tokens do DESIGN.md. Nenhuma cor solta em componente: tudo sai daqui.
+ * Âmbar é exclusivo de atraso. Vermelho é exclusivo de risco ou perda.
+ */
+:root {
+  --ground: #eef1f0;
+  --paper: #ffffff;
+  --ink: #0c1917;
+  --petrol: #0f4c5c;
+  --ok: #1f9e77;
+  --late: #d98100;
+  --risk: #c8453d;
+
+  --ink-suave: color-mix(in srgb, var(--ink) 62%, transparent);
+  --linha: color-mix(in srgb, var(--ink) 12%, transparent);
+  --linha-forte: color-mix(in srgb, var(--ink) 22%, transparent);
+
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 16px;
+
+  --e-1: 4px;
+  --e-2: 8px;
+  --e-3: 12px;
+  --e-4: 20px;
+  --e-5: 32px;
+  --e-6: 48px;
+
+  --titulo: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --texto: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'Spline Sans Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+:root[data-theme='dark'] {
+  --ground: #0b1211;
+  --paper: #121c1a;
+  --ink: #e7eeec;
+  --petrol: #5bb3c6;
+  --ok: #3fc79c;
+  --late: #f0a531;
+  --risk: #ee756c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ground: #0b1211;
+    --paper: #121c1a;
+    --ink: #e7eeec;
+    --petrol: #5bb3c6;
+    --ok: #3fc79c;
+    --late: #f0a531;
+    --risk: #ee756c;
+  }
+}

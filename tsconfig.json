@@ -17,5 +17,7 @@
     "packages/*/tests/**/*.ts",
     "apps/*/src/**/*.ts",
     "apps/*/tests/**/*.ts"
-  ]
+  ],
+  // A apps/demo tem tsconfig próprio (Next, JSX): fica fora do typecheck da raiz.
+  "exclude": ["node_modules", "apps/demo"]
 }

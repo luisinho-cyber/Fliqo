@@ -5,3 +5,8 @@ node_modules
 dist
 .next
 coverage
+out
+test-results
+playwright-report
+next-env.d.ts
+*.tsbuildinfo

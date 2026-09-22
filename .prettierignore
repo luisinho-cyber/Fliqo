@@ -2,6 +2,10 @@ node_modules
 dist
 .next
 coverage
+out
+test-results
+playwright-report
+next-env.d.ts
 package-lock.json
 
 # O CLAUDE.md fica de fora: o Prettier indenta em 2 espaços qualquer linha que
@@ -9,3 +13,10 @@ package-lock.json
 # continuação do último item — muda o que a regra diz. Formatação não pode
 # reescrever a regra do projeto.
 CLAUDE.md
+
+# Mesmo motivo do CLAUDE.md: o DESIGN.md é regra, não código, e a reindentação
+# do Prettier muda o alcance de uma regra escrita depois de uma lista.
+DESIGN.md
+
+# Referência do demo anterior, guardada como está. Não é compilada nem publicada.
+docs/referencia/

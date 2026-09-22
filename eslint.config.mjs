@@ -23,14 +23,24 @@ export default tseslint.config(
   {
     // docs/referencia/* é código do projeto anterior, guardado como referência de porte
     // (Fase 2 do roteiro). Não é compilado nem publicado, então não é lintado.
-    ignores: ['node_modules/**', 'dist/**', '.next/**', 'coverage/**', 'docs/**'],
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      '**/.next/**',
+      '**/out/**',
+      '**/test-results/**',
+      '**/playwright-report/**',
+      '**/next-env.d.ts',
+      'coverage/**',
+      'docs/**',
+    ],
   },
 
   // ------------------------------------------------------------------
   // TypeScript: strict com informação de tipo (typescript-eslint strict)
   // ------------------------------------------------------------------
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     extends: [js.configs.recommended, ...tseslint.configs.strictTypeChecked],
     languageOptions: {
       parserOptions: {
@@ -109,6 +119,20 @@ export default tseslint.config(
     // O migrador é uma ferramenta de linha de comando: a saída dele é o produto.
     files: ['packages/db/scripts/**'],
     rules: { 'no-console': 'off' },
+  },
+
+  {
+    // Scripts da demonstração: também são linha de comando, e um deles roda
+    // código dentro do navegador (document, window).
+    files: ['apps/demo/scripts/**'],
+    languageOptions: { globals: { document: 'readonly', window: 'readonly' } },
+    rules: { 'no-console': 'off' },
+  },
+
+  {
+    // A tela da demonstração é um app Next: os componentes rodam no navegador.
+    files: ['apps/demo/**/*.{ts,tsx}'],
+    languageOptions: { globals: { window: 'readonly', document: 'readonly' } },
   },
 
   // ------------------------------------------------------------------
