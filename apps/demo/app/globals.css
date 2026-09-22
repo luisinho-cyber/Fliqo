@@ -1,0 +1,707 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--texto);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--titulo);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- estrutura ---------- */
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  /* A barra do apresentador é fixa no rodapé: o conteúdo precisa caber acima dela. */
+  padding-bottom: 96px;
+}
+
+.topo {
+  display: flex;
+  align-items: center;
+  gap: var(--e-4);
+  padding: var(--e-3) var(--e-4);
+  background: var(--paper);
+  border-bottom: 1px solid var(--linha);
+  flex-wrap: wrap;
+}
+
+.marca {
+  font-family: var(--titulo);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.marca i {
+  color: var(--late);
+  font-style: normal;
+}
+
+/* Sem menu lateral: a navegação são abas no topo (DESIGN.md). */
+.abas {
+  display: flex;
+  gap: var(--e-1);
+  flex-wrap: wrap;
+}
+.aba {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  color: var(--ink-suave);
+  font-weight: 600;
+}
+.aba[aria-current='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.aba:hover:not([aria-current='true']) {
+  border-color: var(--linha-forte);
+  color: var(--ink);
+}
+
+.corpo {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--e-4);
+  padding: var(--e-4);
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.painel {
+  background: var(--paper);
+  border: 1px solid var(--linha);
+  border-radius: var(--r-3);
+  padding: var(--e-4);
+  min-width: 0;
+}
+
+.rodape {
+  padding: var(--e-3) var(--e-4) var(--e-6);
+  color: var(--ink-suave);
+  font-size: 13px;
+}
+
+/* ---------- manchete: uma frase, não cards (DESIGN.md) ---------- */
+.manchete {
+  font-family: var(--titulo);
+  font-weight: 700;
+  font-size: clamp(20px, 2.4vw, 30px);
+  letter-spacing: -0.03em;
+  margin-bottom: var(--e-3);
+  max-width: 46ch;
+}
+.manchete .n {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.manchete .risco {
+  color: var(--risk);
+}
+.manchete .ok {
+  color: var(--ok);
+}
+
+/* Faixa única com divisórias finas, nunca grade de cards. */
+.figs {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--linha);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  margin-bottom: var(--e-4);
+}
+.fig {
+  flex: 1 1 140px;
+  padding: var(--e-3) var(--e-4);
+  border-right: 1px solid var(--linha);
+}
+.fig:last-child {
+  border-right: 0;
+}
+.fig b {
+  display: block;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.fig span {
+  color: var(--ink-suave);
+  font-size: 13px;
+}
+
+/* ---------- linha do dia ---------- */
+.faixa {
+  margin-bottom: var(--e-4);
+}
+.faixa-cab {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--e-2);
+}
+.faixa-cab b {
+  font-family: var(--titulo);
+  letter-spacing: -0.02em;
+}
+.faixa-cab span {
+  color: var(--ink-suave);
+  font-size: 13px;
+}
+
+.trilho {
+  position: relative;
+  height: 76px;
+  border: 1px solid var(--linha);
+  border-radius: var(--r-2);
+  background: var(--paper);
+  overflow: hidden;
+}
+.hora {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--linha);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-suave);
+  padding-left: 3px;
+}
+
+.agora {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--late);
+  z-index: 3;
+}
+.agora::after {
+  content: attr(data-t);
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--late);
+  white-space: nowrap;
+}
+
+.bloco {
+  position: absolute;
+  text-align: left;
+  color: inherit;
+  top: 26px;
+  height: 34px;
+  border-radius: var(--r-1);
+  font-size: 11px;
+  padding: 3px 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1.5px solid var(--petrol);
+  background: color-mix(in srgb, var(--petrol) 14%, var(--paper));
+  transition: left 420ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  z-index: 2;
+}
+/* Status por forma e cor, nunca etiqueta colorida por estado (DESIGN.md). */
+.bloco.confirmado {
+  background: color-mix(in srgb, var(--ok) 18%, var(--paper));
+  border-color: var(--ok);
+}
+.bloco.aguardando {
+  background: var(--paper);
+  border-style: dashed;
+}
+.bloco.atrasado {
+  border-color: var(--late);
+  border-width: 2px;
+}
+.bloco.faltou {
+  border-color: var(--risk);
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--risk) 16%, var(--paper)) 0 6px,
+    var(--paper) 6px 12px
+  );
+}
+.bloco.atendendo {
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--petrol) 22%, var(--paper)) 0 8px,
+    color-mix(in srgb, var(--petrol) 10%, var(--paper)) 8px 16px
+  );
+  animation: anda 1.1s linear infinite;
+}
+@keyframes anda {
+  to {
+    background-position: 16px 0;
+  }
+}
+.bloco.sel {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* Contorno tracejado âmbar: onde a consulta deveria começar. */
+.fantasma {
+  position: absolute;
+  top: 26px;
+  height: 34px;
+  border: 1.5px dashed var(--late);
+  border-radius: var(--r-1);
+  opacity: 0.75;
+  z-index: 1;
+}
+.seta {
+  position: absolute;
+  top: 43px;
+  height: 1.5px;
+  background: var(--late);
+  z-index: 1;
+}
+.seta::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  border-left: 5px solid var(--late);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+/* Horário livre: hachurado em petróleo. */
+.livre {
+  position: absolute;
+  top: 26px;
+  height: 34px;
+  border: 1.5px dashed var(--petrol);
+  border-radius: var(--r-1);
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--petrol) 12%, transparent) 0 5px,
+    transparent 5px 10px
+  );
+  font-size: 10px;
+  color: var(--petrol);
+  padding: 3px 5px;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bloco,
+  .bloco.atendendo {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* ---------- decisões pendentes ---------- */
+.decisoes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.decisao {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: var(--e-3);
+  align-items: start;
+  padding: var(--e-3) 0;
+  border-top: 1px solid var(--linha);
+}
+.decisao:first-child {
+  border-top: 0;
+}
+/* Glifo por severidade: quadrado = risco, círculo = atraso, losango = resolvido. */
+.glifo {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+}
+.glifo.risk {
+  background: var(--risk);
+}
+.glifo.late {
+  background: var(--late);
+  border-radius: 50%;
+}
+.glifo.ok {
+  background: var(--ok);
+  transform: rotate(45deg);
+}
+.glifo.info {
+  background: var(--petrol);
+  transform: rotate(45deg);
+}
+.decisao b {
+  display: block;
+  font-weight: 700;
+}
+.decisao p {
+  margin: 2px 0 0;
+  color: var(--ink-suave);
+  font-size: 13px;
+}
+.acao {
+  border: 1px solid var(--linha-forte);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- canal do paciente ---------- */
+.celular {
+  background: var(--ink);
+  border-radius: 26px;
+  padding: 10px;
+  position: sticky;
+  top: var(--e-4);
+}
+@media (max-width: 1100px) {
+  .celular {
+    position: static;
+  }
+}
+.tela {
+  background: var(--paper);
+  border-radius: 18px;
+  height: min(540px, calc(100vh - 250px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tela-topo {
+  padding: var(--e-3);
+  border-bottom: 1px solid var(--linha);
+}
+.tela-topo b {
+  display: block;
+  font-size: 14px;
+}
+.tela-topo span {
+  color: var(--ink-suave);
+  font-size: 12px;
+}
+.msgs {
+  flex: 1;
+  /* Sem min-height: 0 o item flex não encolhe abaixo do conteúdo e os botões
+     da mensagem escapam da tela do celular. */
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--e-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--e-2);
+}
+.msg {
+  max-width: 85%;
+  padding: 7px 11px;
+  border-radius: 12px;
+  font-size: 13px;
+  white-space: pre-line;
+}
+.msg.clinica {
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--ink) 7%, var(--paper));
+  border: 1px solid var(--linha);
+}
+.msg.paciente {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--ok) 16%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.msg .h {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-suave);
+  margin-top: 3px;
+}
+.msg.sistema {
+  align-self: center;
+  background: none;
+  border: 0;
+  color: var(--ink-suave);
+  font-size: 12px;
+}
+.botoes {
+  padding: var(--e-2) var(--e-3) var(--e-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--linha);
+}
+.botao-msg {
+  border: 1px solid var(--linha-forte);
+  background: var(--paper);
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--petrol);
+}
+
+/* ---------- tabelas ---------- */
+/* No celular a tabela rola sozinha em vez de esticar a página inteira. */
+.tabela {
+  overflow-x: auto;
+  margin-top: var(--e-3);
+}
+.tabela table {
+  min-width: 460px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-suave);
+  font-weight: 700;
+  padding: 0 var(--e-4) var(--e-2) 0;
+  border-bottom: 1px solid var(--linha);
+}
+td {
+  padding: var(--e-2) var(--e-4) var(--e-2) 0;
+  border-bottom: 1px solid var(--linha);
+}
+th:last-child,
+td:last-child {
+  padding-right: 0;
+}
+td.num,
+th.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.etq {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.etq.ok {
+  color: var(--ok);
+}
+.etq.late {
+  color: var(--late);
+}
+.etq.risk {
+  color: var(--risk);
+}
+.etq.petrol {
+  color: var(--petrol);
+}
+
+/* ---------- caixa: marcado × esperado ---------- */
+.grafico {
+  width: 100%;
+  height: 220px;
+}
+.legenda {
+  display: flex;
+  gap: var(--e-4);
+  font-size: 13px;
+  color: var(--ink-suave);
+  margin-top: var(--e-2);
+}
+.legenda i {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 2px solid var(--petrol);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.legenda i.trac {
+  border-top-style: dashed;
+  border-color: var(--ink-suave);
+}
+
+.campo {
+  display: block;
+  margin-bottom: var(--e-3);
+}
+.campo span {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-suave);
+  margin-bottom: 3px;
+}
+.campo input {
+  font: inherit;
+  font-family: var(--mono);
+  padding: 8px 10px;
+  border: 1px solid var(--linha-forte);
+  border-radius: var(--r-1);
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+}
+
+/* ---------- barra do apresentador ---------- */
+.apresentador {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 10px 16px;
+  max-width: min(92vw, 860px);
+  z-index: 50;
+}
+/* Em tela larga a barra encosta à esquerda: centralizada, ela cobriria o celular
+   do paciente, que é onde a demonstração acontece. */
+@media (min-width: 1101px) {
+  .apresentador {
+    left: var(--e-4);
+    transform: none;
+  }
+}
+.apresentador.escondida {
+  display: none;
+}
+.apresentador .conta {
+  font-family: var(--mono);
+  font-size: 12px;
+  opacity: 0.7;
+}
+.apresentador .texto {
+  font-size: 13px;
+  min-width: 0;
+}
+.apresentador .texto strong {
+  display: block;
+  font-family: var(--titulo);
+  letter-spacing: -0.02em;
+}
+.apresentador .texto span {
+  opacity: 0.75;
+}
+.pontos {
+  display: flex;
+  gap: 5px;
+}
+.pontos button {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 0;
+  background: color-mix(in srgb, var(--paper) 30%, transparent);
+  padding: 0;
+}
+.pontos button.on {
+  background: var(--late);
+}
+.pontos button.feita {
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+}
+.p-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--paper);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.p-btn.sec {
+  background: color-mix(in srgb, var(--paper) 18%, transparent);
+  color: var(--paper);
+}
+.kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.6;
+  margin-left: 6px;
+}
+
+@media (max-width: 720px) {
+  .app {
+    padding-bottom: 104px;
+  }
+  /* No celular a barra vira só o controle: a narração da cena ocuparia meia tela. */
+  .apresentador .texto {
+    display: none;
+  }
+  .apresentador {
+    bottom: 10px;
+    padding: 8px 12px;
+    gap: var(--e-2);
+  }
+  .corpo {
+    padding: var(--e-3);
+  }
+}
+
+.aviso-tela {
+  /* Só avisa: nunca rouba um toque de quem está apresentando. */
+  pointer-events: none;
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  z-index: 60;
+}

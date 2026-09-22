@@ -41,3 +41,25 @@ jobs:
       - run: npm run lint
 
       - run: npm test
+
+  demonstracao:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A apps/demo tem tsconfig próprio (Next), fora do typecheck da raiz.
+      - run: npm run typecheck:demo
+
+      - run: npm run build:demo
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run e2e:demo
