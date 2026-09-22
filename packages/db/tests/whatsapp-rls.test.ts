@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { criarDb, type Db } from '../src/conexao';
@@ -252,5 +253,70 @@ describe('propriedades da função security definer', () => {
 
     expect(rows[0]?.publico).toBe(false);
     expect(rows[0]?.app).toBe(true);
+  });
+});
+
+describe('app.requeue_stuck_actions (0004)', () => {
+  it('é security definer, devolve só um número e tem search_path fixo', async () => {
+    const { rows } = await owner.query<{
+      security_definer: boolean;
+      retorno: string;
+      config: string[] | null;
+    }>(
+      `select p.prosecdef as security_definer,
+              pg_get_function_result(p.oid) as retorno,
+              p.proconfig as config
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'app' and p.proname = 'requeue_stuck_actions'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.security_definer).toBe(true);
+    // Contagem, não linhas: nenhuma linha de nenhuma clínica atravessa a fronteira.
+    expect(rows[0]?.retorno).toBe('integer');
+    expect(rows[0]?.config ?? []).toContain('search_path=app, pg_temp');
+  });
+
+  it('execute revogado de public, concedido a fliqo_app', async () => {
+    const { rows } = await owner.query<{ publico: boolean; app: boolean }>(
+      `select has_function_privilege('public', p.oid, 'execute') as publico,
+              has_function_privilege('fliqo_app', p.oid, 'execute') as app
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'app' and p.proname = 'requeue_stuck_actions'`,
+    );
+    expect(rows[0]?.publico).toBe(false);
+    expect(rows[0]?.app).toBe(true);
+  });
+
+  it('sem a função, um update direto não alcançaria a linha (é por isso que ela existe)', async () => {
+    const { rows: consulta } = await owner.query<{ id: string }>(
+      `insert into app.appointments
+         (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
+       values ($1,$2,$3,$4, now() + interval '30 hours', now() + interval '31 hours', 25000)
+       returning id`,
+      [c.clinicA, c.profA, c.patients[0], c.procEletivo],
+    );
+    expect(consulta).toHaveLength(1);
+    await owner.query(
+      `update app.scheduled_actions
+          set status = 'executando', due_at = now() - interval '10 minutes'
+        where kind = 'confirmacao'`,
+    );
+
+    // Update direto, sem clínica na transação: a RLS não deixa ver a linha.
+    const direto = await db
+      .updateTable('app.scheduled_actions')
+      .set({ status: 'pendente' })
+      .where('status', '=', 'executando')
+      .executeTakeFirst();
+    expect(Number(direto.numUpdatedRows)).toBe(0);
+
+    // Pela função security definer, alcança.
+    const pelaFuncao = await db
+      .selectNoFrom(({ fn }) => fn<number>('app.requeue_stuck_actions', [sql.lit(5)]).as('n'))
+      .executeTakeFirstOrThrow();
+    expect(pelaFuncao.n).toBe(1);
+
+    await owner.query('delete from app.scheduled_actions');
+    await owner.query('delete from app.appointments');
   });
 });

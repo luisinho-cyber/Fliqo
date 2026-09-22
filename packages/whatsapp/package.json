@@ -1,0 +1,11 @@
+{
+  "name": "@fliqo/whatsapp",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@fliqo/core": "*"
+  }
+}

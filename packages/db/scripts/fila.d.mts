@@ -2,6 +2,7 @@ import type { PgBoss } from 'pg-boss';
 
 export declare const SCHEMA_FILA: string;
 export declare const FILA_CONVERSA: string;
+export declare const FILA_BOTAO: string;
 
 /** Instância de pg-boss configurada só para enfileirar. */
 export declare function criarFila(connectionString: string): PgBoss;
