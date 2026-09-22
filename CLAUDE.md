@@ -52,6 +52,8 @@ Antes de dizer que uma tarefa terminou: typecheck e testes passando. Sem exceç�
 - Diffs pequenos. Uma tarefa = um assunto.
 
 ## Interface (apps/web)
+Toda interface segue o DESIGN.md.
+
 - Design tokens em um arquivo (cores, espaçamento, raio, tipografia). Nenhuma cor solta em componente.
 - Paleta sóbria de clínica: fundo claro, um acento só. Proibido: gradiente roxo/azul genérico, emoji como ícone, sombra pesada em tudo, texto "Lorem ipsum", botões com 5 estilos diferentes.
 - Toda tela tem estado vazio, carregando e erro escritos à mão, em português natural.
