@@ -15,6 +15,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { PgBoss } from 'pg-boss';
+import { falhar } from './segredos.mjs';
 
 export const SCHEMA_FILA = 'pgboss';
 export const FILA_CONVERSA = 'conversa';
@@ -25,18 +26,33 @@ export const FILA_BOTAO = 'botao';
 // pode ser um sleep segurando o worker (nem a transação) por 45 segundos.
 export const FILA_RESPOSTA = 'resposta';
 
-/** Instância só para enfileirar: não supervisiona nem roda agendamentos. */
+/**
+ * Instância de runtime (API e worker): enfileira e consome, e só.
+ *
+ * `migrate: false` porque quem roda é `fliqo_app`, que não tem direito de criar
+ * nem alterar schema. Sem isso, uma atualização do pg-boss faria a API tentar
+ * migrar o schema da fila no start e morrer com erro de permissão. Com isso, ela
+ * confere a versão e reclama que falta rodar as migrações — que é a verdade.
+ */
 export function criarFila(connectionString) {
   return new PgBoss({
     connectionString,
     schema: SCHEMA_FILA,
     supervise: false,
     schedule: false,
+    migrate: false,
   });
 }
 
 export async function prepararFila(connectionString) {
-  const boss = criarFila(connectionString);
+  // Esta é a única instância que pode mexer no schema, e roda com a conexão de
+  // dono, no passo de migração — nunca no start da aplicação.
+  const boss = new PgBoss({
+    connectionString,
+    schema: SCHEMA_FILA,
+    supervise: false,
+    schedule: false,
+  });
   await boss.start();
   try {
     await boss.createQueue(FILA_CONVERSA, { policy: 'stately' });
@@ -58,7 +74,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const filas = await prepararFila(url);
     console.log(`fila pronta: ${filas.join(', ')}`);
   } catch (erro) {
-    console.error(`falhou: ${erro.message}`);
-    process.exit(1);
+    falhar(erro, [url]);
   }
 }

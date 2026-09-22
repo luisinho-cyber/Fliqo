@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { falhar } from './segredos.mjs';
 
 // Um número qualquer, fixo: o que importa é que todo migrador use o mesmo.
 const LOCK_ID = 8472013;
@@ -111,7 +112,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         : `pronto — ${aplicadas.length} aplicada(s), ${puladas.length} já estava(m) no banco`,
     );
   } catch (erro) {
-    console.error(`falhou: ${erro.message}`);
-    process.exit(1);
+    falhar(erro, [url]);
   }
 }
