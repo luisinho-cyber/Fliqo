@@ -18,6 +18,9 @@ import { PgBoss } from 'pg-boss';
 
 export const SCHEMA_FILA = 'pgboss';
 export const FILA_CONVERSA = 'conversa';
+// Resposta de botão tem payload fixo e efeito decidido por packages/core. Fila
+// própria para nunca cair no agente de IA, que interpretaria texto onde não há.
+export const FILA_BOTAO = 'botao';
 
 /** Instância só para enfileirar: não supervisiona nem roda agendamentos. */
 export function criarFila(connectionString) {
@@ -34,10 +37,11 @@ export async function prepararFila(connectionString) {
   await boss.start();
   try {
     await boss.createQueue(FILA_CONVERSA, { policy: 'stately' });
+    await boss.createQueue(FILA_BOTAO, { policy: 'standard' });
   } finally {
     await boss.stop();
   }
-  return [FILA_CONVERSA];
+  return [FILA_CONVERSA, FILA_BOTAO];
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
