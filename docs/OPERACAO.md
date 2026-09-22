@@ -11,9 +11,15 @@ Nenhum segredo fica no banco nem no repositório. Todos vêm do ambiente:
 | `WHATSAPP_APP_SECRET`            | validar a assinatura do webhook da Meta           | api         |
 | `WHATSAPP_VERIFY_TOKEN`          | verificação do webhook na Meta                    | api         |
 | `META_APP_ID`, `META_APP_SECRET` | trocar o código do Embedded Signup por token      | api         |
-| `WHATSAPP_TOKEN_KEY`             | cifrar o token de cada clínica (32 bytes, base64) | api, worker |
+| `WHATSAPP_TOKEN_KEY`             | cifrar o token de cada clínica (32 bytes, base64) | api         |
 | `SUPABASE_JWT_SECRET`            | verificar o token do painel                       | api         |
 | `ANTHROPIC_API_KEY`              | chamar o modelo da Assistente Fliqo               | worker      |
+| `FLIQO_APP_PASSWORD`             | senha do papel `fliqo_app`, no script do papel    | scripts     |
+
+O worker só precisa de `WHATSAPP_TOKEN_KEY` para rodar a rotação de chave
+(abaixo); em operação normal, quem cifra e decifra token é a API.
+
+Como colocar cada uma dessas no ar está em [DEPLOY.md](DEPLOY.md).
 
 Além dos segredos, o worker lê `ANTHROPIC_MODEL` (padrão `claude-haiku-4-5`).
 Trocar de modelo é mudar essa variável e reiniciar o worker — não mexe em código

@@ -39,7 +39,8 @@ Antes de dizer que uma tarefa terminou: typecheck e testes passando. Sem exceç�
 7. **Uma conversa, um processamento por vez.** Duas mensagens seguidas do mesmo paciente não podem gerar duas respostas paralelas (lock por `conversation_id`). Mensagens que chegam em sequência rápida (até 8 s) são respondidas juntas.
 8. **Migrações são só de acréscimo.** Depois de aplicada em produção, uma migração nunca é editada; crie `000N_*.sql`.
 9. **Comportamento novo = teste novo.** Regra de negócio em `core` com teste unitário; regra de banco com teste em `packages/db/tests`.
-10. **Nunca reescrever histórico de branch com PR aberto sem perguntar.** `reset --hard`, `push --force` (ou `--force-with-lease`) e `rebase` numa branch que tem PR aberto apagam o trabalho que está em revisão. Pergunte antes, sempre. Em branch sem PR, siga normalmente.
+10. **O Supabase é Postgres e Auth, nada mais.** A Data API está desligada e as tabelas não são expostas automaticamente. Nada de `supabase-js` para ler ou gravar dado: o painel fala só com a nossa API, que é quem abre `withClinic` e passa pela RLS. Do Supabase usamos a conexão do banco e o token do Auth (`SUPABASE_JWT_SECRET`).
+11. **Nunca reescrever histórico de branch com PR aberto sem perguntar.** `reset --hard`, `push --force` (ou `--force-with-lease`) e `rebase` numa branch que tem PR aberto apagam o trabalho que está em revisão. Pergunte antes, sempre. Em branch sem PR, siga normalmente.
 
 ## Estilo de código (o que separa isto de "vibe coding")
 - TypeScript estrito (ver tsconfig). Proibido `any`, `as unknown as`, `@ts-ignore`, `!` sem motivo óbvio.
