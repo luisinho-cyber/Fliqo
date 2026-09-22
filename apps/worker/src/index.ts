@@ -1,16 +1,23 @@
+import { ClienteAnthropic } from '@fliqo/ai';
 import { criarDb, withClinic } from '@fliqo/db';
-import { criarFila, FILA_BOTAO } from '@fliqo/db/fila';
+import { criarFila, FILA_BOTAO, FILA_CONVERSA, FILA_RESPOSTA } from '@fliqo/db/fila';
 import { ClienteMeta } from '@fliqo/whatsapp';
 import pino from 'pino';
 import { rodarUmaVez } from './acoes';
 import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
+import { atenderConversa } from './conversa';
+import { enviarBalao, type BalaoDaResposta } from './resposta';
 
 const config = lerConfigWorker();
 const log = pino({ level: config.LOG_LEVEL });
 const db = criarDb(config.DATABASE_URL);
 const boss = criarFila(config.DATABASE_URL);
 const whatsapp = new ClienteMeta({ token: config.WHATSAPP_TOKEN });
+const llm = new ClienteAnthropic({
+  apiKey: config.ANTHROPIC_API_KEY,
+  modelo: config.ANTHROPIC_MODEL,
+});
 
 await boss.start();
 
@@ -28,6 +35,27 @@ await boss.work<{
     db,
   );
   log.info({ clinicId, resultado: r }, 'resposta de botão tratada');
+});
+
+// A Assistente Fliqo. A fila 'conversa' é `stately` com singletonKey no
+// conversation_id: duas mensagens seguidas do mesmo paciente não viram duas
+// respostas paralelas (CLAUDE.md, regra 7).
+await boss.work<{ clinicId: string; conversationId: string }>(FILA_CONVERSA, async ([job]) => {
+  if (!job) return;
+  const { clinicId, conversationId } = job.data;
+  const r = await atenderConversa(
+    { db, boss, llm, whatsapp },
+    { clinicId, conversaId: conversationId },
+  );
+  log.info({ clinicId, conversaId: conversationId, ...r }, 'conversa processada');
+});
+
+// Cada balão da resposta, no horário que planejarEnvio decidiu.
+await boss.work<BalaoDaResposta>(FILA_RESPOSTA, async ([job]) => {
+  if (!job) return;
+  const balao = job.data;
+  const r = await withClinic(balao.clinicId, (trx) => enviarBalao(trx, whatsapp, balao), db);
+  if (!r.ok) log.info({ clinicId: balao.clinicId, motivo: r.motivo }, 'balão não saiu');
 });
 
 let rodando = true;

@@ -14,13 +14,72 @@
   "atendimento": {
     "horarioHumano": "segunda a sexta, 8h às 19h; sábado, 8h às 12h",
     "iaForaDoExpediente": true,
-    "respondeAudioComAudio": true
+    "respondeAudioComAudio": true,
+    "expediente": [
+      {
+        "diaDaSemana": 1,
+        "de": "08:00",
+        "ate": "12:00"
+      },
+      {
+        "diaDaSemana": 1,
+        "de": "13:00",
+        "ate": "19:00"
+      },
+      {
+        "diaDaSemana": 2,
+        "de": "08:00",
+        "ate": "12:00"
+      },
+      {
+        "diaDaSemana": 2,
+        "de": "13:00",
+        "ate": "19:00"
+      },
+      {
+        "diaDaSemana": 3,
+        "de": "08:00",
+        "ate": "12:00"
+      },
+      {
+        "diaDaSemana": 3,
+        "de": "13:00",
+        "ate": "19:00"
+      },
+      {
+        "diaDaSemana": 4,
+        "de": "08:00",
+        "ate": "12:00"
+      },
+      {
+        "diaDaSemana": 4,
+        "de": "13:00",
+        "ate": "19:00"
+      },
+      {
+        "diaDaSemana": 5,
+        "de": "08:00",
+        "ate": "12:00"
+      },
+      {
+        "diaDaSemana": 5,
+        "de": "13:00",
+        "ate": "19:00"
+      },
+      {
+        "diaDaSemana": 6,
+        "de": "08:00",
+        "ate": "12:00"
+      }
+    ],
+    "antecedenciaMinimaMin": 120
   },
   "politicas": {
     "cancelamento": "Pedimos aviso com 24 horas de antecedência para liberar o horário a outro paciente.",
     "formasDePagamento": ["Pix", "cartão de débito", "cartão de crédito em até 6x"],
     "convenios": [],
-    "primeiraConsulta": "A avaliação inicial leva 30 minutos e é abatida do valor do tratamento."
+    "primeiraConsulta": "A avaliação inicial leva 30 minutos e é abatida do valor do tratamento.",
+    "precoNoWhatsapp": true
   },
   "faq": [
     {

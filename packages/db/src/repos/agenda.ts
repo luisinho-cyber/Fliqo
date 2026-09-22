@@ -163,6 +163,24 @@ export async function listarPorPeriodo(
   return q.execute();
 }
 
+/** As próximas consultas do paciente. É o que a IA pode ler para ele. */
+export async function proximasDoPaciente(
+  trx: Trx,
+  pacienteId: string,
+  apartirDe: Date,
+  limite = 10,
+): Promise<Consulta[]> {
+  return trx
+    .selectFrom('app.appointments')
+    .selectAll()
+    .where('patient_id', '=', pacienteId)
+    .where('status', 'in', ['agendado', 'confirmado', 'em_risco'] satisfies StatusConsulta[])
+    .where('starts_at', '>=', apartirDe)
+    .orderBy('starts_at')
+    .limit(limite)
+    .execute();
+}
+
 /** Consultas que ainda ocupam a agenda do profissional — base para calcular horários livres. */
 export async function ocupadosDoProfissional(
   trx: Trx,

@@ -40,6 +40,13 @@ export const RESPOSTA_EMERGENCIA =
   'Pelo que você descreveu, procure atendimento de emergência agora: ligue 192 (SAMU) ou vá ao pronto-socorro mais próximo. ' +
   'Já avisei a equipe da clínica para entrar em contato com você.';
 
+/**
+ * Resposta quando a conversa vai para a equipe sem ser emergência. Silêncio depois
+ * de "quero falar com uma pessoa" é o que faz o paciente ligar irritado.
+ */
+export const RESPOSTA_TRANSFERENCIA =
+  'Já avisei a equipe da clínica, alguém vai falar com você por aqui daqui a pouco.';
+
 export type ChecagemSaida = { ok: true; texto: string } | { ok: false; motivo: string };
 
 /**

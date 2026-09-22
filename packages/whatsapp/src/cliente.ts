@@ -8,6 +8,18 @@ import { PAYLOAD_BOTOES } from '@fliqo/core';
 export interface ClienteWhatsApp {
   enviarTemplate(p: EnvioDeTemplate): Promise<ResultadoEnvio>;
   enviarTexto(p: EnvioDeTexto): Promise<ResultadoEnvio>;
+  /**
+   * Liga o "digitando…" no celular do paciente. A Meta exige o id da mensagem
+   * que está sendo respondida. É enfeite: falhar aqui não pode impedir a
+   * resposta de sair, então devolve void em vez de ResultadoEnvio.
+   */
+  marcarDigitando(p: EnvioDeDigitando): Promise<void>;
+}
+
+export interface EnvioDeDigitando {
+  phoneNumberId: string;
+  /** wamid da última mensagem do paciente. */
+  wamidRecebido: string;
 }
 
 export interface EnvioDeTemplate {

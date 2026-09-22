@@ -21,6 +21,9 @@ export const FILA_CONVERSA = 'conversa';
 // Resposta de botão tem payload fixo e efeito decidido por packages/core. Fila
 // própria para nunca cair no agente de IA, que interpretaria texto onde não há.
 export const FILA_BOTAO = 'botao';
+// Cada balão da resposta é um job atrasado: o ritmo humano de planejarEnvio não
+// pode ser um sleep segurando o worker (nem a transação) por 45 segundos.
+export const FILA_RESPOSTA = 'resposta';
 
 /** Instância só para enfileirar: não supervisiona nem roda agendamentos. */
 export function criarFila(connectionString) {
@@ -38,10 +41,11 @@ export async function prepararFila(connectionString) {
   try {
     await boss.createQueue(FILA_CONVERSA, { policy: 'stately' });
     await boss.createQueue(FILA_BOTAO, { policy: 'standard' });
+    await boss.createQueue(FILA_RESPOSTA, { policy: 'standard' });
   } finally {
     await boss.stop();
   }
-  return [FILA_CONVERSA, FILA_BOTAO];
+  return [FILA_CONVERSA, FILA_BOTAO, FILA_RESPOSTA];
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import type { Db } from '../conexao';
+import type { Trx } from '../withClinic';
 
 /**
  * Traduz o phone_number_id do webhook para a clínica.
@@ -16,4 +17,17 @@ export async function clinicaDoNumero(db: Db, phoneNumberId: string): Promise<st
     select app.clinic_by_phone_number_id(${phoneNumberId}) as clinic_id
   `.execute(db);
   return r.rows[0]?.clinic_id ?? undefined;
+}
+
+/**
+ * O número de onde a clínica manda mensagem. Ao contrário de clinicaDoNumero,
+ * este roda dentro de withClinic: a RLS já sabe de quem é a linha.
+ */
+export async function ativoDaClinica(trx: Trx): Promise<string | undefined> {
+  const linha = await trx
+    .selectFrom('app.whatsapp_numbers')
+    .select(['phone_number_id'])
+    .where('active', '=', true)
+    .executeTakeFirst();
+  return linha?.phone_number_id;
 }
