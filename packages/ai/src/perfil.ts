@@ -8,26 +8,26 @@ import { z } from 'zod';
 export const PerfilClinicaSchema = z.object({
   clinica: z.object({
     nome: z.string().min(2),
-    especialidade: z.string().min(2),               // 'odontologia e harmonização facial'
+    especialidade: z.string().min(2), // 'odontologia e harmonização facial'
     endereco: z.string().min(5),
-    comoChegar: z.string().optional(),              // estacionamento, ponto de referência
+    comoChegar: z.string().optional(), // estacionamento, ponto de referência
   }),
   persona: z.object({
-    nome: z.string().min(2).max(30),                // 'Juliana'
+    nome: z.string().min(2).max(30), // 'Juliana'
     tratamento: z.enum(['voce', 'senhor_senhora']), // como chama o paciente
     tom: z.enum(['acolhedor', 'profissional', 'descontraido']),
     usaEmoji: z.boolean().default(false),
   }),
   atendimento: z.object({
-    horarioHumano: z.string(),                      // 'seg a sex, 8h às 19h; sáb 8h às 12h'
-    iaForaDoExpediente: z.boolean().default(true),  // responde de madrugada?
+    horarioHumano: z.string(), // 'seg a sex, 8h às 19h; sáb 8h às 12h'
+    iaForaDoExpediente: z.boolean().default(true), // responde de madrugada?
     respondeAudioComAudio: z.boolean().default(false),
   }),
   politicas: z.object({
-    cancelamento: z.string(),                       // 'avisar com 24h; falta sem aviso cobra 50% na próxima'
+    cancelamento: z.string(), // 'avisar com 24h; falta sem aviso cobra 50% na próxima'
     formasDePagamento: z.array(z.string()).min(1),
-    convenios: z.array(z.string()).default([]),     // vazio = só particular
-    primeiraConsulta: z.string().optional(),        // 'avaliação gratuita de 30 min'
+    convenios: z.array(z.string()).default([]), // vazio = só particular
+    primeiraConsulta: z.string().optional(), // 'avaliação gratuita de 30 min'
   }),
   faq: z
     .array(z.object({ pergunta: z.string().min(3), resposta: z.string().min(3) }))

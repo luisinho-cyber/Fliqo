@@ -70,15 +70,24 @@ describe('agenda: sem conflito de horário', () => {
     const t = inHours(48);
     const id = await asClinic(app, s.clinicA, (c) => book(c, s.patients[0]!, t));
     await asClinic(app, s.clinicA, (c) =>
-      c.query(`update app.appointments set status = 'cancelado', cancelled_at = now() where id = $1`, [id]),
+      c.query(
+        `update app.appointments set status = 'cancelado', cancelled_at = now() where id = $1`,
+        [id],
+      ),
     );
-    await expect(asClinic(app, s.clinicA, (c) => book(c, s.patients[1]!, t))).resolves.toBeTypeOf('string');
+    await expect(asClinic(app, s.clinicA, (c) => book(c, s.patients[1]!, t))).resolves.toBeTypeOf(
+      'string',
+    );
   });
 });
 
 describe('RLS: isolamento entre clínicas', () => {
   it('clínica B não enxerga pacientes da clínica A', async () => {
-    const rows = await asClinic(app, s.clinicB, async (c) => (await c.query('select id from app.patients')).rows);
+    const rows = await asClinic(
+      app,
+      s.clinicB,
+      async (c) => (await c.query('select id from app.patients')).rows,
+    );
     expect(rows.map((r) => r.id)).toEqual([s.patientB]);
   });
 
@@ -95,9 +104,10 @@ describe('RLS: isolamento entre clínicas', () => {
   it('não deixa gravar linha em nome de outra clínica', async () => {
     await expect(
       asClinic(app, s.clinicB, (c) =>
-        c.query(`insert into app.patients (clinic_id, name, phone_e164) values ($1, 'Intruso', '+5511900000000')`, [
-          s.clinicA,
-        ]),
+        c.query(
+          `insert into app.patients (clinic_id, name, phone_e164) values ($1, 'Intruso', '+5511900000000')`,
+          [s.clinicA],
+        ),
       ),
     ).rejects.toMatchObject({ code: '42501' });
   });
@@ -126,7 +136,11 @@ describe('régua de confirmação automática', () => {
     const id = await asClinic(app, s.clinicA, (c) => book(c, s.patients[0]!, inHours(48)));
     const novo = inHours(72);
     await asClinic(app, s.clinicA, (c) =>
-      c.query(`update app.appointments set starts_at = $2, ends_at = $3 where id = $1`, [id, novo, plusMinutes(novo, 60)]),
+      c.query(`update app.appointments set starts_at = $2, ends_at = $3 where id = $1`, [
+        id,
+        novo,
+        plusMinutes(novo, 60),
+      ]),
     );
     const acts = await kinds(id);
     expect(acts).toHaveLength(3);
@@ -136,7 +150,10 @@ describe('régua de confirmação automática', () => {
   it('confirmou -> sobra só o lembrete final', async () => {
     const id = await asClinic(app, s.clinicA, (c) => book(c, s.patients[0]!, inHours(48)));
     await asClinic(app, s.clinicA, (c) =>
-      c.query(`update app.appointments set status = 'confirmado', confirmed_at = now() where id = $1`, [id]),
+      c.query(
+        `update app.appointments set status = 'confirmado', confirmed_at = now() where id = $1`,
+        [id],
+      ),
     );
     expect((await kinds(id)).map((a) => a.kind)).toEqual(['lembrete_final']);
   });
@@ -152,7 +169,8 @@ describe('régua de confirmação automática', () => {
        select $1, 'confirmacao', now() - interval '1 minute' from generate_series(1, 20)`,
       [s.clinicA],
     );
-    const claim = () => app.query('select id from app.claim_due_actions(15)').then((r) => r.rows.map((x) => x.id));
+    const claim = () =>
+      app.query('select id from app.claim_due_actions(15)').then((r) => r.rows.map((x) => x.id));
     const [a, b] = await Promise.all([claim(), claim()]);
     const all = [...a, ...b];
     expect(new Set(all).size).toBe(all.length);
@@ -161,7 +179,13 @@ describe('régua de confirmação automática', () => {
 });
 
 describe('lista de espera', () => {
-  async function wait(patient: string, procedure: string, prio: number, createdMinutesAgo: number, days = 7) {
+  async function wait(
+    patient: string,
+    procedure: string,
+    prio: number,
+    createdMinutesAgo: number,
+    days = 7,
+  ) {
     const r = await owner.query(
       `insert into app.waitlist_entries
          (clinic_id, patient_id, procedure_id, window_start, window_end, priority_level, created_at)
@@ -178,8 +202,13 @@ describe('lista de espera', () => {
     const urgente = await wait(s.patients[2]!, s.procUrgente, 0, 5); // prioridade vem do procedimento
     const t = inHours(30);
     const ranked = await asClinic(app, s.clinicA, async (c) =>
-      (await c.query(`select id from app.rank_waitlist(app.clinic_id(), $1, $2, $3, 10)`, [s.profA, t, plusMinutes(t, 60)]))
-        .rows.map((r) => r.id),
+      (
+        await c.query(`select id from app.rank_waitlist(app.clinic_id(), $1, $2, $3, 10)`, [
+          s.profA,
+          t,
+          plusMinutes(t, 60),
+        ])
+      ).rows.map((r) => r.id),
     );
     expect(ranked).toEqual([urgente, antigo, novo]);
   });
@@ -187,9 +216,17 @@ describe('lista de espera', () => {
   it('não oferece procedimento que não cabe na vaga', async () => {
     await wait(s.patients[0]!, s.procLongo, 3, 100); // 120 min numa vaga de 60
     const t = inHours(30);
-    const ranked = await asClinic(app, s.clinicA, async (c) =>
-      (await c.query(`select id from app.rank_waitlist(app.clinic_id(), $1, $2, $3, 10)`, [s.profA, t, plusMinutes(t, 60)]))
-        .rows,
+    const ranked = await asClinic(
+      app,
+      s.clinicA,
+      async (c) =>
+        (
+          await c.query(`select id from app.rank_waitlist(app.clinic_id(), $1, $2, $3, 10)`, [
+            s.profA,
+            t,
+            plusMinutes(t, 60),
+          ])
+        ).rows,
     );
     expect(ranked).toHaveLength(0);
   });
@@ -209,7 +246,11 @@ describe('lista de espera', () => {
     const [o1, o2] = [await offer(e1), await offer(e2)];
 
     const claim = (o: string) =>
-      asClinic(app, s.clinicA, async (c) => (await c.query('select app.claim_slot_offer($1) as id', [o])).rows[0].id);
+      asClinic(
+        app,
+        s.clinicA,
+        async (c) => (await c.query('select app.claim_slot_offer($1) as id', [o])).rows[0].id,
+      );
     const results = await Promise.all([claim(o1), claim(o2)]);
 
     expect(results.filter(Boolean)).toHaveLength(1);
@@ -218,7 +259,9 @@ describe('lista de espera', () => {
       [t],
     );
     expect(booked.rows[0].n).toBe(1);
-    const statuses = (await owner.query(`select status from app.slot_offers order by status`)).rows.map((r) => r.status);
+    const statuses = (
+      await owner.query(`select status from app.slot_offers order by status`)
+    ).rows.map((r) => r.status);
     expect(statuses).toEqual(['aceita', 'preenchida_por_outro']);
   });
 
@@ -232,7 +275,11 @@ describe('lista de espera', () => {
         [s.clinicA, e1, s.profA, t, plusMinutes(t, 60)],
       )
     ).rows[0].id;
-    const r = await asClinic(app, s.clinicA, async (c) => (await c.query('select app.claim_slot_offer($1) as id', [o])).rows[0].id);
+    const r = await asClinic(
+      app,
+      s.clinicA,
+      async (c) => (await c.query('select app.claim_slot_offer($1) as id', [o])).rows[0].id,
+    );
     expect(r).toBeNull();
   });
 });

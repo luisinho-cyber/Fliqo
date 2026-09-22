@@ -40,7 +40,9 @@ describe('duração real e pontualidade', () => {
     const duracoes = [70, 75, 72, 80, 68, 75, 78, 73]; // agenda diz 60
     for (const [i, d] of duracoes.entries()) await realizado(i + 1, 0, d);
     const r = await asClinic(app, s.clinicA, (c) =>
-      c.query('select sample_size, median_minutes, scheduled_minutes from app.procedure_real_durations'),
+      c.query(
+        'select sample_size, median_minutes, scheduled_minutes from app.procedure_real_durations',
+      ),
     );
     expect(r.rows).toEqual([{ sample_size: 8, median_minutes: 74, scheduled_minutes: 60 }]);
   });
@@ -58,14 +60,18 @@ describe('duração real e pontualidade', () => {
     await at('2026-03-10 09:00-03', '2026-03-10 09:00-03', 0);
     await at('2026-03-10 11:00-03', '2026-03-10 11:30-03', 1);
     const r = await asClinic(app, s.clinicA, (c) =>
-      c.query('select sum(appointments)::int as n, sum(on_time)::int as ok, max(avg_delay_minutes) as atraso from app.professional_punctuality'),
+      c.query(
+        'select sum(appointments)::int as n, sum(on_time)::int as ok, max(avg_delay_minutes) as atraso from app.professional_punctuality',
+      ),
     );
     expect(r.rows[0]).toEqual({ n: 2, ok: 1, atraso: 15 });
   });
 
   it('outra clínica não enxerga as estatísticas', async () => {
     await realizado(1, 0, 70);
-    const r = await asClinic(app, s.clinicB, (c) => c.query('select * from app.procedure_real_durations'));
+    const r = await asClinic(app, s.clinicB, (c) =>
+      c.query('select * from app.procedure_real_durations'),
+    );
     expect(r.rows).toHaveLength(0);
   });
 
@@ -84,9 +90,14 @@ describe('duração real e pontualidade', () => {
     await realizado(1, 0, 60);
     const appt = (await owner.query('select id from app.appointments limit 1')).rows[0].id;
     await asClinic(app, s.clinicA, (c) =>
-      c.query(`insert into app.delay_notices (clinic_id, appointment_id, channel, delay_minutes) values (app.clinic_id(), $1, 'whatsapp', 20)`, [appt]),
+      c.query(
+        `insert into app.delay_notices (clinic_id, appointment_id, channel, delay_minutes) values (app.clinic_id(), $1, 'whatsapp', 20)`,
+        [appt],
+      ),
     );
-    const r = await asClinic(app, s.clinicA, (c) => c.query('select delay_minutes from app.delay_notices'));
+    const r = await asClinic(app, s.clinicA, (c) =>
+      c.query('select delay_minutes from app.delay_notices'),
+    );
     expect(r.rows).toEqual([{ delay_minutes: 20 }]);
   });
 });
