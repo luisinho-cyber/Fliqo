@@ -1,1 +1,5 @@
-{ "name": "@fliqo/web", "private": true, "type": "module" }
+{
+  "name": "@fliqo/web",
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conectar WhatsApp — Fliqo</title>
+    <!--
+      Página do Embedded Signup. É HTML e JS puros de propósito: o SDK do Facebook
+      roda no navegador e não precisa de framework, e a Fase 6 (painel em Next.js)
+      absorve este arquivo sem retrabalho.
+
+      O código que a Meta devolve aqui NÃO é o token. Ele só vira token no
+      servidor, que é o único lugar com o segredo do app.
+    -->
+    <style>
+      :root {
+        --fundo: #f7f8f7;
+        --superficie: #ffffff;
+        --borda: #dfe3e0;
+        --texto: #1c2320;
+        --suave: #5d6b64;
+        --acento: #0f7b5f;
+        --alerta: #9a3412;
+        --raio: 10px;
+      }
+      body {
+        margin: 0;
+        padding: 32px 16px;
+        background: var(--fundo);
+        color: var(--texto);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        max-width: 560px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      p.sub {
+        color: var(--suave);
+        margin: 0 0 24px;
+      }
+      .cartao {
+        background: var(--superficie);
+        border: 1px solid var(--borda);
+        border-radius: var(--raio);
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 11px 18px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: var(--acento);
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secundario {
+        background: var(--superficie);
+        color: var(--texto);
+        border-color: var(--borda);
+      }
+      button[disabled] {
+        opacity: 0.55;
+        cursor: default;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 16px;
+        margin: 0;
+      }
+      dt {
+        color: var(--suave);
+      }
+      dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .etiqueta {
+        display: inline-block;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .conectado {
+        background: #e3f3ec;
+        color: var(--acento);
+      }
+      .pendente,
+      .desconectado {
+        background: #eceeed;
+        color: var(--suave);
+      }
+      .erro {
+        background: #fdeceb;
+        color: var(--alerta);
+      }
+      .aviso {
+        color: var(--alerta);
+        margin-top: 12px;
+      }
+      label {
+        display: block;
+        margin: 14px 0 6px;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      input {
+        font: inherit;
+        padding: 9px 11px;
+        border: 1px solid var(--borda);
+        border-radius: 8px;
+        width: 140px;
+        letter-spacing: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>WhatsApp da clínica</h1>
+      <p class="sub">
+        Ligue o número que a clínica já usa. Você continua atendendo pelo aplicativo no celular —
+        quando você responde por lá, a atendente automática para de responder naquela conversa.
+      </p>
+
+      <section class="cartao" id="cartao-status" hidden>
+        <dl>
+          <dt>Situação</dt>
+          <dd><span id="status" class="etiqueta"></span></dd>
+          <dt>Número</dt>
+          <dd id="numero">—</dd>
+          <dt>Ligado em</dt>
+          <dd id="desde">—</dd>
+        </dl>
+        <p class="aviso" id="ultimo-erro" hidden></p>
+      </section>
+
+      <section class="cartao">
+        <label for="pin">PIN de 6 dígitos do número</label>
+        <input id="pin" inputmode="numeric" maxlength="6" placeholder="000000" />
+        <p class="sub" style="font-size: 14px; margin: 8px 0 16px">
+          É o PIN de verificação em duas etapas do WhatsApp da clínica. Se você não tem um, escolha
+          um agora e guarde.
+        </p>
+        <button id="conectar">Conectar WhatsApp</button>
+        <button id="reconectar" class="secundario" hidden>Reconectar</button>
+        <p class="aviso" id="mensagem" hidden></p>
+      </section>
+
+      <p class="sub" style="font-size: 14px">
+        Não trazemos as conversas antigas do aplicativo. Só as mensagens a partir de agora aparecem
+        aqui.
+      </p>
+    </main>
+
+    <script>
+      // Preenchidos pelo painel ao servir a página.
+      const CONFIG = window.FLIQO_CONFIG ?? {
+        metaAppId: '',
+        configId: '',
+        clinicaId: '',
+        token: '',
+        api: '',
+      };
+
+      const $ = (id) => document.getElementById(id);
+      const rotulos = {
+        conectado: 'Conectado',
+        pendente: 'Ainda não conectado',
+        erro: 'Com problema',
+        desconectado: 'Desconectado',
+      };
+
+      function mostrar(texto) {
+        $('mensagem').textContent = texto;
+        $('mensagem').hidden = !texto;
+      }
+
+      async function carregarStatus() {
+        const r = await fetch(`${CONFIG.api}/api/whatsapp/status`, {
+          headers: { authorization: `Bearer ${CONFIG.token}`, 'x-clinica': CONFIG.clinicaId },
+        });
+        if (!r.ok) return;
+        const { conexao } = await r.json();
+        if (!conexao) return;
+
+        $('cartao-status').hidden = false;
+        $('status').textContent = rotulos[conexao.status] ?? conexao.status;
+        $('status').className = `etiqueta ${conexao.status}`;
+        $('numero').textContent = conexao.telefoneExibicao ?? conexao.phoneNumberId;
+        $('desde').textContent = conexao.conectadoEm
+          ? new Date(conexao.conectadoEm).toLocaleString('pt-BR')
+          : '—';
+        $('ultimo-erro').textContent = conexao.ultimoErro ?? '';
+        $('ultimo-erro').hidden = !conexao.ultimoErro;
+        // Quem já conectou uma vez vê "reconectar" em vez de "conectar".
+        $('reconectar').hidden = conexao.status === 'pendente';
+        $('conectar').hidden = conexao.status !== 'pendente';
+      }
+
+      function pinValido() {
+        const pin = $('pin').value.trim();
+        if (!/^\d{6}$/.test(pin)) {
+          mostrar('O PIN precisa ter exatamente 6 dígitos.');
+          return null;
+        }
+        return pin;
+      }
+
+      /** Abre o Embedded Signup e devolve o código que a Meta entrega ao navegador. */
+      function abrirEmbeddedSignup() {
+        return new Promise((resolve, reject) => {
+          if (typeof FB === 'undefined') {
+            reject(new Error('O SDK do Facebook não carregou. Recarregue a página.'));
+            return;
+          }
+          FB.login(
+            (resposta) => {
+              const codigo = resposta?.authResponse?.code;
+              codigo ? resolve(codigo) : reject(new Error('Conexão cancelada.'));
+            },
+            {
+              config_id: CONFIG.configId,
+              response_type: 'code',
+              override_default_response_type: true,
+              // Coexistência: a clínica segue usando o app do celular no mesmo número.
+              extras: { featureType: 'whatsapp_business_app_onboarding' },
+            },
+          );
+        });
+      }
+
+      async function conectar(caminho) {
+        const pin = pinValido();
+        if (!pin) return;
+
+        $('conectar').disabled = true;
+        $('reconectar').disabled = true;
+        mostrar('');
+
+        try {
+          const codigo = await abrirEmbeddedSignup();
+          const r = await fetch(`${CONFIG.api}${caminho}`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${CONFIG.token}`,
+              'x-clinica': CONFIG.clinicaId,
+            },
+            // O código vai para o servidor; o token nunca passa por aqui.
+            body: JSON.stringify({ codigo, pin, coexistencia: true }),
+          });
+          if (!r.ok) {
+            const { erro } = await r.json().catch(() => ({ erro: 'falhou' }));
+            mostrar(`Não consegui conectar: ${erro}`);
+            return;
+          }
+          await carregarStatus();
+          mostrar('');
+        } catch (e) {
+          mostrar(e.message);
+        } finally {
+          $('conectar').disabled = false;
+          $('reconectar').disabled = false;
+        }
+      }
+
+      $('conectar').addEventListener('click', () => conectar('/api/whatsapp/conectar'));
+      $('reconectar').addEventListener('click', () => conectar('/api/whatsapp/reconectar'));
+
+      window.fbAsyncInit = function () {
+        FB.init({ appId: CONFIG.metaAppId, cookie: true, xfbml: true, version: 'v21.0' });
+      };
+
+      carregarStatus();
+    </script>
+    <script
+      async
+      defer
+      crossorigin="anonymous"
+      src="https://connect.facebook.net/pt_BR/sdk.js"
+    ></script>
+  </body>
+</html>

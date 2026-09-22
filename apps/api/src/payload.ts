@@ -19,12 +19,26 @@ const MensagemMeta = z.object({
     .optional(),
 });
 
+/**
+ * Echo: mensagem que a clínica mandou pelo app do WhatsApp Business no celular.
+ * O campo é `smb_message_echoes` (coexistência), e o array dentro do value é
+ * `message_echoes` — nomes diferentes, fácil de trocar um pelo outro.
+ */
+const EchoMeta = z.object({
+  id: z.string(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  type: z.string().optional(),
+  text: z.object({ body: z.string() }).optional(),
+});
+
 const MudancaMeta = z.object({
   field: z.string().optional(),
   value: z
     .object({
       metadata: z.object({ phone_number_id: z.string() }).optional(),
       messages: z.array(MensagemMeta).optional(),
+      message_echoes: z.array(EchoMeta).optional(),
     })
     .optional(),
 });
@@ -50,6 +64,18 @@ export interface LoteRecebido {
   mensagens: MensagemRecebida[];
 }
 
+/** Mensagem que a clínica mandou pelo celular. `paraTelefone` é o paciente. */
+export interface EcoDaClinica {
+  wamid: string;
+  paraTelefone: string;
+  texto?: string;
+}
+
+export interface LoteDeEcos {
+  phoneNumberId: string;
+  ecos: EcoDaClinica[];
+}
+
 const MIDIA: Record<string, 'audio' | 'imagem' | 'documento' | undefined> = {
   audio: 'audio',
   voice: 'audio',
@@ -60,6 +86,37 @@ const MIDIA: Record<string, 'audio' | 'imagem' | 'documento' | undefined> = {
 /** Resposta de botão chega com id/payload fixo: sem IA, sem interpretar texto. */
 function botao(m: z.infer<typeof MensagemMeta>): string | undefined {
   return m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? m.button?.payload;
+}
+
+/**
+ * Ecos da coexistência: o que a clínica respondeu pelo app do celular.
+ *
+ * Só o que chega em `smb_message_echoes`. O campo `history` não é assinado (ver
+ * CAMPOS_DE_WEBHOOK em packages/whatsapp), então conversa antiga não entra aqui.
+ */
+export function extrairEcos(payload: PayloadWebhook): LoteDeEcos[] {
+  const lotes: LoteDeEcos[] = [];
+
+  for (const entrada of payload.entry ?? []) {
+    for (const mudanca of entrada.changes ?? []) {
+      if (mudanca.field !== 'smb_message_echoes') continue;
+      const phoneNumberId = mudanca.value?.metadata?.phone_number_id;
+      const brutos = mudanca.value?.message_echoes ?? [];
+      if (phoneNumberId === undefined || brutos.length === 0) continue;
+
+      const ecos = brutos
+        .filter((e) => e.to !== undefined)
+        .map((e) => ({
+          wamid: e.id,
+          paraTelefone: e.to as string,
+          ...(e.text?.body === undefined ? {} : { texto: e.text.body }),
+        }));
+
+      if (ecos.length > 0) lotes.push({ phoneNumberId, ecos });
+    }
+  }
+
+  return lotes;
 }
 
 /** Extrai os lotes por número. Eventos de status (entregue/lido) não viram nada. */
