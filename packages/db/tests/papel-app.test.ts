@@ -1,7 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { criarFila, FILA_CONVERSA, SCHEMA_FILA } from '../scripts/fila.mjs';
-import { definirPapelDaAplicacao, PAPEL } from '../scripts/papel-app.mjs';
+import {
+  conferirAtributos,
+  definirPapelDaAplicacao,
+  PAPEL,
+  SQL_COMANDO_DE_SENHA,
+} from '../scripts/papel-app.mjs';
 import { ownerPool, prepararFilaDeTeste, resetDatabase } from '../src/testing';
 
 /**
@@ -14,6 +21,13 @@ import { ownerPool, prepararFilaDeTeste, resetDatabase } from '../src/testing';
 const ADMIN_URL = process.env.DATABASE_ADMIN_URL ?? 'postgresql://postgres@localhost:5432/postgres';
 const SENHA = 'senha-de-teste-do-fliqo-app-1234';
 const TEST_DB = 'fliqo_test';
+
+/**
+ * Um papel igual ao `postgres` do Supabase: cria papéis, mas NÃO é superusuário.
+ * É com ele que o workflow de migração roda de verdade.
+ */
+const PAPEL_TIPO_SUPABASE = 'fliqo_como_supabase';
+const SENHA_TIPO_SUPABASE = 'senha-do-papel-tipo-supabase';
 
 let owner: pg.Pool;
 let clinicaA: string;
@@ -45,6 +59,13 @@ beforeAll(async () => {
   );
   clinicaA = rows[0]!.id;
   clinicaB = rows[1]!.id;
+
+  await owner.query(`drop role if exists ${PAPEL_TIPO_SUPABASE}`);
+  await owner.query(
+    `create role ${PAPEL_TIPO_SUPABASE} login createrole password '${SENHA_TIPO_SUPABASE}'`,
+  );
+  await owner.query(`grant ${PAPEL} to ${PAPEL_TIPO_SUPABASE} with admin option`);
+
   await definirPapelDaAplicacao(ADMIN_URL, SENHA);
 }, 90_000);
 
@@ -55,7 +76,47 @@ afterAll(async () => {
   const c = new pg.Client({ connectionString: ADMIN_URL });
   await c.connect();
   await c.query(`alter role ${PAPEL} with nologin`);
+  await c.query(`drop role if exists ${PAPEL_TIPO_SUPABASE}`);
   await c.end();
+});
+
+describe('atributos que exigem superusuário', () => {
+  // No Postgres, definir OU negar superuser, bypassrls e replication é privilégio
+  // de superusuário. O `postgres` do Supabase não é um, e mandar NOSUPERUSER
+  // derrubava o script inteiro com "permission denied to alter role".
+  const PROIBIDOS = /\bno(superuser|bypassrls|replication)\b/i;
+
+  it('o comando de senha não pede nenhum deles', () => {
+    expect(SQL_COMANDO_DE_SENHA).not.toMatch(PROIBIDOS);
+  });
+
+  it('nenhum lugar do script pede nenhum deles', () => {
+    // Pega também um create role ou um alter role novo escondido em outro ponto.
+    const fonte = readFileSync(
+      fileURLToPath(new URL('../scripts/papel-app.mjs', import.meta.url)),
+      'utf8',
+    );
+    const comandos = fonte
+      .split('\n')
+      .filter(
+        (linha) => /alter role|create role/i.test(linha) && !linha.trimStart().startsWith('*'),
+      );
+    expect(comandos.length).toBeGreaterThan(0);
+    for (const comando of comandos) expect(comando).not.toMatch(PROIBIDOS);
+  });
+
+  it('roda com um papel que cria papéis mas não é superusuário', async () => {
+    // O teste que reproduz a falha de verdade: com os atributos de volta, este
+    // é o que quebra, com a mesma mensagem que apareceu no workflow.
+    const url = new URL(ADMIN_URL);
+    url.pathname = `/${TEST_DB}`;
+    url.username = PAPEL_TIPO_SUPABASE;
+    url.password = SENHA_TIPO_SUPABASE;
+
+    await expect(definirPapelDaAplicacao(url.toString(), SENHA)).resolves.toEqual({
+      criado: false,
+    });
+  });
 });
 
 describe('papel da aplicação', () => {
@@ -87,6 +148,23 @@ describe('papel da aplicação', () => {
     });
     expect(visiveis).toEqual([clinicaA]);
     expect(visiveis).not.toContain(clinicaB);
+  });
+
+  it('para quando o papel tem bypassrls, já que não pode mais tirar sozinho', async () => {
+    // Sem superusuário não dá para negar o atributo. Conferir e parar é honesto;
+    // seguir em frente deixaria a separação entre clínicas virar enfeite.
+    const c = new pg.Client({ connectionString: ADMIN_URL });
+    await c.connect();
+    try {
+      await c.query(`alter role ${PAPEL} with bypassrls`);
+      await expect(conferirAtributos(c)).rejects.toThrow('bypassrls');
+    } finally {
+      // O atributo é do cluster, não do banco de teste: desfazer no finally
+      // impede que uma falha aqui envenene todos os testes seguintes.
+      await c.query(`alter role ${PAPEL} with nobypassrls`);
+      await c.end();
+    }
+    await comoAplicacao((cliente) => cliente.query('select 1'));
   });
 
   it('não é dono do schema: não consegue desligar a RLS', async () => {
