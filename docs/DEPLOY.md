@@ -107,24 +107,40 @@ já está na main.
 ### 3.3 — Conferir se deu certo
 
 A execução aparece na lista em alguns segundos. Clique nela e abra o job
-`migrar`. Deu certo quando os quatro passos estão com visto verde e:
+`migrar`. Antes de cada tentativa de conexão, o log traz uma linha de
+diagnóstico assim:
 
-- **Aplicar migrações e preparar a fila** mostra `conectando pelo pooler em
-aws-…` e termina com `pronto — N aplicada(s)` (ou `nada a fazer` se já estavam
-  todas);
+```
+conexão: host=aws-0-sa-east-1.pooler.supabase.com porta=5432 usuario=postgres.abcdefgh — normalização aplicada: a conexão direta é IPv6 e não chega do GitHub Actions (tentativa 1 de 2)
+```
+
+Ela diz tudo o que você precisa para entender uma falha: para onde foi, com que
+usuário, e se a string que você colou foi convertida ou usada como veio. Host,
+porta e usuário não são segredo. A senha e a string inteira nunca aparecem, nem
+quando dá erro.
+
+Deu certo quando os quatro passos estão com visto verde e:
+
+- **Aplicar migrações e preparar a fila** termina com `pronto — N aplicada(s)`
+  (ou `nada a fazer` se já estavam todas);
 - **Dar senha e atributos ao papel da aplicação** termina com
   `senha do papel fliqo_app definida`.
 
-A linha `conectando pelo pooler em …` é o host que o workflow escolheu. É a única
-coisa da conexão que aparece no log — usuário e senha nunca saem.
+### Quando dá errado, leia por esta tabela
 
-Se nenhum host responder, o erro diz quais foram tentados. Aí é hora de conferir
-a região do projeto no Supabase e cadastrar a variável `SUPABASE_REGION`. Se a
-mensagem falar em senha (`password authentication failed`), o host estava certo e
-o problema é a senha dentro do secret.
+| O que aparece no log                  | O que é                                         | O que fazer                                                          |
+| ------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| `respondeu e recusou a senha`         | o host está certo, a senha dentro do secret não | troque o secret `DATABASE_ADMIN_URL` com a senha certa do banco      |
+| `nenhum host do pooler respondeu`     | a região não bate com a do projeto              | confira a região no Supabase e cadastre a variável `SUPABASE_REGION` |
+| `não deu para achar o ref do projeto` | a string colada não é do Supabase               | copie de novo em **Connect**, no painel do projeto                   |
+| `normalização pulada`                 | a string não aponta para o Supabase             | idem acima: o secret está com a string errada                        |
 
-Se der errado, a mensagem de erro aparece nesse mesmo lugar — e ela sai limpa:
-os scripts tiram senha e string de conexão de qualquer coisa que vá para o log.
+> **Cuidado com uma pegadinha:** quando a senha está errada, a mensagem do
+> Postgres diz `password authentication failed for user "postgres"` — com
+> `postgres` sozinho, sem o ref. Isso **não** quer dizer que a conexão usou o
+> usuário errado. O pooler conecta como `postgres.<ref>` e, do outro lado, o
+> papel do banco chama-se `postgres`; a mensagem vem de lá. A linha de
+> diagnóstico acima mostra o usuário que foi realmente usado.
 
 **Rode este workflow antes de cada deploy que traga migração nova.** Rodar sem
 precisar não faz mal: migração aplicada não é reaplicada, e o passo do papel
