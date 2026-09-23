@@ -123,7 +123,7 @@ Deu certo quando os quatro passos estão com visto verde e:
 
 - **Aplicar migrações e preparar a fila** termina com `pronto — N aplicada(s)`
   (ou `nada a fazer` se já estavam todas);
-- **Dar senha e atributos ao papel da aplicação** termina com
+- **Dar senha ao papel da aplicação** termina com
   `senha do papel fliqo_app definida`.
 
 ### Quando dá errado, leia por esta tabela
@@ -131,6 +131,7 @@ Deu certo quando os quatro passos estão com visto verde e:
 | O que aparece no log                  | O que é                                         | O que fazer                                                          |
 | ------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
 | `respondeu e recusou a senha`         | o host está certo, a senha dentro do secret não | troque o secret `DATABASE_ADMIN_URL` com a senha certa do banco      |
+| `permission denied to alter role`     | o script pediu algo que exige superusuário      | é bug nosso: me avise, com a linha do log                            |
 | `nenhum host do pooler respondeu`     | a região não bate com a do projeto              | confira a região no Supabase e cadastre a variável `SUPABASE_REGION` |
 | `não deu para achar o ref do projeto` | a string colada não é do Supabase               | copie de novo em **Connect**, no painel do projeto                   |
 | `normalização pulada`                 | a string não aponta para o Supabase             | idem acima: o secret está com a string errada                        |
@@ -144,7 +145,13 @@ Deu certo quando os quatro passos estão com visto verde e:
 
 **Rode este workflow antes de cada deploy que traga migração nova.** Rodar sem
 precisar não faz mal: migração aplicada não é reaplicada, e o passo do papel
-apenas confirma a senha e os atributos que já estão lá.
+apenas redefine a mesma senha.
+
+> **Sobre o papel `fliqo_app`:** ele nasce sem `superuser` e sem `bypassrls` —
+> são os padrões do Postgres. O script confere os dois toda vez e para se algum
+> estiver ligado, porque removê-los exige superusuário, que o `postgres` do
+> Supabase não é. Se isso acontecer, fale com o suporte do Supabase: um papel com
+> `bypassrls` enxerga todas as clínicas de uma vez.
 
 ## Passo 4 — Montar o `DATABASE_URL` da aplicação
 

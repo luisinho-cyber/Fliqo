@@ -42,9 +42,10 @@ jobs:
           SUPABASE_REGION: ${{ vars.SUPABASE_REGION }}
         run: npm run db:migrate
 
-      # Idempotente: roda junto toda vez e, de quebra, devolve o papel da
-      # aplicação ao estado certo (sem bypassrls, sem criar schema).
-      - name: Dar senha e atributos ao papel da aplicação
+      # Idempotente: roda junto toda vez. Só LOGIN e senha — negar superuser ou
+      # bypassrls exige superusuário, que o `postgres` do Supabase não é. O que
+      # o script faz é CONFERIR esses atributos e parar se algum estiver ligado.
+      - name: Dar senha ao papel da aplicação
         env:
           DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
           FLIQO_APP_PASSWORD: ${{ secrets.FLIQO_APP_PASSWORD }}
