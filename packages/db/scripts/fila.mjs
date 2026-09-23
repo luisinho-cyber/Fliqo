@@ -15,6 +15,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { PgBoss } from 'pg-boss';
+import { adminUrlDoAmbiente } from './pooler.mjs';
 import { falhar } from './segredos.mjs';
 
 export const SCHEMA_FILA = 'pgboss';
@@ -65,11 +66,7 @@ export async function prepararFila(connectionString) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const url = process.env.DATABASE_ADMIN_URL;
-  if (!url) {
-    console.error('DATABASE_ADMIN_URL não definida — a fila é criada com a conexão de dono.');
-    process.exit(1);
-  }
+  const url = await adminUrlDoAmbiente();
   try {
     const filas = await prepararFila(url);
     console.log(`fila pronta: ${filas.join(', ')}`);

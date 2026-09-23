@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { adminUrlDoAmbiente } from './pooler.mjs';
 import { falhar } from './segredos.mjs';
 
 // Um número qualquer, fixo: o que importa é que todo migrador use o mesmo.
@@ -96,14 +97,7 @@ export async function migrar(connectionString) {
 
 // Só executa quando chamado pela linha de comando; importado (pelo teste), só exporta.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const url = process.env.DATABASE_ADMIN_URL;
-  if (!url) {
-    console.error(
-      'DATABASE_ADMIN_URL não definida. Suba o banco com `docker compose up -d` e exporte:\n' +
-        '  export DATABASE_ADMIN_URL=postgresql://postgres:postgres@localhost:5432/postgres',
-    );
-    process.exit(1);
-  }
+  const url = await adminUrlDoAmbiente();
   try {
     const { aplicadas, puladas } = await migrar(url);
     console.log(
