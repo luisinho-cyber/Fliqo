@@ -15,6 +15,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { adminUrlDoAmbiente } from './pooler.mjs';
 import { falhar } from './segredos.mjs';
 
 export const PAPEL = 'fliqo_app';
@@ -58,19 +59,15 @@ export async function definirPapelDaAplicacao(adminUrl, senha) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const url = process.env.DATABASE_ADMIN_URL;
   const senha = process.env.FLIQO_APP_PASSWORD;
-  if (!url) {
-    console.error('DATABASE_ADMIN_URL não definida — o papel é criado com a conexão de dono.');
-    process.exit(1);
-  }
   if (!senha) {
     console.error(
-      'FLIQO_APP_PASSWORD não definida. Gere uma e guarde no gerenciador de senhas:\n' +
-        '  openssl rand -base64 24',
+      'FLIQO_APP_PASSWORD não definida. Gere uma no gerenciador de senhas (30 caracteres) e\n' +
+        'cadastre como secret do repositório — veja docs/DEPLOY.md, passo 2.',
     );
     process.exit(1);
   }
+  const url = await adminUrlDoAmbiente();
   try {
     const { criado } = await definirPapelDaAplicacao(url, senha);
     console.log(

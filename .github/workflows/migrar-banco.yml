@@ -29,11 +29,17 @@ jobs:
       - run: npm ci
 
       # Os secrets entram só aqui, como variável de ambiente do passo. Nenhum
-      # comando imprime o valor, e os scripts limpam o que for para a saída
-      # (packages/db/scripts/segredos.mjs).
+      # comando imprime o valor: os scripts contam só o host do pooler que
+      # responderam e limpam o resto (packages/db/scripts/segredos.mjs).
+      #
+      # A string do secret pode ser qualquer uma das três do Supabase (Direct,
+      # Session pooler ou Transaction pooler): os scripts tiram dela o ref do
+      # projeto e descobrem sozinhos o host do Session pooler, que é o que a
+      # migração precisa (packages/db/scripts/pooler.mjs).
       - name: Aplicar migrações e preparar a fila
         env:
           DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+          SUPABASE_REGION: ${{ vars.SUPABASE_REGION }}
         run: npm run db:migrate
 
       # Idempotente: roda junto toda vez e, de quebra, devolve o papel da
@@ -42,4 +48,5 @@ jobs:
         env:
           DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
           FLIQO_APP_PASSWORD: ${{ secrets.FLIQO_APP_PASSWORD }}
+          SUPABASE_REGION: ${{ vars.SUPABASE_REGION }}
         run: npm run db:papel-app

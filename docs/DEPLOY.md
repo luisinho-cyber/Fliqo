@@ -29,7 +29,9 @@ clínicas valer: como `fliqo_app`, toda consulta passa pela RLS.
 No projeto `fliqo-staging`, clique em **Connect**, no topo da página. Vão
 aparecer três opções. Você vai copiar duas:
 
-- **Session pooler** — é a conexão do dono, a que roda as migrações.
+- **qualquer uma das três** (Direct connection, Session pooler ou Transaction
+  pooler) — é a conexão do dono, a que roda as migrações. Tanto faz qual: o
+  workflow descobre sozinho por onde conectar.
 - **Transaction pooler** — é a conexão da aplicação, a da API e do worker.
 
 Cole as duas num rascunho do gerenciador de senhas por enquanto. Nas duas,
@@ -37,16 +39,17 @@ Cole as duas num rascunho do gerenciador de senhas por enquanto. Nas duas,
 projeto. Se não lembrar dela: **Project Settings > Database > Reset database
 password**.
 
-> **Por que não a "Direct connection"?** Porque ela é IPv6, e as máquinas do
-> GitHub Actions não falam IPv6 — a migração simplesmente não conseguiria
-> conectar. A Session pooler é a mesma conexão por IPv4.
+> **Por que tanto faz, para a migração?** Porque o que o workflow precisa da
+> string é só o identificador do projeto (aquele pedaço de letras e números que
+> aparece no host ou no usuário) e a senha. Com esses dois, ele monta a conexão
+> certa sozinho e testa antes de migrar. Se você colar a forma "errada", ele
+> conserta em silêncio.
 
-> **Por que a Session pooler para a migração e a Transaction pooler para a
-> aplicação?** Porque o migrador tranca o banco durante a migração (para dois não
-> rodarem juntos) e essa trava dura a sessão inteira — precisa do modo sessão. Já
-> a aplicação faz tudo dentro de transações curtas, e o modo transação devolve a
-> conexão ao fim de cada uma: é o que aguenta a API e o worker juntos sem
-> estourar o limite de conexões.
+> **Por que a aplicação usa a Transaction pooler?** Porque ela faz tudo dentro de
+> transações curtas, e o modo transação devolve a conexão ao fim de cada uma: é o
+> que aguenta a API e o worker juntos sem estourar o limite de conexões. A
+> migração é o contrário — tranca o banco durante todo o trabalho, para dois não
+> rodarem juntos —, e por isso vai pelo modo sessão, que o workflow escolhe.
 
 ## Passo 2 — Gerar a senha do papel da aplicação
 
@@ -76,15 +79,20 @@ No GitHub, no repositório `luisinho-cyber/Fliqo`:
 
 Crie dois, um de cada vez (o nome tem de ser exatamente assim):
 
-| Name                 | Secret                                              |
-| -------------------- | --------------------------------------------------- |
-| `DATABASE_ADMIN_URL` | a **Session pooler** do passo 1, com a senha dentro |
-| `FLIQO_APP_PASSWORD` | a senha que você gerou no passo 2                   |
+| Name                 | Secret                                           |
+| -------------------- | ------------------------------------------------ |
+| `DATABASE_ADMIN_URL` | a conexão do dono do passo 1, com a senha dentro |
+| `FLIQO_APP_PASSWORD` | a senha que você gerou no passo 2                |
 
 Depois de salvar, o GitHub nunca mais mostra o valor — só permite trocar. Isso é
 esperado: quem precisa lembrar é o seu gerenciador de senhas.
 
 > Troque o `[YOUR-PASSWORD]` da string pela senha do banco antes de colar.
+
+Se um dia o projeto do Supabase mudar de região, cadastre também uma **variável**
+(não um secret): na mesma tela, aba **Variables > New repository variable**, com
+o nome `SUPABASE_REGION` e o valor da região nova. Sem ela, o workflow assume
+`sa-east-1`, que é a região do `fliqo-staging`.
 
 ### 3.2 — Rodar o workflow
 
@@ -101,10 +109,19 @@ já está na main.
 A execução aparece na lista em alguns segundos. Clique nela e abra o job
 `migrar`. Deu certo quando os quatro passos estão com visto verde e:
 
-- **Aplicar migrações e preparar a fila** termina com
-  `pronto — N aplicada(s)` (ou `nada a fazer` se já estavam todas);
+- **Aplicar migrações e preparar a fila** mostra `conectando pelo pooler em
+aws-…` e termina com `pronto — N aplicada(s)` (ou `nada a fazer` se já estavam
+  todas);
 - **Dar senha e atributos ao papel da aplicação** termina com
   `senha do papel fliqo_app definida`.
+
+A linha `conectando pelo pooler em …` é o host que o workflow escolheu. É a única
+coisa da conexão que aparece no log — usuário e senha nunca saem.
+
+Se nenhum host responder, o erro diz quais foram tentados. Aí é hora de conferir
+a região do projeto no Supabase e cadastrar a variável `SUPABASE_REGION`. Se a
+mensagem falar em senha (`password authentication failed`), o host estava certo e
+o problema é a senha dentro do secret.
 
 Se der errado, a mensagem de erro aparece nesse mesmo lugar — e ela sai limpa:
 os scripts tiram senha e string de conexão de qualquer coisa que vá para o log.
