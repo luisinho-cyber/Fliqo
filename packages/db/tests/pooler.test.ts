@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   candidatosDeHost,
+  conferirAlvo,
+  diagnostico,
   ehDoSupabase,
   ehHostErrado,
+  ehSenhaRecusada,
   refDoProjeto,
   resolverAdminUrl,
   senhaDaUrl,
@@ -111,12 +114,96 @@ describe('o que é erro de host e o que é erro de senha', () => {
   });
 });
 
+describe('diagnóstico antes de conectar', () => {
+  it('conta host, porta e usuário das três formas, sem a senha', () => {
+    for (const bruta of [DIRETA, TRANSACAO, SESSAO]) {
+      const linha = diagnostico(
+        urlDoSessionPooler({
+          ref: REF,
+          senha: senhaDaUrl(bruta),
+          host: 'aws-0-sa-east-1.pooler.supabase.com',
+        }),
+        'motivo qualquer',
+      );
+      expect(linha).toContain('host=aws-0-sa-east-1.pooler.supabase.com');
+      expect(linha).toContain('porta=5432');
+      expect(linha).toContain(`usuario=postgres.${REF}`);
+      expect(linha).not.toContain(SENHA);
+    }
+  });
+
+  it('sai antes da conexão, não depois — é o que faltava para achar o erro', async () => {
+    const ordem: string[] = [];
+    await resolverAdminUrl(DIRETA, {
+      registrar: () => ordem.push('diagnostico'),
+      testar: () => {
+        ordem.push('conexao');
+        return Promise.resolve();
+      },
+    });
+    expect(ordem).toEqual(['diagnostico', 'conexao']);
+  });
+
+  it('diz por que normalizou, conforme a forma que foi colada', async () => {
+    const linhaDe = async (bruta: string) => {
+      const linhas: string[] = [];
+      await resolverAdminUrl(bruta, {
+        registrar: (l: string) => linhas.push(l),
+        testar: () => Promise.resolve(),
+      });
+      return linhas[0] ?? '';
+    };
+    expect(await linhaDe(DIRETA)).toContain('IPv6');
+    expect(await linhaDe(TRANSACAO)).toContain('modo sessão');
+    expect(await linhaDe(SESSAO)).toContain('host confirmado');
+  });
+
+  it('diz quando pulou, e por quê', async () => {
+    const linhas: string[] = [];
+    await resolverAdminUrl('postgresql://postgres:x@localhost:5432/postgres', {
+      registrar: (l: string) => linhas.push(l),
+      testar: () => Promise.resolve(),
+    });
+    expect(linhas[0]).toContain('normalização pulada');
+    expect(linhas[0]).toContain('host=localhost');
+  });
+});
+
+describe('usuário e host andam sempre juntos', () => {
+  const HOST = 'aws-0-sa-east-1.pooler.supabase.com';
+
+  it('aceita o alvo montado pela própria montagem', () => {
+    const url = urlDoSessionPooler({ ref: REF, senha: SENHA, host: HOST });
+    expect(conferirAlvo(url)).toBe(url);
+  });
+
+  it('recusa host de pooler com o usuário `postgres` solto', () => {
+    // É exatamente o caso que a pessoa suspeitou: host novo, usuário velho.
+    expect(() => conferirAlvo(`postgresql://postgres:${SENHA}@${HOST}:5432/postgres`)).toThrow(
+      'sem o usuário postgres.<ref>',
+    );
+  });
+
+  it('recusa usuário com ref apontando para host que não é de pooler', () => {
+    expect(() =>
+      conferirAlvo(`postgresql://postgres.${REF}:${SENHA}@db.${REF}.supabase.co:5432/postgres`),
+    ).toThrow('sem host de pooler');
+  });
+
+  it('recusa a porta de transação', () => {
+    expect(() =>
+      conferirAlvo(`postgresql://postgres.${REF}:${SENHA}@${HOST}:6543/postgres`),
+    ).toThrow('fora da porta de sessão');
+  });
+});
+
 describe('resolução', () => {
   const falhaDeHost = () => Promise.reject(new Error('Tenant or user not found'));
 
   it('usa o primeiro host que responde', async () => {
     const tentados: string[] = [];
     const { host, url } = await resolverAdminUrl(DIRETA, {
+      registrar: () => {},
       testar: (u) => {
         tentados.push(new URL(u).hostname);
         return new URL(u).hostname.startsWith('aws-1') ? Promise.resolve() : falhaDeHost();
@@ -134,6 +221,7 @@ describe('resolução', () => {
     const tentados: string[] = [];
     await resolverAdminUrl(DIRETA, {
       regiao: 'us-east-2',
+      registrar: () => {},
       testar: (u) => {
         tentados.push(new URL(u).hostname);
         return Promise.resolve();
@@ -143,34 +231,75 @@ describe('resolução', () => {
   });
 
   it('normaliza a Transaction pooler para a porta de sessão', async () => {
-    const { url } = await resolverAdminUrl(TRANSACAO, { testar: () => Promise.resolve() });
+    const { url } = await resolverAdminUrl(TRANSACAO, {
+      registrar: () => {},
+      testar: () => Promise.resolve(),
+    });
     expect(new URL(url).port).toBe('5432');
     expect(new URL(url).username).toBe(`postgres.${REF}`);
   });
 
-  it('para na hora quando a senha é que está errada', async () => {
+  it('para na hora quando a senha é que está errada, e explica o nome na mensagem', async () => {
     const tentados: string[] = [];
-    const auth = Object.assign(new Error('password authentication failed'), { code: '28P01' });
-    await expect(
-      resolverAdminUrl(DIRETA, {
-        testar: (u) => {
-          tentados.push(new URL(u).hostname);
-          return Promise.reject(auth);
-        },
-      }),
-    ).rejects.toThrow('password authentication failed');
+    // A mensagem que o Supavisor devolve cita o papel do banco por trás, não o
+    // usuário com que conectamos. Foi isso que fez parecer erro de normalização.
+    const auth = Object.assign(new Error('password authentication failed for user "postgres"'), {
+      code: '28P01',
+    });
+    const erro = await resolverAdminUrl(DIRETA, {
+      registrar: () => {},
+      testar: (u) => {
+        tentados.push(new URL(u).hostname);
+        return Promise.reject(auth);
+      },
+    }).then(
+      () => new Error('deveria ter falhado'),
+      (e: unknown) => e as Error,
+    );
+
     // Um host só: insistir esconderia a senha errada atrás de "nenhum host respondeu".
     expect(tentados).toHaveLength(1);
+    expect(erro.message).toContain('recusou a senha');
+    expect(erro.message).toContain('DATABASE_ADMIN_URL');
+    expect(erro.message).toContain(`postgres.${REF}`);
+    expect(erro.message).not.toContain(SENHA);
+  });
+
+  it('reconhece senha recusada pelo código e pela mensagem', () => {
+    expect(ehSenhaRecusada(Object.assign(new Error('nada'), { code: '28P01' }))).toBe(true);
+    expect(ehSenhaRecusada(new Error('password authentication failed for user "postgres"'))).toBe(
+      true,
+    );
+    expect(ehSenhaRecusada(new Error('Tenant or user not found'))).toBe(false);
+  });
+
+  it('nunca deixa o host direto passar sem normalizar', async () => {
+    // Ele é IPv6: passar direto seria uma falha de rede sem explicação.
+    const usados: string[] = [];
+    const { url, resolvido } = await resolverAdminUrl(DIRETA, {
+      registrar: () => {},
+      testar: (u) => {
+        usados.push(new URL(u).hostname);
+        return Promise.resolve();
+      },
+    });
+    expect(resolvido).toBe(true);
+    expect(usados.every((h) => h.endsWith('.pooler.supabase.com'))).toBe(true);
+    expect(new URL(url).hostname).not.toContain('db.');
   });
 
   it('diz quais hosts tentou quando nenhum responde', async () => {
-    await expect(resolverAdminUrl(DIRETA, { testar: falhaDeHost })).rejects.toThrow(
+    await expect(
+      resolverAdminUrl(DIRETA, { registrar: () => {}, testar: falhaDeHost }),
+    ).rejects.toThrow(
       /aws-0-sa-east-1\.pooler\.supabase\.com, aws-1-sa-east-1\.pooler\.supabase\.com/,
     );
   });
 
   it('a mensagem de erro não leva a senha junto', async () => {
-    await expect(resolverAdminUrl(DIRETA, { testar: falhaDeHost })).rejects.toThrow(
+    await expect(
+      resolverAdminUrl(DIRETA, { registrar: () => {}, testar: falhaDeHost }),
+    ).rejects.toThrow(
       expect.objectContaining({ message: expect.not.stringContaining(SENHA) as unknown }),
     );
   });
@@ -180,6 +309,7 @@ describe('resolução', () => {
     const local = 'postgresql://postgres:postgres@localhost:5432/postgres';
     let tentou = false;
     const r = await resolverAdminUrl(local, {
+      registrar: () => {},
       testar: () => {
         tentou = true;
         return Promise.resolve();
@@ -191,8 +321,8 @@ describe('resolução', () => {
 
   it('recusa string do Supabase sem ref em vez de tentar adivinhar', async () => {
     const semRef = 'postgresql://postgres:x@aws-0-sa-east-1.pooler.supabase.com:5432/postgres';
-    await expect(resolverAdminUrl(semRef, { testar: () => Promise.resolve() })).rejects.toThrow(
-      'ref do projeto',
-    );
+    await expect(
+      resolverAdminUrl(semRef, { registrar: () => {}, testar: () => Promise.resolve() }),
+    ).rejects.toThrow('ref do projeto');
   });
 });

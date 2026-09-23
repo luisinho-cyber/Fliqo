@@ -72,6 +72,45 @@ export function senhaDaUrl(url) {
 }
 
 /**
+ * A linha que vai para o log antes de cada tentativa de conexão.
+ *
+ * Host, porta e usuário não são segredo — o usuário do pooler carrega o ref do
+ * projeto, que já aparece na URL do painel. A senha e a URL inteira nunca entram
+ * aqui: é justamente por não ter esta linha que uma falha de senha parecia falha
+ * de normalização.
+ */
+export function diagnostico(url, motivo) {
+  const u = paraUrl(url);
+  const porta = u.port === '' ? String(PORTA_SESSAO) : u.port;
+  return `conexão: host=${u.hostname} porta=${porta} usuario=${decodeURIComponent(u.username)} — ${motivo}`;
+}
+
+/**
+ * Host de pooler e usuário `postgres.<ref>` andam sempre juntos: o pooler roteia
+ * pelo ref que vem no usuário. Um sem o outro é conexão que falha por motivo
+ * obscuro, então falha aqui, com o motivo escrito.
+ */
+export function conferirAlvo(url) {
+  const u = paraUrl(url);
+  if (!HOST_POOLER.test(u.hostname)) {
+    throw new Error(`alvo montado sem host de pooler: ${u.hostname}`);
+  }
+  if (!USUARIO_COM_REF.test(decodeURIComponent(u.username))) {
+    throw new Error(`alvo montado sem o usuário postgres.<ref>: ${decodeURIComponent(u.username)}`);
+  }
+  if (u.port !== String(PORTA_SESSAO)) {
+    throw new Error(`alvo montado fora da porta de sessão: ${u.port}`);
+  }
+  return url;
+}
+
+/** Senha recusada: o host estava certo, o problema é a credencial. */
+export function ehSenhaRecusada(erro) {
+  const mensagem = erro instanceof Error ? erro.message : String(erro);
+  return erro?.code === '28P01' || /password authentication failed/i.test(mensagem);
+}
+
+/**
  * Erro de host errado (adianta tentar o próximo) x erro de credencial (não
  * adianta: tentar os outros hosts só esconderia a senha errada atrás de uma
  * mensagem pior).
@@ -92,10 +131,15 @@ export function ehHostErrado(erro) {
 export async function resolverAdminUrl(bruta, opcoes = {}) {
   const regiao = opcoes.regiao || REGIAO_PADRAO;
   const testar = opcoes.testar ?? testarComPg;
+  const registrar = opcoes.registrar ?? console.log;
 
-  // Banco local passa direto: não há host de pooler para adivinhar, e falhar
-  // aqui quebraria o desenvolvimento e o CI.
-  if (!ehDoSupabase(bruta)) return { url: bruta, host: paraUrl(bruta).hostname, resolvido: false };
+  // Banco local (docker-compose, CI) não tem pooler para descobrir. O host
+  // direto do Supabase NÃO entra aqui: ele é IPv6 e não funciona no GitHub
+  // Actions, então para ele a normalização é obrigatória.
+  if (!ehDoSupabase(bruta)) {
+    registrar(diagnostico(bruta, 'normalização pulada: o host não é do Supabase'));
+    return { url: bruta, host: paraUrl(bruta).hostname, resolvido: false };
+  }
 
   const ref = refDoProjeto(bruta);
   if (ref === undefined) {
@@ -108,13 +152,33 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
   const senha = senhaDaUrl(bruta);
   if (senha === '') throw new Error('a string de conexão está sem senha');
 
+  const motivo = motivoDaNormalizacao(bruta);
+  const candidatos = candidatosDeHost(bruta, regiao);
   const tentados = [];
-  for (const host of candidatosDeHost(bruta, regiao)) {
-    const url = urlDoSessionPooler({ ref, senha, host });
+
+  for (const [i, host] of candidatos.entries()) {
+    // Usuário e host saem juntos da mesma montagem, e conferirAlvo não deixa
+    // passar um sem o outro.
+    const url = conferirAlvo(urlDoSessionPooler({ ref, senha, host }));
+    registrar(
+      diagnostico(url, `${motivo} (tentativa ${String(i + 1)} de ${String(candidatos.length)})`),
+    );
     try {
       await testar(url);
       return { url, host, resolvido: true };
     } catch (erro) {
+      if (ehSenhaRecusada(erro)) {
+        // O host respondeu: insistir nos outros trocaria um erro claro por um
+        // confuso. O nome "postgres" na mensagem vem do banco por trás do
+        // pooler, e já enganou uma vez.
+        throw new Error(
+          `o host ${host} respondeu e recusou a senha. O host está certo; ` +
+            'confira a senha dentro do secret DATABASE_ADMIN_URL. ' +
+            'A mensagem do Postgres cita o usuário "postgres" porque é esse o papel ' +
+            `por trás do pooler, mesmo conectando como postgres.${ref}.`,
+          { cause: erro },
+        );
+      }
       if (!ehHostErrado(erro)) throw erro;
       tentados.push(host);
     }
@@ -122,6 +186,18 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
   // Só os hosts entram na mensagem: eles não são segredo, e são o que a pessoa
   // precisa ver para entender o que foi tentado.
   throw new Error(`nenhum host do pooler respondeu. Tentados: ${tentados.join(', ')}`);
+}
+
+/** Por que a normalização foi aplicada — o que muda conforme a forma colada. */
+function motivoDaNormalizacao(bruta) {
+  const u = paraUrl(bruta);
+  if (HOST_DIRETO.test(u.hostname)) {
+    return 'normalização aplicada: a conexão direta é IPv6 e não chega do GitHub Actions';
+  }
+  if (u.port === String(PORTA_SESSAO)) {
+    return 'normalização aplicada: host confirmado a partir da própria string';
+  }
+  return 'normalização aplicada: a migração precisa do modo sessão, na porta 5432';
 }
 
 async function testarComPg(url) {
