@@ -231,6 +231,51 @@ describe('a IA pede, o código decide', () => {
     expect(depois[0]?.status).toBe('agendado');
   });
 
+  it('cancelar pela assistente abre a rodada da lista de espera', async () => {
+    const pacienteId = c.patients[0] as string;
+    // Amanhã, no relógio do teste — não em `now()`, que está semanas atrás.
+    const inicio = new Date(AGORA.getTime() + 26 * 3_600_000);
+    const fim = new Date(inicio.getTime() + 3_600_000);
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.appointments
+         (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
+       values ($1,$2,$3,$4,$5,$6, 25000) returning id`,
+      [c.clinicA, c.profA, pacienteId, c.procEletivo, inicio, fim],
+    );
+    const minha = rows[0]!.id;
+
+    // Outra pessoa esperando exatamente por esse tipo de horário.
+    await owner.query(
+      `insert into app.waitlist_entries
+         (clinic_id, patient_id, procedure_id, window_start, window_end)
+       values ($1,$2,$3,$4,$5)`,
+      [
+        c.clinicA,
+        c.patients[1]!,
+        c.procEletivo,
+        AGORA.toISOString().slice(0, 10),
+        new Date(AGORA.getTime() + 30 * 24 * 3_600_000).toISOString().slice(0, 10),
+      ],
+    );
+    await owner.query('update app.patients set whatsapp_consent_at = now()');
+
+    const { conversaId } = await conversaCom(['preciso cancelar minha consulta']);
+    llm
+      .chama('cancelar_consulta', { consulta_id: minha, motivo: 'imprevisto' })
+      .diz('Cancelei aqui. Quando quiser remarcar, é só chamar.');
+
+    await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+
+    // O horário não pode simplesmente sumir: a fila é chamada, como no
+    // cancelamento pelo botão.
+    const { rows: ofertas } = await owner.query<{ patient_id: string; status: string }>(
+      `select w.patient_id, o.status
+         from app.slot_offers o join app.waitlist_entries w on w.id = o.waitlist_entry_id`,
+    );
+    expect(ofertas).toHaveLength(1);
+    expect(ofertas[0]).toMatchObject({ patient_id: c.patients[1]!, status: 'enviada' });
+  });
+
   it('recusa remarcar para horário que não veio de buscar_horarios', async () => {
     const pacienteId = c.patients[0] as string;
     const { rows } = await owner.query<{ id: string }>(

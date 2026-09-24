@@ -16,6 +16,8 @@ import {
   type Trx,
 } from '@fliqo/db';
 import { validarChamada, type NomeFerramenta, type PerfilClinica } from '@fliqo/ai';
+import type { ClienteWhatsApp } from '@fliqo/whatsapp';
+import { abrirRodada } from './ofertas';
 
 /**
  * O executor das ferramentas. A IA PEDE, o código DECIDE (CLAUDE.md, regra 4).
@@ -68,12 +70,15 @@ function hora(d: Date, fuso: string): string {
 export class Executor {
   readonly #trx: Trx;
   readonly #ctx: ContextoDaConversa;
+  /** Só para chamar a fila quando a assistente cancela uma consulta. */
+  readonly #cliente: ClienteWhatsApp | undefined;
   /** Horário oferecido -> profissional que o tem livre. A trava da regra 4. */
   readonly #ofertados = new Map<string, string>();
 
-  constructor(trx: Trx, ctx: ContextoDaConversa) {
+  constructor(trx: Trx, ctx: ContextoDaConversa, cliente?: ClienteWhatsApp) {
     this.#trx = trx;
     this.#ctx = ctx;
+    this.#cliente = cliente;
   }
 
   /** Só para o teste conferir o que foi realmente oferecido ao paciente. */
@@ -268,9 +273,26 @@ export class Executor {
     const atual = await this.#minha(e.consulta_id);
     if (!atual) return { conteudo: { erro: 'consulta não encontrada' }, erro: true };
     const c = await agenda.cancelar(this.#trx, e.consulta_id, e.motivo);
-    return c
-      ? { conteudo: { ok: true } }
-      : { conteudo: { erro: 'não foi possível cancelar' }, erro: true };
+    if (!c) return { conteudo: { erro: 'não foi possível cancelar' }, erro: true };
+
+    // Cancelou pela assistente é a mesma coisa que cancelou pelo botão: o
+    // horário abriu e a fila precisa ser chamada. Sem isto, só o cancelamento
+    // pela confirmação virava vaga oferecida.
+    if (this.#cliente) {
+      await abrirRodada(
+        this.#trx,
+        this.#cliente,
+        this.#ctx.clinicId,
+        {
+          consultaId: c.id,
+          profissionalId: c.professional_id,
+          inicio: c.starts_at,
+          fim: c.ends_at,
+        },
+        this.#ctx.agora,
+      );
+    }
+    return { conteudo: { ok: true } };
   }
 
   async #entrarListaEspera(e: {
