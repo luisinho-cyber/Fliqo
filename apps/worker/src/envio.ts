@@ -30,6 +30,12 @@ export interface PedidoDeEnvioAtivo {
   botoes?: string[];
   /** Para o alerta ficar ligado à consulta, quando houver. */
   consultaId?: string;
+  /**
+   * O que a mensagem ia dizer, em duas palavras ("do atraso", "da consulta de
+   * amanhã"). Entra no alerta que a recepção lê: "não foi possível avisar
+   * Maria do atraso" é acionável; "mensagem não enviada" manda ela adivinhar.
+   */
+  assunto?: string;
 }
 
 export async function enviarAtivo(
@@ -46,8 +52,11 @@ export async function enviarAtivo(
     await alertas.criar(trx, p.clinicId, {
       tipo: 'sem_consentimento',
       gravidade: 'atencao',
-      titulo: 'Mensagem não enviada: paciente sem consentimento de WhatsApp',
-      corpo: `Fale com ${paciente.name} por outro canal e registre o consentimento no cadastro.`,
+      titulo:
+        p.assunto === undefined
+          ? 'Mensagem não enviada: paciente sem consentimento de WhatsApp'
+          : `Não foi possível avisar ${paciente.name} ${p.assunto} — sem consentimento de WhatsApp`,
+      corpo: `Ligue para ${paciente.name} e registre o consentimento no cadastro.`,
       pacienteId: paciente.id,
       ...(p.consultaId === undefined ? {} : { consultaId: p.consultaId }),
     });

@@ -169,6 +169,9 @@ async function processar(
             : [hora(consulta.starts_at, fuso)],
         botoes: [...template.botoes],
         consultaId: consulta.id,
+        // Sem consentimento, a recepção precisa saber que foi DO ATRASO que a
+        // pessoa não foi avisada: ela está prestes a sair de casa.
+        assunto: aviso.tipo === 'atraso' ? 'do atraso' : 'de que o atraso passou',
       });
 
       // Sem consentimento a mensagem não sai (enviarAtivo já alerta a recepção).
