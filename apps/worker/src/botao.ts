@@ -167,6 +167,20 @@ export async function tratarResposta(
       await liberarEOfertar(trx, cliente, entrada.clinicId, consulta.id, efeito.motivo, agora);
       return { tratado: true, efeito: efeito.acao };
 
+    case 'registrar_ciencia':
+      // A agenda não muda: o horário marcado continua valendo. Se o atraso
+      // passar, esta mesma pessoa recebe o "normalizou" — é o aviso em
+      // delay_notices que amarra as duas pontas.
+      await alertas.criar(trx, entrada.clinicId, {
+        tipo: 'atraso_profissional',
+        gravidade: 'info',
+        titulo: 'Paciente viu o aviso de atraso',
+        corpo: 'Vai chegar no horário novo. O horário marcado segue reservado.',
+        consultaId: consulta.id,
+        pacienteId: entrada.pacienteId,
+      });
+      return { tratado: true, efeito: efeito.acao };
+
     case 'iniciar_remarcacao':
       // O horário antigo continua de pé: só sai depois que o novo estiver marcado.
       await alertas.criar(trx, entrada.clinicId, {

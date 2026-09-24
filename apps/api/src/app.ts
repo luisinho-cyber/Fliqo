@@ -82,7 +82,7 @@ export function construirApp(dep: Dependencias): FastifyInstance {
         },
       });
       const segredoJwt = new TextEncoder().encode(config.SUPABASE_JWT_SECRET);
-      registrarPainel(painel, { db, segredoJwt });
+      registrarPainel(painel, { db, segredoJwt, boss });
       registrarConexao(painel, {
         db,
         segredoJwt,

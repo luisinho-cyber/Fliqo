@@ -1,6 +1,13 @@
 import { criarDb, withClinic, type Db } from '@fliqo/db';
-import { criarFila } from '@fliqo/db/fila';
-import { ownerPool, resetDatabase, seed, urlDoTester, type Scenario } from '@fliqo/db/testing';
+import { criarFila, FILA_ATRASOS, SCHEMA_FILA } from '@fliqo/db/fila';
+import {
+  prepararFilaDeTeste,
+  ownerPool,
+  resetDatabase,
+  seed,
+  urlDoTester,
+  type Scenario,
+} from '@fliqo/db/testing';
 import type { FastifyInstance } from 'fastify';
 import { SignJWT } from 'jose';
 import type { PgBoss } from 'pg-boss';
@@ -67,6 +74,7 @@ const emHoras = (h: number): Date => new Date(BASE.getTime() + h * 3_600_000);
 
 beforeAll(async () => {
   await resetDatabase();
+  await prepararFilaDeTeste();
   owner = ownerPool();
   c = await seed(owner);
 
@@ -77,6 +85,7 @@ beforeAll(async () => {
 
   db = criarDb(urlDoTester());
   boss = criarFila(urlDoTester());
+  await boss.start();
   app = construirApp({ config, db, boss });
   await app.ready();
 
@@ -102,6 +111,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  await boss.stop();
   await db.destroy();
   await owner.end();
 });
@@ -347,5 +357,96 @@ describe('pacientes e consentimento', () => {
       corpo: {},
     });
     expect(segunda.statusCode).toBe(409);
+  });
+});
+
+describe('os três toques da tela Hoje', () => {
+  // Cada caso pega um horário próprio: a mesma agenda não aceita duas consultas
+  // no mesmo horário com o mesmo profissional (no_double_booking).
+  let horaLivre = 1;
+
+  /** A consulta de hoje, que é o que a recepção tem na frente. */
+  async function consultaDeHoje(): Promise<string> {
+    const daqui = horaLivre;
+    horaLivre += 2;
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.appointments
+         (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
+       values ($1,$2,$3,$4,
+               now() + make_interval(hours => $5), now() + make_interval(hours => $5 + 1), 25000)
+       returning id`,
+      [c.clinicA, c.profA, c.patients[1]!, c.procEletivo, daqui],
+    );
+    return rows[0]!.id;
+  }
+
+  async function jobsDeAtraso(): Promise<number> {
+    const { rows } = await owner.query<{ n: string }>(
+      `select count(*) as n from ${SCHEMA_FILA}.job where name = $1`,
+      [FILA_ATRASOS],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  it('grava chegada, início e fim, um toque cada', async () => {
+    const id = await consultaDeHoje();
+
+    const chegou = await chamar('POST', `/api/agenda/${id}/chegou`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(chegou.statusCode).toBe(200);
+    expect(chegou.json().checked_in_at).not.toBeNull();
+
+    const iniciou = await chamar('POST', `/api/agenda/${id}/iniciar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(iniciou.json().started_at).not.toBeNull();
+
+    const finalizou = await chamar('POST', `/api/agenda/${id}/finalizar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(finalizou.json().finished_at).not.toBeNull();
+    // Finalizar fecha o atendimento: é daí que sai a duração real.
+    expect(finalizou.json().status).toBe('realizado');
+  });
+
+  it('cada toque enfileira a varredura de atrasos', async () => {
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_ATRASOS]);
+    const id = await consultaDeHoje();
+
+    await chamar('POST', `/api/agenda/${id}/chegou`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+
+    // Sem isso, o aviso só sairia na próxima volta de 2 minutos.
+    expect(await jobsDeAtraso()).toBeGreaterThan(0);
+  });
+
+  it('não deixa tocar em consulta de outra clínica', async () => {
+    const id = await consultaDeHoje();
+    const r = await chamar('POST', `/api/agenda/${id}/iniciar`, {
+      userId: DONA_DA_B,
+      clinica: c.clinicB,
+    });
+    // A RLS não enxerga a linha: para a clínica B ela não existe.
+    expect(r.statusCode).toBe(404);
+  });
+
+  it('sem token não toca em nada', async () => {
+    const id = await consultaDeHoje();
+    const r = await chamar('POST', `/api/agenda/${id}/chegou`, { clinica: c.clinicA });
+    expect(r.statusCode).toBe(401);
+  });
+
+  it('id que não é uuid é recusado antes de tocar no banco', async () => {
+    const r = await chamar('POST', '/api/agenda/nao-e-uuid/chegou', {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(400);
   });
 });

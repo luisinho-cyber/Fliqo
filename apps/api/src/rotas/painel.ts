@@ -1,6 +1,8 @@
 import {
   agenda,
   alertas,
+  atrasos,
+  comoConexaoDoBoss,
   conversas,
   fila,
   pacientes,
@@ -9,13 +11,16 @@ import {
   type Db,
   type Trx,
 } from '@fliqo/db';
+import { FILA_ATRASOS } from '@fliqo/db/fila';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 import { autenticar, membroDaClinica, type Usuario } from '../auth';
 
 export interface ContextoPainel {
   db: Db;
   segredoJwt: Uint8Array;
+  boss: PgBoss;
 }
 
 /** Cabeçalho que diz em qual clínica a pessoa quer trabalhar. É pedido, não credencial. */
@@ -149,6 +154,47 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
       ? reply.send(r.valor)
       : reply.code(404).send({ erro: 'consulta_nao_encontrada' });
   });
+
+  /**
+   * Os três toques da tela Hoje: chegou, iniciar, finalizar.
+   *
+   * Um toque cada, sem formulário: quem usa isto é a recepção entre um paciente
+   * e outro, ou o profissional no celular com luva na mão. O horário é o do
+   * servidor, não vem do cliente — senão um relógio errado no balcão
+   * bagunçaria a projeção do dia inteiro.
+   *
+   * Cada toque enfileira a varredura de atrasos NA MESMA TRANSAÇÃO: ou o
+   * horário fica gravado e a varredura acontece, ou nenhum dos dois.
+   */
+  const toques = [
+    { caminho: 'chegou', registrar: atrasos.registrarChegada },
+    { caminho: 'iniciar', registrar: atrasos.registrarInicio },
+    { caminho: 'finalizar', registrar: atrasos.registrarFim },
+  ] as const;
+
+  for (const toque of toques) {
+    app.post(`/api/agenda/:id/${toque.caminho}`, async (req, reply) => {
+      const { id } = req.params as { id: string };
+      if (!UUID.test(id)) return reply.code(400).send({ erro: 'pedido_invalido' });
+
+      const r = await comUsuario(ctx, req, reply, async (trx, u) => {
+        const consulta = await toque.registrar(trx, id, new Date());
+        if (!consulta) return undefined;
+        await ctx.boss.send({
+          name: FILA_ATRASOS,
+          data: { clinicId: u.clinicId },
+          // Uma varredura por clínica de cada vez: dez toques seguidos na
+          // recepção não viram dez varreduras em paralelo.
+          options: { singletonKey: u.clinicId, db: comoConexaoDoBoss(trx) },
+        });
+        return consulta;
+      });
+      if (r.respondido) return reply;
+      return r.valor
+        ? reply.send(r.valor)
+        : reply.code(404).send({ erro: 'consulta_nao_encontrada' });
+    });
+  }
 
   app.get('/api/pacientes', async (req, reply) => {
     const { telefone } = req.query as { telefone?: string };

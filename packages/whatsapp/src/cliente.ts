@@ -57,4 +57,15 @@ export const TEMPLATES = {
   },
   lembreteFinal: { nome: 'lembrete_final', botoes: [] as string[] },
   ofertaDeVaga: { nome: 'oferta_de_vaga', botoes: ['QUERO_ESTE_HORARIO'] },
+  /**
+   * Aviso de atraso. "Prefiro remarcar" reusa o payload de remarcação: o atraso
+   * é da clínica, e o fluxo de remarcação não cobra taxa de cancelamento —
+   * quem remarca não cancelou.
+   */
+  atraso: {
+    nome: 'aviso_de_atraso',
+    botoes: [PAYLOAD_BOTOES.CIENTE_DO_ATRASO, PAYLOAD_BOTOES.REMARCAR],
+  },
+  /** O atraso passou: o horário marcado volta a valer. */
+  normalizou: { nome: 'atraso_normalizou', botoes: [] as string[] },
 } as const;

@@ -5,6 +5,7 @@ export * from './schema';
 export * from './withClinic';
 
 export * as agenda from './repos/agenda';
+export * as atrasos from './repos/atrasos';
 export * as alertas from './repos/alertas';
 export * as conexao from './repos/conexao';
 export * as conversas from './repos/conversas';
