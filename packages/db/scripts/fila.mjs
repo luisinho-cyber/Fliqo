@@ -26,6 +26,9 @@ export const FILA_BOTAO = 'botao';
 // Cada balão da resposta é um job atrasado: o ritmo humano de planejarEnvio não
 // pode ser um sleep segurando o worker (nem a transação) por 45 segundos.
 export const FILA_RESPOSTA = 'resposta';
+// Varredura de atrasos. `stately` com singletonKey no clinic_id: dez toques
+// seguidos na recepção não viram dez varreduras em paralelo na mesma clínica.
+export const FILA_ATRASOS = 'atrasos';
 
 /**
  * Instância de runtime (API e worker): enfileira e consome, e só.
@@ -59,10 +62,11 @@ export async function prepararFila(connectionString) {
     await boss.createQueue(FILA_CONVERSA, { policy: 'stately' });
     await boss.createQueue(FILA_BOTAO, { policy: 'standard' });
     await boss.createQueue(FILA_RESPOSTA, { policy: 'standard' });
+    await boss.createQueue(FILA_ATRASOS, { policy: 'stately' });
   } finally {
     await boss.stop();
   }
-  return [FILA_CONVERSA, FILA_BOTAO, FILA_RESPOSTA];
+  return [FILA_CONVERSA, FILA_BOTAO, FILA_RESPOSTA, FILA_ATRASOS];
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

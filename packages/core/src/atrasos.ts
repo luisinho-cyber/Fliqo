@@ -219,3 +219,41 @@ export function pontualidade(previsoesFinalizadas: PrevisaoConsulta[], toleranci
     atrasoMedioMin: Math.round(soma / n),
   };
 }
+
+/**
+ * Duração que a projeção deve usar.
+ *
+ * A mediana medida só entra com amostra suficiente: com três atendimentos, um
+ * caso fora da curva vira "verdade" e desloca o dia inteiro na tela. Sem
+ * amostra, vale a duração que está na agenda — que é o que a clínica combinou.
+ */
+export function duracaoParaProjecao(
+  medida: { medianaMin: number; amostra: number } | undefined,
+  duracaoNaAgendaMin: number,
+  amostraMinima = 8,
+): number {
+  if (!medida || medida.amostra < amostraMinima) return duracaoNaAgendaMin;
+  return Math.round(medida.medianaMin);
+}
+
+/**
+ * Teto de avisos por consulta.
+ *
+ * Três mensagens de atraso já são muitas; a quarta vira incômodo e a clínica
+ * parece desorganizada. O teto conta só o que foi para o PACIENTE: alerta de
+ * recepção é interno e não gasta a cota.
+ *
+ * O aviso de que o atraso passou ("normalizou") conta como os outros, de
+ * propósito: quem passou do teto já recebeu informação demais, e o horário
+ * marcado continua valendo para quem não foi avisado de mudança nenhuma.
+ */
+export function respeitarLimiteDeAvisos(
+  avisos: Aviso[],
+  enviadosPorConsulta: ReadonlyMap<string, number>,
+  maximo = 3,
+): Aviso[] {
+  return avisos.filter((a) => {
+    if (a.para !== 'paciente') return true;
+    return (enviadosPorConsulta.get(a.consultaId) ?? 0) < maximo;
+  });
+}

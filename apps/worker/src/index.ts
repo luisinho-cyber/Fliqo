@@ -1,9 +1,10 @@
 import { ClienteAnthropic } from '@fliqo/ai';
 import { criarDb, withClinic } from '@fliqo/db';
-import { criarFila, FILA_BOTAO, FILA_CONVERSA, FILA_RESPOSTA } from '@fliqo/db/fila';
+import { criarFila, FILA_ATRASOS, FILA_BOTAO, FILA_CONVERSA, FILA_RESPOSTA } from '@fliqo/db/fila';
 import { ClienteMeta } from '@fliqo/whatsapp';
 import pino from 'pino';
 import { rodarUmaVez } from './acoes';
+import { varrerAtrasos, varrerClinica } from './atrasos';
 import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
@@ -58,6 +59,17 @@ await boss.work<BalaoDaResposta>(FILA_RESPOSTA, async ([job]) => {
   if (!r.ok) log.info({ clinicId: balao.clinicId, motivo: r.motivo }, 'balão não saiu');
 });
 
+// Toque na tela Hoje: a varredura daquela clínica roda na hora, sem esperar
+// o laço de 2 min. É a diferença entre avisar o paciente antes de ele sair de
+// casa e avisar quando ele já está no carro.
+await boss.work<{ clinicId: string }>(FILA_ATRASOS, async ([job]) => {
+  if (!job) return;
+  const r = await varrerClinica({ db, whatsapp }, job.data.clinicId);
+  if (r.avisosAoPaciente > 0 || r.alertasDeRecepcao > 0 || r.alertasDeEspera > 0) {
+    log.info({ clinicId: job.data.clinicId, ...r }, 'atrasos após toque');
+  }
+});
+
 let rodando = true;
 
 /** Laço das ações agendadas. Roda a cada 30 s, sem sobrepor uma rodada na outra. */
@@ -71,6 +83,27 @@ async function laco(): Promise<void> {
       log.error({ erro: erro instanceof Error ? erro.message : erro }, 'rodada falhou');
     }
     await new Promise((resolve) => setTimeout(resolve, 30_000));
+  }
+}
+
+/**
+ * Laço dos atrasos. A cada 2 min porque um atraso que cresce entre uma volta e
+ * outra ainda dá tempo de ser avisado antes de o paciente sair de casa.
+ */
+async function lacoDeAtrasos(): Promise<void> {
+  while (rodando) {
+    try {
+      const r = await varrerAtrasos({ db, whatsapp });
+      if (r.avisosAoPaciente > 0 || r.alertasDeRecepcao > 0 || r.alertasDeEspera > 0) {
+        log.info(r, 'varredura de atrasos');
+      }
+    } catch (erro) {
+      log.error(
+        { erro: erro instanceof Error ? erro.message : erro },
+        'varredura de atrasos falhou',
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120_000));
   }
 }
 
@@ -88,4 +121,4 @@ for (const sinal of ['SIGTERM', 'SIGINT'] as const) {
 }
 
 log.info('worker no ar');
-await laco();
+await Promise.all([laco(), lacoDeAtrasos()]);

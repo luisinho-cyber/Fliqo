@@ -4,6 +4,7 @@ export declare const SCHEMA_FILA: string;
 export declare const FILA_CONVERSA: string;
 export declare const FILA_BOTAO: string;
 export declare const FILA_RESPOSTA: string;
+export declare const FILA_ATRASOS: string;
 
 /** Instância de pg-boss configurada só para enfileirar. */
 export declare function criarFila(connectionString: string): PgBoss;

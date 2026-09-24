@@ -41,6 +41,8 @@ export interface TabelaClinicas {
   offer_timeout_minutes: ComDefault<number>;
   min_offer_lead_minutes: ComDefault<number>;
   is_demo: ComDefault<boolean>;
+  /** Clínica suspensa sai da varredura de atrasos sem perder dado. */
+  active: ComDefault<boolean>;
   created_at: Automatico<Date>;
   delay_notice_threshold_minutes: ComDefault<number>;
   delay_notice_window_hours: ComDefault<number>;
@@ -314,6 +316,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     offer_timeout_minutes: true,
     min_offer_lead_minutes: true,
     is_demo: true,
+    active: true,
     created_at: true,
     delay_notice_threshold_minutes: true,
     delay_notice_window_hours: true,

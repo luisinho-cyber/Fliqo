@@ -41,12 +41,16 @@ export type RespostaConfirmacao =
   | { tipo: 'confirmou' }
   | { tipo: 'cancelou' }
   | { tipo: 'quer_remarcar' }
+  | { tipo: 'ciente_do_atraso' }
   | { tipo: 'texto_livre'; texto: string };
 
 export const PAYLOAD_BOTOES = {
   CONFIRMAR: 'CONFIRMAR_CONSULTA',
   CANCELAR: 'CANCELAR_CONSULTA',
   REMARCAR: 'REMARCAR_CONSULTA',
+  // Resposta ao aviso de atraso. Não mexe na agenda: o horário marcado continua
+  // sendo o horário marcado, e é ele que vale se o atraso passar.
+  CIENTE_DO_ATRASO: 'CHEGO_MAIS_TARDE',
 } as const;
 
 export function interpretarResposta(msg: {
@@ -60,6 +64,8 @@ export function interpretarResposta(msg: {
       return { tipo: 'cancelou' };
     case PAYLOAD_BOTOES.REMARCAR:
       return { tipo: 'quer_remarcar' };
+    case PAYLOAD_BOTOES.CIENTE_DO_ATRASO:
+      return { tipo: 'ciente_do_atraso' };
   }
   return { tipo: 'texto_livre', texto: msg.texto ?? '' };
 }
@@ -72,7 +78,8 @@ export function interpretarResposta(msg: {
 export type Efeito =
   | { acao: 'marcar_confirmado' }
   | { acao: 'liberar_horario_e_ofertar'; motivo: string }
-  | { acao: 'iniciar_remarcacao' }
+  | { acao: 'iniciar_remarcacao'; semTaxa?: boolean }
+  | { acao: 'registrar_ciencia' }
   | { acao: 'encaminhar_para_ia' };
 
 export function efeitoDaResposta(r: RespostaConfirmacao): Efeito {
@@ -84,6 +91,10 @@ export function efeitoDaResposta(r: RespostaConfirmacao): Efeito {
     case 'quer_remarcar':
       // Libera o horário antigo só DEPOIS que o novo estiver marcado (worker faz nessa ordem).
       return { acao: 'iniciar_remarcacao' };
+    case 'ciente_do_atraso':
+      // Só registra que a pessoa viu. A agenda não muda: se o atraso passar, o
+      // horário original volta a valer e ela precisa ser avisada disso.
+      return { acao: 'registrar_ciencia' };
     case 'texto_livre':
       return { acao: 'encaminhar_para_ia' };
   }
