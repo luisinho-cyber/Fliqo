@@ -265,7 +265,28 @@ describe('quem recebe o quê', () => {
     await varrerClinica(dep(L(13, 30)), c.clinicA);
 
     expect(await avisos(c3)).toEqual([]);
-    expect(await alertasDe('sem_consentimento')).not.toHaveLength(0);
+  });
+
+  it('sem consentimento, a recepção sabe que foi do atraso que ninguém avisou', async () => {
+    await diaQueAtrasa();
+    await owner.query('update app.patients set whatsapp_consent_at = null where id = $1', [
+      c.patients[2]!,
+    ]);
+    const { rows } = await owner.query<{ name: string }>(
+      'select name from app.patients where id = $1',
+      [c.patients[2]!],
+    );
+
+    await varrerClinica(dep(L(13, 30)), c.clinicA);
+
+    // Genérico demais ("mensagem não enviada") faz a recepção adivinhar o que
+    // era. Aqui ela tem nome e assunto: liga e resolve.
+    const alertas = await alertasDe('sem_consentimento');
+    const doPaciente = alertas.find((a) => a.title.includes(rows[0]!.name));
+    expect(doPaciente?.title).toBe(
+      `Não foi possível avisar ${rows[0]!.name} do atraso — sem consentimento de WhatsApp`,
+    );
+    expect(doPaciente?.body).toContain('Ligue para');
   });
 });
 

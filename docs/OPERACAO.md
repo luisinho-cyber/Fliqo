@@ -73,3 +73,27 @@ npm run db:migrate
 Aplica as migrações pendentes em ordem, registra em `public.schema_migrations`
 e prepara as filas do pg-boss. Rodar de novo não reaplica nada. Migração já
 aplicada que foi editada faz o script parar (CLAUDE.md, regra 8).
+
+## Suspender uma clínica
+
+`app.clinics.active` marca a clínica como ativa. É `not null default true`, então
+toda clínica existente continua ativa sem ninguém fazer nada.
+
+**Hoje ela desliga uma coisa só: a varredura de atrasos.** Uma clínica com
+`active = false` deixa de receber aviso de atraso e alerta de sala de espera —
+e nada mais. Continuam funcionando:
+
+- a régua de confirmação (`scheduled_actions`: confirmação, lembrete, risco);
+- a oferta de vaga da lista de espera;
+- o webhook do WhatsApp e a Assistente Fliqo;
+- o painel.
+
+Ou seja, **suspender por inadimplência ainda não para a operação**. Enquanto os
+outros caminhos não olharem para essa coluna, trate `active = false` como "sai da
+varredura de atrasos", não como "clínica desligada". Desligar de verdade é
+desativar o número em `app.whatsapp_numbers`, o que corta entrada e saída de
+mensagem.
+
+```sql
+update app.clinics set active = false where id = '<id da clínica>';
+```
