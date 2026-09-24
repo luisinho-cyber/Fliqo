@@ -195,14 +195,18 @@ async function processar(
     ? visiveis.map((p) => p.precoCentavos)
     : [];
 
-  const executor = new Executor(trx, {
-    clinicId: job.clinicId,
-    conversaId: conversa.id,
-    pacienteId: conversa.patient_id,
-    perfil,
-    fuso: 'America/Sao_Paulo',
-    agora,
-  });
+  const executor = new Executor(
+    trx,
+    {
+      clinicId: job.clinicId,
+      conversaId: conversa.id,
+      pacienteId: conversa.patient_id,
+      perfil,
+      fuso: 'America/Sao_Paulo',
+      agora,
+    },
+    dep.whatsapp,
+  );
 
   const turnos = paraTurnos(historico);
 

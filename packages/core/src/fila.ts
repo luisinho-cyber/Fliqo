@@ -42,6 +42,7 @@ export type RespostaConfirmacao =
   | { tipo: 'cancelou' }
   | { tipo: 'quer_remarcar' }
   | { tipo: 'ciente_do_atraso' }
+  | { tipo: 'quer_a_vaga' }
   | { tipo: 'texto_livre'; texto: string };
 
 export const PAYLOAD_BOTOES = {
@@ -51,6 +52,13 @@ export const PAYLOAD_BOTOES = {
   // Resposta ao aviso de atraso. Não mexe na agenda: o horário marcado continua
   // sendo o horário marcado, e é ele que vale se o atraso passar.
   CIENTE_DO_ATRASO: 'CHEGO_MAIS_TARDE',
+  /**
+   * Aceite da oferta de vaga. Esta string é a MESMA do botão no template
+   * `oferta_de_vaga` aprovado na Meta — é ela que volta no webhook. Mudar aqui
+   * sem mudar lá (e sem reaprovar o template) faz todo aceite virar texto solto
+   * e cair na IA, que não tem como marcar a consulta.
+   */
+  QUERO_VAGA: 'QUERO_ESTE_HORARIO',
 } as const;
 
 export function interpretarResposta(msg: {
@@ -66,6 +74,8 @@ export function interpretarResposta(msg: {
       return { tipo: 'quer_remarcar' };
     case PAYLOAD_BOTOES.CIENTE_DO_ATRASO:
       return { tipo: 'ciente_do_atraso' };
+    case PAYLOAD_BOTOES.QUERO_VAGA:
+      return { tipo: 'quer_a_vaga' };
   }
   return { tipo: 'texto_livre', texto: msg.texto ?? '' };
 }
@@ -80,6 +90,7 @@ export type Efeito =
   | { acao: 'liberar_horario_e_ofertar'; motivo: string }
   | { acao: 'iniciar_remarcacao'; semTaxa?: boolean }
   | { acao: 'registrar_ciencia' }
+  | { acao: 'aceitar_oferta' }
   | { acao: 'encaminhar_para_ia' };
 
 export function efeitoDaResposta(r: RespostaConfirmacao): Efeito {
@@ -91,6 +102,10 @@ export function efeitoDaResposta(r: RespostaConfirmacao): Efeito {
     case 'quer_remarcar':
       // Libera o horário antigo só DEPOIS que o novo estiver marcado (worker faz nessa ordem).
       return { acao: 'iniciar_remarcacao' };
+    case 'quer_a_vaga':
+      // Quem decide se a vaga é dele é o banco (claim_slot_offer), não a ordem
+      // em que a mensagem chegou aqui.
+      return { acao: 'aceitar_oferta' };
     case 'ciente_do_atraso':
       // Só registra que a pessoa viu. A agenda não muda: se o atraso passar, o
       // horário original volta a valer e ela precisa ser avisada disso.

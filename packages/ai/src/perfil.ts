@@ -49,6 +49,13 @@ export const PerfilClinicaSchema = z.object({
     // Algumas clínicas só falam preço na avaliação. Falso esconde a tabela da IA.
     precoNoWhatsapp: z.boolean().default(true),
   }),
+  fila: z
+    .object({
+      // Teto de ofertas de vaga por pessoa por dia. Receber quatro "abriu um
+      // horário" num dia é o que faz a pessoa sair da lista.
+      maxOfertasPorDia: z.number().int().min(1).max(20).default(3),
+    })
+    .default({ maxOfertasPorDia: 3 }),
   faq: z
     .array(z.object({ pergunta: z.string().min(3), resposta: z.string().min(3) }))
     .max(40)

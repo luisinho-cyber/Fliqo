@@ -1,12 +1,7 @@
-import {
-  efeitoDaResposta,
-  interpretarResposta,
-  planejarOferta,
-  type ConfigFila,
-} from '@fliqo/core';
-import { agenda, alertas, fila, type Trx } from '@fliqo/db';
-import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
-import { enviarAtivo } from './envio';
+import { efeitoDaResposta, interpretarResposta } from '@fliqo/core';
+import { agenda, alertas, type Trx } from '@fliqo/db';
+import type { ClienteWhatsApp } from '@fliqo/whatsapp';
+import { abrirRodada, aceitarVaga } from './ofertas';
 
 /**
  * A resposta ao template de confirmação.
@@ -16,7 +11,39 @@ import { enviarAtivo } from './envio';
  */
 
 export type SaidaDoBotao =
-  { tratado: true; efeito: string } | { tratado: false; motivo: 'sem_consulta' | 'nao_e_botao' };
+  | { tratado: true; efeito: string }
+  | { tratado: false; motivo: 'sem_consulta' | 'nao_e_botao' | 'sem_oferta' };
+
+/**
+ * Libera o horário e chama a fila.
+ *
+ * Só chega aqui quem DISSE que não vem. Silêncio nunca cai neste caminho
+ * (CLAUDE.md, regra 5) — quem não responde vira 'em_risco' e mantém o horário.
+ */
+export async function liberarEOfertar(
+  trx: Trx,
+  cliente: ClienteWhatsApp,
+  clinicId: string,
+  consultaId: string,
+  motivo: string,
+  agora: Date,
+): Promise<void> {
+  const cancelada = await agenda.cancelar(trx, consultaId, motivo);
+  if (!cancelada) return;
+
+  await abrirRodada(
+    trx,
+    cliente,
+    clinicId,
+    {
+      consultaId: cancelada.id,
+      profissionalId: cancelada.professional_id,
+      inicio: cancelada.starts_at,
+      fim: cancelada.ends_at,
+    },
+    agora,
+  );
+}
 
 /** A consulta que a confirmação estava tratando: a próxima ainda de pé. */
 async function consultaEmQuestao(trx: Trx, pacienteId: string, agora: Date) {
@@ -28,116 +55,6 @@ async function consultaEmQuestao(trx: Trx, pacienteId: string, agora: Date) {
     .where('starts_at', '>', agora)
     .orderBy('starts_at')
     .executeTakeFirst();
-}
-
-async function configDaClinica(trx: Trx, clinicId: string): Promise<ConfigFila> {
-  const c = await trx
-    .selectFrom('app.clinics')
-    .select([
-      'waitlist_mode',
-      'offer_batch_size',
-      'offer_timeout_minutes',
-      'min_offer_lead_minutes',
-    ])
-    .where('id', '=', clinicId)
-    .executeTakeFirstOrThrow();
-  return {
-    modo: c.waitlist_mode,
-    tamanhoLote: c.offer_batch_size,
-    timeoutMin: c.offer_timeout_minutes,
-    antecedenciaMinimaMin: c.min_offer_lead_minutes,
-  };
-}
-
-/**
- * Libera o horário e oferece para a fila.
- *
- * Só chega aqui quem DISSE que não vem. Silêncio nunca cai neste caminho
- * (CLAUDE.md, regra 5) — quem não responde vira 'em_risco' e mantém o horário.
- */
-async function liberarEOfertar(
-  trx: Trx,
-  cliente: ClienteWhatsApp,
-  clinicId: string,
-  consultaId: string,
-  motivo: string,
-  agora: Date,
-): Promise<void> {
-  const cancelada = await agenda.cancelar(trx, consultaId, motivo);
-  if (!cancelada) return;
-
-  const cfg = await configDaClinica(trx, clinicId);
-  const plano = planejarOferta(cfg, cancelada.starts_at, agora);
-  if (!plano.ofertar) {
-    await alertas.criar(trx, clinicId, {
-      tipo: 'horario_vago',
-      gravidade: 'atencao',
-      titulo: 'Horário liberado sem tempo de oferecer',
-      corpo: `O paciente cancelou, mas não dá para oferecer a vaga (${plano.motivo}).`,
-      consultaId: cancelada.id,
-    });
-    return;
-  }
-
-  const candidatos = await fila.ranquear(
-    trx,
-    clinicId,
-    cancelada.professional_id,
-    cancelada.starts_at,
-    cancelada.ends_at,
-    plano.quantos,
-  );
-
-  if (candidatos.length === 0) {
-    await alertas.criar(trx, clinicId, {
-      tipo: 'horario_vago',
-      gravidade: 'atencao',
-      titulo: 'Horário vago sem ninguém na fila',
-      corpo: 'O paciente cancelou e a lista de espera está vazia para este horário.',
-      consultaId: cancelada.id,
-    });
-    return;
-  }
-
-  const numero = await trx
-    .selectFrom('app.whatsapp_numbers')
-    .select(['phone_number_id'])
-    .where('active', '=', true)
-    .executeTakeFirst();
-
-  for (const candidato of candidatos) {
-    const oferta = await fila.criarOferta(
-      trx,
-      clinicId,
-      candidato.id,
-      cancelada.professional_id,
-      cancelada.starts_at,
-      cancelada.ends_at,
-      plano.expiraEm,
-    );
-
-    if (numero !== undefined) {
-      // Oferta é mensagem ativa: passa pelo porteiro de consentimento como as outras.
-      await enviarAtivo(trx, cliente, {
-        clinicId,
-        pacienteId: candidato.patient_id,
-        phoneNumberId: numero.phone_number_id,
-        template: TEMPLATES.ofertaDeVaga.nome,
-        botoes: [...TEMPLATES.ofertaDeVaga.botoes],
-      });
-    }
-
-    // A oferta precisa vencer sozinha se ninguém responder.
-    await trx
-      .insertInto('app.scheduled_actions')
-      .values({
-        clinic_id: clinicId,
-        kind: 'expirar_oferta',
-        offer_id: oferta.id,
-        due_at: plano.expiraEm,
-      })
-      .execute();
-  }
 }
 
 export async function tratarResposta(
@@ -154,6 +71,15 @@ export async function tratarResposta(
 
   // Texto livre é da IA (Fase 4), não deste caminho.
   if (efeito.acao === 'encaminhar_para_ia') return { tratado: false, motivo: 'nao_e_botao' };
+
+  // O aceite de vaga não fala da "próxima consulta": ele fala de uma oferta
+  // aberta, que pode ser para um horário que a pessoa ainda nem tem.
+  if (efeito.acao === 'aceitar_oferta') {
+    const r = await aceitarVaga(trx, cliente, entrada.clinicId, entrada.pacienteId);
+    return r.ok || r.motivo === 'preenchida_por_outro'
+      ? { tratado: true, efeito: `${efeito.acao}:${r.ok ? 'aceita' : r.motivo}` }
+      : { tratado: false, motivo: 'sem_oferta' };
+  }
 
   const consulta = await consultaEmQuestao(trx, entrada.pacienteId, agora);
   if (!consulta) return { tratado: false, motivo: 'sem_consulta' };

@@ -1,7 +1,8 @@
 import { sql } from 'kysely';
-import { agenda, alertas, fila, numeros, withClinic, type Db, type Trx } from '@fliqo/db';
+import { agenda, alertas, numeros, withClinic, type Db, type Trx } from '@fliqo/db';
 import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
 import { enviarAtivo } from './envio';
+import { expirarEPassarAdiante } from './ofertas';
 
 /**
  * Executa as ações agendadas da régua de confirmação.
@@ -143,30 +144,14 @@ async function marcarRisco(trx: Trx, acao: AcaoPendente): Promise<SaidaDaAcao> {
 }
 
 /** Oferta vencida: expira e chama a próxima rodada da fila para aquela vaga. */
-async function expirarOferta(trx: Trx, acao: AcaoPendente): Promise<SaidaDaAcao> {
+async function expirarOferta(
+  trx: Trx,
+  dep: Dependencias,
+  acao: AcaoPendente,
+): Promise<SaidaDaAcao> {
   if (acao.offer_id === null) return { ok: false, motivo: 'sem oferta', definitivo: true };
-
-  const oferta = await fila.expirarOferta(trx, acao.offer_id);
-  if (!oferta) return { ok: true }; // já foi aceita ou expirada
-
-  const proximos = await fila.ranquear(
-    trx,
-    acao.clinic_id,
-    oferta.professional_id,
-    oferta.starts_at,
-    oferta.ends_at,
-    1,
-  );
-
-  if (proximos.length === 0) {
-    await alertas.criar(trx, acao.clinic_id, {
-      tipo: 'horario_vago',
-      gravidade: 'atencao',
-      titulo: 'Horário vago sem ninguém na fila',
-      corpo: 'Ninguém da lista de espera pode assumir este horário.',
-    });
-  }
-
+  const agora = (dep.agora ?? (() => new Date()))();
+  await expirarEPassarAdiante(trx, dep.whatsapp, acao.clinic_id, acao.offer_id, agora);
   return { ok: true };
 }
 
@@ -179,7 +164,7 @@ async function executar(trx: Trx, dep: Dependencias, acao: AcaoPendente): Promis
     case 'marcar_risco':
       return marcarRisco(trx, acao);
     case 'expirar_oferta':
-      return expirarOferta(trx, acao);
+      return expirarOferta(trx, dep, acao);
   }
 }
 
