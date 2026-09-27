@@ -15,12 +15,17 @@ projeto, nunca numa conversa, nunca num print.
 | Migração (`Migrar banco`) | GitHub Actions, na mão | `postgres` (dono)     | sim, é o trabalho dela |
 | API (`apps/api`)          | Railway                | `fliqo_app`           | não                    |
 | Worker (`apps/worker`)    | Railway                | `fliqo_app`           | não                    |
+| Painel (`apps/web`)       | Railway                | não conecta ao banco  | não                    |
 
 Você não precisa de nada instalado no seu computador: tudo é feito pelo navegador,
 no Supabase, no GitHub e no Railway.
 
 A aplicação **nunca** conecta como dono do schema. É o que faz a separação entre
 clínicas valer: como `fliqo_app`, toda consulta passa pela RLS.
+
+O painel não tem `DATABASE_URL` nenhum. Ele fala só com a API, que é quem abre a
+transação dentro da clínica. Se um dia o painel precisar do banco, alguma coisa
+está errada no desenho.
 
 ---
 
@@ -187,7 +192,7 @@ Em **Variables**, cole:
 | `DATABASE_URL`          | passo 4                                                     |
 | `SUPABASE_JWT_SECRET`   | Supabase > Project Settings > API > JWT Secret              |
 | `WHATSAPP_APP_SECRET`   | Meta > seu app > Configurações básicas > Chave secreta      |
-| `WHATSAPP_VERIFY_TOKEN` | uma frase inventada por você; a mesma vai na Meta (passo 7) |
+| `WHATSAPP_VERIFY_TOKEN` | uma frase inventada por você; a mesma vai na Meta (passo 8) |
 | `META_APP_ID`           | Meta > seu app > Configurações básicas                      |
 | `META_APP_SECRET`       | Meta > seu app > Configurações básicas                      |
 | `WHATSAPP_TOKEN_KEY`    | gere como está logo abaixo da tabela                        |
@@ -210,7 +215,7 @@ conectadas.
 Não crie `PORT`: o Railway injeta sozinho, e a API usa o que ele der.
 
 Em **Settings > Networking**, clique em **Generate Domain**. Guarde o endereço:
-ele é o webhook do passo 7.
+ele é o webhook do passo 8.
 
 ## Passo 6 — Serviço do worker no Railway
 
@@ -234,7 +239,51 @@ Em **Variables**:
 `ANTHROPIC_MODEL` é opcional. Sem ela, vale `claude-haiku-4-5`. Trocar de modelo
 é mudar essa variável e reiniciar o worker.
 
-## Passo 7 — Apontar o webhook na Meta
+## Passo 7 — Serviço do painel no Railway
+
+**New > GitHub Repo**, o mesmo repositório. Em **Settings**:
+
+- **Service Name**: `web`
+- **Root Directory**: vazio
+- **Config-as-code file path**: `apps/web/railway.json`
+
+Gere um domínio em **Settings > Networking > Generate Domain**. É esse endereço
+que a clínica abre.
+
+Em **Variables**:
+
+| Variável            | De onde vem                                     |
+| ------------------- | ----------------------------------------------- |
+| `API_URL`           | o domínio do passo 5, sem barra no fim          |
+| `SUPABASE_URL`      | Supabase > Project Settings > API > Project URL |
+| `SUPABASE_ANON_KEY` | Supabase > Project Settings > API > anon public |
+| `NODE_ENV`          | `production`                                    |
+
+`NODE_ENV=production` não é detalhe: é o que faz o cookie de sessão sair como
+`Secure`. Sem ele o cookie viaja também em http.
+
+Repare que nenhuma variável do painel começa com `NEXT_PUBLIC_`. Isso é de
+propósito: o navegador não fala com o Supabase nem com o banco, então nada disso
+precisa chegar até ele. Quem lê o cookie da sessão e chama a API é o servidor do
+painel.
+
+### Criar a primeira pessoa
+
+O painel não tem cadastro aberto — quem entra é quem a clínica cadastrou.
+
+1. **Supabase > Authentication > Users > Add user**, com e-mail e senha.
+2. Copie o **User UID** que aparece na lista.
+3. Ligue essa pessoa à clínica, no **SQL Editor** do Supabase:
+
+```sql
+insert into app.clinic_members (clinic_id, user_id, role)
+values ('<id da clínica>', '<User UID>', 'dono');
+```
+
+Sem essa linha a pessoa entra no painel e vê "sua conta ainda não está ligada a
+uma clínica" — que é o certo: é a tabela que decide, não o token.
+
+## Passo 8 — Apontar o webhook na Meta
 
 Em **Meta > seu app > WhatsApp > Configuration > Webhook**:
 
@@ -262,11 +311,16 @@ que falta.
 O worker não tem endereço para consultar. Abra os logs dele e procure a linha
 `worker no ar`.
 
+O painel: abra o domínio do passo 7. Tem de cair na tela de entrar. Depois de
+entrar com a pessoa que você criou, aparece a linha do dia de hoje. Se aparecer
+"não consegui carregar o dia de hoje", o `API_URL` está errado ou a API está
+fora do ar.
+
 ---
 
 ## Quando publicar de novo
 
-1. Juntar o PR na `main`. O Railway reconstrói os dois serviços sozinho.
+1. Juntar o PR na `main`. O Railway reconstrói os três serviços sozinho.
 2. Se o PR tiver migração nova, rode o workflow **Migrar banco** (passo 3.2)
    em seguida.
 
@@ -277,8 +331,8 @@ existe — por isso rode o workflow **logo depois** de juntar, e teste só depoi
 dele. Em staging essa janela não machuca ninguém; quando existir produção, o
 jeito é separar o deploy da migração.
 
-Os dois `railway.json` têm `watchPatterns`: mexer só na `apps/demo` não
-reconstrói a API nem o worker.
+Os três `railway.json` têm `watchPatterns`: mexer só na `apps/demo` não
+reconstrói a API, o worker nem o painel.
 
 ## O que nunca vai para o Railway
 
@@ -287,6 +341,11 @@ reconstrói a API nem o worker.
   coisa está errada no desenho.
 - **`FLIQO_APP_PASSWORD`.** Ela é usada só pelo workflow de migração. O que o
   Railway precisa é do `DATABASE_URL` já montado, com a senha dentro.
+- **`SUPABASE_JWT_SECRET` no serviço do painel.** Quem verifica a assinatura do
+  token é a API. O painel só carrega o token; se ele pudesse verificar sozinho,
+  haveria dois lugares decidindo quem entra.
+- **A `service_role key` do Supabase.** Ela ignora RLS. Não existe lugar nenhum
+  neste projeto que precise dela.
 
 ## Se precisar trocar uma chave
 

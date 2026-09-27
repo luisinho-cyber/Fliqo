@@ -18,6 +18,7 @@
     "apps/*/src/**/*.ts",
     "apps/*/tests/**/*.ts"
   ],
-  // A apps/demo tem tsconfig próprio (Next, JSX): fica fora do typecheck da raiz.
-  "exclude": ["node_modules", "apps/demo"]
+  // apps/demo e apps/web têm tsconfig próprio (Next, JSX): ficam fora do
+  // typecheck da raiz e rodam em `typecheck:demo` e `typecheck:web`.
+  "exclude": ["node_modules", "apps/demo", "apps/web"]
 }

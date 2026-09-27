@@ -96,3 +96,25 @@ export function expedienteEmIntervalos(
   }
   return out.sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
 }
+
+/** A data que o relógio da clínica marca neste instante (AAAA-MM-DD). */
+export function dataNoFuso(instante: Date, fuso: string): string {
+  // en-CA formata como AAAA-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: fuso }).format(instante);
+}
+
+/**
+ * O dia da clínica, no fuso dela — uma em Manaus vira o dia uma hora depois.
+ * É o "hoje" que a varredura de atrasos e a tela Hoje precisam enxergar igual.
+ */
+export function diaNoFuso(
+  instante: Date,
+  fuso: string,
+): { dataIso: string; inicio: Date; fim: Date } {
+  const dataIso = dataNoFuso(instante, fuso);
+  return {
+    dataIso,
+    inicio: noFuso(dataIso, '00:00', fuso),
+    fim: noFuso(somarDias(dataIso, 1), '00:00', fuso),
+  };
+}

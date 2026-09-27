@@ -7,80 +7,11 @@ import {
   fila,
   pacientes,
   procedimentos,
-  withClinic,
-  type Db,
-  type Trx,
 } from '@fliqo/db';
 import { FILA_ATRASOS } from '@fliqo/db/fila';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { PgBoss } from 'pg-boss';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { autenticar, membroDaClinica, type Usuario } from '../auth';
-
-export interface ContextoPainel {
-  db: Db;
-  segredoJwt: Uint8Array;
-  boss: PgBoss;
-}
-
-/** Cabeçalho que diz em qual clínica a pessoa quer trabalhar. É pedido, não credencial. */
-const CABECALHO_CLINICA = 'x-clinica';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * O que `comUsuario` devolve.
- *
- * Precisa ser explícito: se o retorno fosse `T | undefined`, "já respondi 403" e
- * "a função devolveu undefined" seriam a mesma coisa, e uma rota cujo repositório
- * não acha a linha responderia como se o acesso tivesse sido negado.
- */
-type SaidaPainel<T> = { respondido: true } | { respondido: false; valor: T };
-
-/**
- * Roda `fn` já autenticado e dentro da clínica, ou responde 401/403.
- *
- * A ordem importa: a transação abre na clínica PEDIDA, e a primeira coisa que
- * acontece dentro dela é confirmar que a pessoa é membro. Nada é lido antes disso.
- * Pedir outra clínica não adianta: a RLS já limitou clinic_members ao tenant da
- * transação, então a consulta não acha a pessoa e o acesso é negado.
- */
-async function comUsuario<T>(
-  ctx: ContextoPainel,
-  req: FastifyRequest,
-  reply: FastifyReply,
-  fn: (trx: Trx, usuario: Usuario) => Promise<T>,
-): Promise<SaidaPainel<T>> {
-  const auth = await autenticar(req.headers.authorization, ctx.segredoJwt);
-  if (!auth.ok) {
-    await reply.code(401).send({ erro: auth.motivo });
-    return { respondido: true };
-  }
-
-  const clinicId = req.headers[CABECALHO_CLINICA];
-  if (typeof clinicId !== 'string' || !UUID.test(clinicId)) {
-    await reply.code(400).send({ erro: 'clinica_nao_informada' });
-    return { respondido: true };
-  }
-
-  const saida = await withClinic(
-    clinicId,
-    async (trx) => {
-      const papel = await membroDaClinica(trx, auth.userId);
-      if (papel === undefined) return { negado: true as const };
-      const valor = await fn(trx, { userId: auth.userId, clinicId, papel });
-      return { negado: false as const, valor };
-    },
-    ctx.db,
-  );
-
-  if (saida.negado) {
-    // 403 e não 404: a pessoa existe, o acesso é que não.
-    await reply.code(403).send({ erro: 'nao_e_membro_da_clinica' });
-    return { respondido: true };
-  }
-  return { respondido: false, valor: saida.valor };
-}
+import { comUsuario, UUID, type ContextoPainel } from './contexto';
 
 const Periodo = z.object({
   de: z.coerce.date(),
@@ -294,5 +225,16 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
   app.get('/api/alertas', async (req, reply) => {
     const r = await comUsuario(ctx, req, reply, (trx) => alertas.abertos(trx));
     return r.respondido ? reply : reply.send(r.valor);
+  });
+
+  /** A única ação de cada linha da lista de decisões: resolvido, some da tela. */
+  app.post('/api/alertas/:id/resolver', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return reply.code(400).send({ erro: 'pedido_invalido' });
+    const r = await comUsuario(ctx, req, reply, (trx) => alertas.resolver(trx, id));
+    if (r.respondido) return reply;
+    // 404 também para o alerta que outra pessoa já resolveu: do ponto de vista
+    // de quem clicou agora, não há mais o que resolver.
+    return r.valor ? reply.send(r.valor) : reply.code(404).send({ erro: 'alerta_nao_encontrado' });
   });
 }

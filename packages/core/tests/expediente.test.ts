@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { expedienteEmIntervalos, noFuso, somarDias, type FaixaDeExpediente } from '../src/index';
+import {
+  dataNoFuso,
+  diaNoFuso,
+  expedienteEmIntervalos,
+  noFuso,
+  somarDias,
+  type FaixaDeExpediente,
+} from '../src/index';
 
 const SP = 'America/Sao_Paulo';
 
@@ -49,5 +56,27 @@ describe('expediente', () => {
   it('somarDias atravessa o fim do mês', () => {
     expect(somarDias('2026-11-30', 1)).toBe('2026-12-01');
     expect(somarDias('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
+describe('diaNoFuso', () => {
+  it('o dia começa à meia-noite da clínica, não do servidor', () => {
+    // 02:30 UTC de 11/03 ainda é 23:30 de 10/03 em São Paulo (UTC-3).
+    const d = diaNoFuso(new Date('2026-03-11T02:30:00Z'), 'America/Sao_Paulo');
+    expect(d.dataIso).toBe('2026-03-10');
+    expect(d.inicio.toISOString()).toBe('2026-03-10T03:00:00.000Z');
+    expect(d.fim.toISOString()).toBe('2026-03-11T03:00:00.000Z');
+  });
+
+  it('Manaus vira o dia uma hora depois de São Paulo', () => {
+    const instante = new Date('2026-03-11T03:30:00Z');
+    expect(dataNoFuso(instante, 'America/Sao_Paulo')).toBe('2026-03-11'); // 00:30
+    expect(dataNoFuso(instante, 'America/Manaus')).toBe('2026-03-10'); // 23:30
+  });
+
+  it('a janela cobre 24 h e não deixa buraco entre um dia e o seguinte', () => {
+    const hoje = diaNoFuso(new Date('2026-07-15T15:00:00Z'), 'America/Sao_Paulo');
+    const amanha = diaNoFuso(new Date('2026-07-16T15:00:00Z'), 'America/Sao_Paulo');
+    expect(hoje.fim.getTime()).toBe(amanha.inicio.getTime());
   });
 });

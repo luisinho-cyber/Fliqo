@@ -10,6 +10,7 @@ export * as alertas from './repos/alertas';
 export * as conexao from './repos/conexao';
 export * as conversas from './repos/conversas';
 export * as fila from './repos/fila';
+export * as hoje from './repos/hoje';
 export * as ia from './repos/ia';
 export * as financeiro from './repos/financeiro';
 export * as numeros from './repos/numeros';

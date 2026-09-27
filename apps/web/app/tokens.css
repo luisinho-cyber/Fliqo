@@ -1,0 +1,52 @@
+/*
+ * Os tokens do DESIGN.md, num arquivo só. Nenhuma cor solta em componente:
+ * tudo sai daqui, e trocar a paleta é trocar este arquivo.
+ *
+ * Âmbar (late) é exclusivo de atraso. Vermelho (risk) é exclusivo de risco ou
+ * perda. Nenhuma cor decorativa.
+ */
+
+@theme {
+  --color-ground: #eef1f0;
+  --color-paper: #ffffff;
+  --color-ink: #0c1917;
+  --color-petrol: #0f4c5c;
+  --color-ok: #1f9e77;
+  --color-late: #d98100;
+  --color-risk: #c8453d;
+
+  /* Derivados: texto secundário e as divisórias finas que substituem os cards. */
+  --color-ink-suave: color-mix(in srgb, #0c1917 62%, transparent);
+  --color-linha: color-mix(in srgb, #0c1917 12%, transparent);
+  --color-linha-forte: color-mix(in srgb, #0c1917 22%, transparent);
+
+  --font-titulo: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-texto: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* A escala do DESIGN.md: 4, 8, 12, 20, 32, 48 = p-1, p-2, p-3, p-5, p-8, p-12. */
+  --spacing: 4px;
+
+  --radius-1: 6px;
+  --radius-2: 10px;
+  --radius-3: 16px;
+}
+
+/*
+ * Escuro. As utilidades do Tailwind referenciam as variáveis, então redefinir
+ * as variáveis troca a tela inteira sem uma segunda folha de estilo.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ground: #0b1211;
+    --color-paper: #121c1a;
+    --color-ink: #e7eeec;
+    --color-petrol: #5bb3c6;
+    --color-ok: #3fc79c;
+    --color-late: #f0a531;
+    --color-risk: #ee756c;
+    --color-ink-suave: color-mix(in srgb, #e7eeec 62%, transparent);
+    --color-linha: color-mix(in srgb, #e7eeec 14%, transparent);
+    --color-linha-forte: color-mix(in srgb, #e7eeec 26%, transparent);
+  }
+}

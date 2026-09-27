@@ -326,13 +326,22 @@ describe('quais clínicas entram na varredura', () => {
    * "Hoje" é o hoje do banco: a função usa now(), como tem de ser em produção.
    * Por isso estes casos marcam consulta no dia de verdade, não no dia fixo do
    * relógio simulado.
+   *
+   * O dia é o DA CLÍNICA, com a mesma conta que a função faz. Ancorar em
+   * `date_trunc('day', now())` marcaria a consulta às 15h UTC, que entre
+   * meia-noite e 3h UTC já é amanhã em São Paulo: o teste passava o dia todo e
+   * quebrava à noite, por causa do relógio da máquina e não do código.
    */
   async function consultaHoje(): Promise<void> {
     await owner.query(
       `insert into app.appointments
          (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
-       values ($1,$2,$3,$4, date_trunc('day', now()) + interval '15 hours',
-               date_trunc('day', now()) + interval '16 hours', 25000)`,
+       select $1, $2, $3, $4,
+              timezone(cl.timezone, date_trunc('day', timezone(cl.timezone, now())) + interval '15 hours'),
+              timezone(cl.timezone, date_trunc('day', timezone(cl.timezone, now())) + interval '16 hours'),
+              25000
+         from app.clinics cl
+        where cl.id = $1`,
       [c.clinicA, c.profA, c.patients[0]!, proc60],
     );
   }
