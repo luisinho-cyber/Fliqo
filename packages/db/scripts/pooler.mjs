@@ -224,7 +224,11 @@ function paraUrl(url) {
  * host e conta qual foi. Só o host vai para a saída — a URL inteira carrega
  * usuário e senha.
  */
-export async function adminUrlDoAmbiente(env = process.env) {
+export async function adminUrlDoAmbiente(env = process.env, opcoes = {}) {
+  // `registrar` existe para quem não pode imprimir nem host nem usuário: a
+  // conferência de RLS só pode contar papel, função, tabela e veredito. A
+  // migração continua com o diagnóstico completo, que é o padrão.
+  const registrar = opcoes.registrar ?? console.log;
   const bruta = env.DATABASE_ADMIN_URL;
   if (!bruta) {
     console.error(
@@ -236,8 +240,9 @@ export async function adminUrlDoAmbiente(env = process.env) {
   try {
     const { url, host, resolvido } = await resolverAdminUrl(bruta, {
       ...(env.SUPABASE_REGION ? { regiao: env.SUPABASE_REGION } : {}),
+      registrar,
     });
-    if (resolvido) console.log(`conectando pelo pooler em ${host}`);
+    if (resolvido) registrar(`conectando pelo pooler em ${host}`);
     return url;
   } catch (erro) {
     // Falhar aqui é falhar limpo: sem stack trace e sem a URL na saída.

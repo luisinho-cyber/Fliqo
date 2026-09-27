@@ -40,3 +40,15 @@ export declare function resolverAdminUrl(
     registrar?: (linha: string) => void;
   },
 ): Promise<{ url: string; host: string; resolvido: boolean }>;
+
+/**
+ * A conexão de migração, a partir de DATABASE_ADMIN_URL.
+ *
+ * `registrar` recebe o diagnóstico redigido (host, porta e usuário — nunca a
+ * senha nem a URL). O padrão imprime, que é o que a migração precisa; quem não
+ * pode contar nem isso passa uma função que descarta.
+ */
+export declare function adminUrlDoAmbiente(
+  env?: NodeJS.ProcessEnv,
+  opcoes?: { registrar?: (linha: string) => void },
+): Promise<string>;
