@@ -118,3 +118,37 @@ export function diaNoFuso(
     fim: noFuso(somarDias(dataIso, 1), '00:00', fuso),
   };
 }
+
+export interface DiaDaSemana {
+  dataIso: string;
+  inicio: Date;
+  fim: Date;
+}
+
+/**
+ * A semana da clínica, de segunda a domingo, no fuso dela.
+ *
+ * Começa na segunda porque é assim que uma clínica pensa a semana: sábado é
+ * ponta, não começo. `dataIso` é qualquer dia dentro da semana desejada.
+ */
+export function semanaNoFuso(
+  dataIso: string,
+  fuso: string,
+): { inicio: Date; fim: Date; dias: DiaDaSemana[] } {
+  const semana = diaDaSemanaNoFuso(dataIso, fuso);
+  // getDay: 0 = domingo. Domingo é o sétimo dia, não o primeiro.
+  const recuo = semana === 0 ? 6 : semana - 1;
+  const segunda = somarDias(dataIso, -recuo);
+
+  const dias = Array.from({ length: 7 }, (_, i) => {
+    const dia = somarDias(segunda, i);
+    return {
+      dataIso: dia,
+      inicio: noFuso(dia, '00:00', fuso),
+      fim: noFuso(somarDias(dia, 1), '00:00', fuso),
+    };
+  });
+  // dias tem 7 posições fixas; o TS não estreita Array.from.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return { inicio: dias[0]!.inicio, fim: dias[6]!.fim, dias };
+}

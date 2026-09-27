@@ -3,12 +3,11 @@ import {
   alertas,
   atrasos,
   comoConexaoDoBoss,
-  conversas,
   fila,
   pacientes,
   procedimentos,
 } from '@fliqo/db';
-import { FILA_ATRASOS } from '@fliqo/db/fila';
+import { FILA_ATRASOS, FILA_OFERTA } from '@fliqo/db/fila';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { comUsuario, UUID, type ContextoPainel } from './contexto';
@@ -38,6 +37,11 @@ const NovaEspera = z.object({
   prioridade: z.number().int().min(0).max(3).optional(),
 });
 const Consentimento = z.object({ em: z.coerce.date().optional() });
+const Vaga = z.object({
+  profissionalId: z.string().uuid(),
+  inicio: z.coerce.date(),
+  fim: z.coerce.date(),
+});
 
 export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void {
   app.get('/api/agenda', async (req, reply) => {
@@ -184,42 +188,49 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
     return reply.code(201).send(r.valor);
   });
 
-  app.get('/api/conversas', async (req, reply) => {
-    const r = await comUsuario(ctx, req, reply, (trx) =>
-      trx
-        .selectFrom('app.conversations')
-        .selectAll()
-        .orderBy('last_inbound_at', 'desc')
-        .limit(100)
-        .execute(),
-    );
-    return r.respondido ? reply : reply.send(r.valor);
-  });
+  /**
+   * Oferecer um horário vago à lista de espera.
+   *
+   * O painel PEDE; quem executa é o worker, que é quem fala com o WhatsApp.
+   * A fila é `stately` com singletonKey na vaga: a recepção clicando duas vezes
+   * no mesmo horário não abre duas rodadas — e duas rodadas mandariam oferta em
+   * dobro para as mesmas pessoas da fila.
+   *
+   * O clinicId vai do servidor, da transação já autenticada. O corpo do pedido
+   * nunca diz de qual clínica é a vaga.
+   */
+  app.post('/api/fila/oferecer', async (req, reply) => {
+    const c = Vaga.safeParse(req.body);
+    if (!c.success) return reply.code(400).send({ erro: 'pedido_invalido' });
+    if (c.data.fim <= c.data.inicio) return reply.code(400).send({ erro: 'intervalo_invalido' });
 
-  app.get('/api/conversas/:id/mensagens', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) => conversas.ultimasMensagens(trx, id, 50));
-    return r.respondido ? reply : reply.send(r.valor);
-  });
+    const r = await comUsuario(ctx, req, reply, async (trx, u) => {
+      // O profissional precisa ser desta clínica: a RLS não deixa a consulta
+      // achar profissional de outra, então não achar é resposta de negócio.
+      const prof = await trx
+        .selectFrom('app.professionals')
+        .select(['id'])
+        .where('id', '=', c.data.profissionalId)
+        .executeTakeFirst();
+      if (!prof) return { ok: false as const };
 
-  app.post('/api/conversas/:id/assumir', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) =>
-      conversas.definirModo(trx, id, 'humano', 'assumida pelo painel'),
-    );
+      const chave = `${u.clinicId}:${c.data.profissionalId}:${c.data.inicio.toISOString()}`;
+      await ctx.boss.send({
+        name: FILA_OFERTA,
+        data: {
+          clinicId: u.clinicId,
+          profissionalId: c.data.profissionalId,
+          inicio: c.data.inicio.toISOString(),
+          fim: c.data.fim.toISOString(),
+        },
+        options: { singletonKey: chave, db: comoConexaoDoBoss(trx) },
+      });
+      return { ok: true as const };
+    });
     if (r.respondido) return reply;
-    return r.valor
-      ? reply.send(r.valor)
-      : reply.code(404).send({ erro: 'conversa_nao_encontrada' });
-  });
-
-  app.post('/api/conversas/:id/devolver', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) => conversas.definirModo(trx, id, 'ia'));
-    if (r.respondido) return reply;
-    return r.valor
-      ? reply.send(r.valor)
-      : reply.code(404).send({ erro: 'conversa_nao_encontrada' });
+    return r.valor.ok
+      ? reply.code(202).send({ ok: true })
+      : reply.code(404).send({ erro: 'profissional_nao_encontrado' });
   });
 
   app.get('/api/alertas', async (req, reply) => {

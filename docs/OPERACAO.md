@@ -97,3 +97,22 @@ mensagem.
 ```sql
 update app.clinics set active = false where id = '<id da clínica>';
 ```
+
+## Dado de paciente, para quando houver política de retenção
+
+Ainda não existe retenção, exportação nem exclusão automatizadas. Quando
+existirem, estas são as tabelas que guardam dado sobre paciente e precisam
+entrar nelas juntas:
+
+| Tabela                    | O que guarda                                              |
+| ------------------------- | --------------------------------------------------------- |
+| `app.patients`            | nome, telefone, consentimento                             |
+| `app.conversations`       | a conversa e por que ela saiu da assistente               |
+| `app.messages`            | o conteúdo do que a pessoa escreveu                       |
+| `app.lead_qualifications` | interesse, faixa de orçamento e a leitura de quem atendeu |
+| `app.alerts`              | título e corpo que citam a pessoa                         |
+| `app.delay_notices`       | quando e por que ela foi avisada                          |
+
+`app.lead_qualifications` é a mais fácil de esquecer: ela nasceu depois das
+outras e não é óbvia numa varredura por nome de tabela. Apagar um paciente sem
+apagar a qualificação dele deixa a leitura de quem atendeu órfã no banco.

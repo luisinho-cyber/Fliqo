@@ -9,6 +9,7 @@ import { assinaturaConfere } from './assinatura';
 import type { Config } from './config';
 import { extrair, extrairEcos, PayloadWebhook } from './payload';
 import { registrarConexao } from './rotas/conexao';
+import { registrarConversas } from './rotas/conversas';
 import { registrarHoje } from './rotas/hoje';
 import { registrarPainel } from './rotas/painel';
 
@@ -107,6 +108,7 @@ export function construirApp(dep: Dependencias): FastifyInstance {
       const segredoJwt = new TextEncoder().encode(config.SUPABASE_JWT_SECRET);
       registrarPainel(painel, { db, segredoJwt, boss });
       registrarHoje(painel, { db, segredoJwt, boss });
+      registrarConversas(painel, { db, segredoJwt, boss });
       registrarConexao(painel, {
         db,
         segredoJwt,

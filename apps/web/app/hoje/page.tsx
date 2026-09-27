@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation';
+import { Abas } from '../../componentes/Abas';
 import { Atualiza } from '../../componentes/Atualiza';
 import { Decisoes } from '../../componentes/Decisoes';
 import { LinhaDoDia } from '../../componentes/LinhaDoDia';
 import { Manchete } from '../../componentes/Manchete';
 import { Marca } from '../../componentes/Marca';
+import { Toques } from '../../componentes/Toques';
 import { chamarApi } from '../../lib/api';
 import { clinicaEscolhida, tokenDaSessao } from '../../lib/servidor';
 import type { ClinicaDaPessoa, Hoje } from '../../lib/tipos';
@@ -52,14 +54,7 @@ export default async function TelaHoje() {
       <Atualiza />
       <header className="bg-paper border-linha flex flex-wrap items-center gap-5 border-b px-5 py-3">
         <Marca />
-        <nav className="flex gap-1" aria-label="Seções do painel">
-          <span
-            aria-current="true"
-            className="bg-ink text-paper rounded-full px-3.5 py-1.5 font-semibold"
-          >
-            Linha do dia
-          </span>
-        </nav>
+        <Abas atual="/hoje" />
         <div className="ml-auto flex items-center gap-3">
           {clinicas.dados.length > 1 ? (
             <form action={escolherClinica} className="flex items-center gap-2">
@@ -111,6 +106,7 @@ export default async function TelaHoje() {
             />
           )}
           <Legenda />
+          <Toques consultas={hoje.consultas} fuso={hoje.fuso} />
         </section>
 
         <section className="bg-paper border-linha min-w-0 rounded-[16px] border p-5">

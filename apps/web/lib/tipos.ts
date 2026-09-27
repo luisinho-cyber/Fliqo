@@ -61,3 +61,60 @@ export interface Hoje {
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
 }
+
+export type FaixaDeOrcamento =
+  'nao_informado' | 'ate_1k' | 'de_1k_a_3k' | 'de_3k_a_10k' | 'acima_10k';
+
+export interface ItemDaCaixa {
+  id: string;
+  modo: 'ia' | 'humano';
+  motivoHandover: string | null;
+  ultimaEntradaEm: string | null;
+  paciente: string;
+  telefoneMascarado: string;
+  temConsentimento: boolean;
+  ultimaMensagem: { corpo: string | null; autor: string; em: string } | null;
+}
+
+export interface Qualificacao {
+  origem: { quem: 'paciente' | 'clinica' | 'desconhecida'; em: string | null };
+  conveniosDaClinica: string[];
+  urgencia: { nivel: 'alta' | 'normal'; motivo: string | null };
+  interesse: string | null;
+  faixaDeOrcamento: FaixaDeOrcamento | null;
+  observacao: string | null;
+  atualizadoEm: string | null;
+}
+
+export interface FichaDaConversa {
+  id: string;
+  modo: 'ia' | 'humano';
+  motivoHandover: string | null;
+  paciente: { id: string; nome: string; telefone: string; temConsentimento: boolean };
+  proximasConsultas: { id: string; inicio: string; status: string }[];
+  qualificacao: Qualificacao;
+}
+
+export interface Mensagem {
+  id: string;
+  direction: 'entrada' | 'saida';
+  author: 'paciente' | 'ia' | 'humano' | 'sistema';
+  body: string | null;
+  media_kind: string | null;
+  created_at: string;
+}
+
+export interface DiaDaSemana {
+  dataIso: string;
+  ehHoje: boolean;
+  consultas: ConsultaDaTela[];
+  vagas: VagaDaTela[];
+}
+
+export interface Semana {
+  clinica: ClinicaDaPessoa;
+  fuso: string;
+  agora: string;
+  profissionais: ProfissionalDaTela[];
+  dias: DiaDaSemana[];
+}

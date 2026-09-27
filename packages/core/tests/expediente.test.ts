@@ -4,6 +4,7 @@ import {
   diaNoFuso,
   expedienteEmIntervalos,
   noFuso,
+  semanaNoFuso,
   somarDias,
   type FaixaDeExpediente,
 } from '../src/index';
@@ -78,5 +79,44 @@ describe('diaNoFuso', () => {
     const hoje = diaNoFuso(new Date('2026-07-15T15:00:00Z'), 'America/Sao_Paulo');
     const amanha = diaNoFuso(new Date('2026-07-16T15:00:00Z'), 'America/Sao_Paulo');
     expect(hoje.fim.getTime()).toBe(amanha.inicio.getTime());
+  });
+});
+
+describe('semanaNoFuso', () => {
+  it('começa na segunda, mesmo pedindo um dia do meio da semana', () => {
+    // 2026-11-11 é uma quarta-feira.
+    const s = semanaNoFuso('2026-11-11', SP);
+    expect(s.dias.map((d) => d.dataIso)).toEqual([
+      '2026-11-09',
+      '2026-11-10',
+      '2026-11-11',
+      '2026-11-12',
+      '2026-11-13',
+      '2026-11-14',
+      '2026-11-15',
+    ]);
+  });
+
+  it('domingo pertence à semana que começou na segunda anterior', () => {
+    // Sábado é ponta da semana numa clínica, não começo.
+    const s = semanaNoFuso('2026-11-15', SP);
+    expect(s.dias[0]?.dataIso).toBe('2026-11-09');
+  });
+
+  it('segunda pedida devolve ela mesma como primeiro dia', () => {
+    expect(semanaNoFuso('2026-11-09', SP).dias[0]?.dataIso).toBe('2026-11-09');
+  });
+
+  it('a janela vai da meia-noite de segunda à meia-noite da segunda seguinte', () => {
+    const s = semanaNoFuso('2026-11-11', SP);
+    expect(s.inicio.toISOString()).toBe('2026-11-09T03:00:00.000Z');
+    expect(s.fim.toISOString()).toBe('2026-11-16T03:00:00.000Z');
+  });
+
+  it('os dias se encaixam sem buraco nem sobreposição', () => {
+    const s = semanaNoFuso('2026-11-11', SP);
+    for (let i = 1; i < s.dias.length; i++) {
+      expect(s.dias[i]?.inicio.getTime()).toBe(s.dias[i - 1]?.fim.getTime());
+    }
   });
 });

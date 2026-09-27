@@ -151,6 +151,24 @@ export interface TabelaConversas {
   last_inbound_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+export type FaixaDeOrcamento =
+  'nao_informado' | 'ate_1k' | 'de_1k_a_3k' | 'de_3k_a_10k' | 'acima_10k';
+
+/** O que a recepção sabe do lead e a agenda não guarda. Rótulo, nunca dinheiro. */
+export interface TabelaQualificacao {
+  conversation_id: string;
+  clinic_id: string;
+  interest: ColumnType<string | null, string | null, string | null>;
+  budget_band: ColumnType<
+    FaixaDeOrcamento | null,
+    FaixaDeOrcamento | null,
+    FaixaDeOrcamento | null
+  >;
+  note: ColumnType<string | null, string | null, string | null>;
+  updated_by: ColumnType<string | null, string | null, string | null>;
+  updated_at: ComDefault<Date>;
+}
+
 export interface TabelaMensagens {
   id: ComDefault<string>;
   clinic_id: string;
@@ -295,6 +313,7 @@ export interface Banco {
   'app.alerts': TabelaAlertas;
   'app.ai_usage': TabelaConsumoIa;
   'app.whatsapp_connection_events': TabelaEventosConexao;
+  'app.lead_qualifications': TabelaQualificacao;
 }
 
 /**
@@ -503,5 +522,14 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     kind: true,
     detail: true,
     created_at: true,
+  },
+  'app.lead_qualifications': {
+    conversation_id: true,
+    clinic_id: true,
+    interest: true,
+    budget_band: true,
+    note: true,
+    updated_by: true,
+    updated_at: true,
   },
 };

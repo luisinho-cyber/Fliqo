@@ -72,3 +72,85 @@ export async function resolverDecisao(formulario: FormData): Promise<void> {
   });
   revalidatePath('/hoje');
 }
+
+/** Os três toques da tela Hoje. Um por consulta, sem formulário. */
+export async function tocar(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('consulta'));
+  const toque = texto(formulario.get('toque'));
+  if (!['chegou', 'iniciar', 'finalizar'].includes(toque)) return;
+
+  await naApi(`/api/agenda/${id}/${toque}`);
+  // A Linha do Dia e a régua de atraso voltam recalculadas na mesma resposta:
+  // quem tocou não precisa recarregar nada.
+  revalidatePath('/hoje');
+}
+
+export async function assumirConversa(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('conversa'));
+  await naApi(`/api/conversas/${id}/assumir`);
+  revalidatePath(`/conversas/${id}`);
+  revalidatePath('/conversas');
+}
+
+export async function devolverConversa(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('conversa'));
+  await naApi(`/api/conversas/${id}/devolver`);
+  revalidatePath(`/conversas/${id}`);
+  revalidatePath('/conversas');
+}
+
+export async function salvarQualificacao(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('conversa'));
+  const faixa = texto(formulario.get('faixaDeOrcamento'));
+  await naApi(`/api/conversas/${id}/qualificacao`, {
+    interesse: texto(formulario.get('interesse')) || null,
+    faixaDeOrcamento: faixa === '' ? null : faixa,
+    observacao: texto(formulario.get('observacao')) || null,
+  });
+  revalidatePath(`/conversas/${id}`);
+}
+
+export async function remarcar(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('consulta'));
+  const novoInicio = texto(formulario.get('novoInicio'));
+  const r = await naApi(`/api/agenda/${id}/remarcar`, { novoInicio });
+
+  // 409 é resposta de negócio, não erro: alguém marcou aquele horário no
+  // intervalo entre a tela carregar e o arraste terminar. A consulta original
+  // fica intacta, e a tela diz isso em português.
+  const aviso = r.ok ? '' : '?aviso=horario_ocupado';
+  revalidatePath('/agenda');
+  if (aviso !== '') redirect(`/agenda${aviso}`);
+}
+
+export async function oferecerVaga(formulario: FormData): Promise<void> {
+  await naApi('/api/fila/oferecer', {
+    profissionalId: texto(formulario.get('profissionalId')),
+    inicio: texto(formulario.get('inicio')),
+    fim: texto(formulario.get('fim')),
+  });
+  redirect('/agenda?aviso=oferta_enviada');
+}
+
+/** Um POST na nossa API, já com o portador e a clínica da sessão. */
+async function naApi(caminho: string, corpo?: unknown) {
+  const token = await tokenDaSessao();
+  if (token === undefined) redirect('/login?erro=sessao');
+  const clinicaId = await clinicaEscolhida();
+  return chamarApi(caminho, {
+    token,
+    metodo: 'POST',
+    ...(clinicaId === undefined ? {} : { clinicaId }),
+    ...(corpo === undefined ? {} : { corpo }),
+  });
+}
+
+/**
+ * Remarcar pelo arraste. Recebe argumentos, não FormData, porque quem chama é
+ * o componente de cliente da grade — o formulário abaixo dela usa `remarcar`.
+ */
+export async function remarcarPorArraste(consultaId: string, novoInicio: string): Promise<void> {
+  const r = await naApi(`/api/agenda/${consultaId}/remarcar`, { novoInicio });
+  revalidatePath('/agenda');
+  if (!r.ok) redirect('/agenda?aviso=horario_ocupado');
+}

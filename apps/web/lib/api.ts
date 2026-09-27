@@ -20,6 +20,8 @@ export interface Chamada {
   token: string;
   clinicaId?: string;
   metodo?: 'GET' | 'POST';
+  /** Corpo do pedido. Vai como JSON; nunca entra em log nem em erro. */
+  corpo?: unknown;
   /** Injetável no teste: a API de verdade exige servidor do outro lado. */
   buscar?: typeof fetch;
   sinal?: AbortSignal;
@@ -48,7 +50,9 @@ export async function chamarApi<T>(
       headers: {
         authorization: `Bearer ${chamada.token}`,
         ...(chamada.clinicaId === undefined ? {} : { 'x-clinica': chamada.clinicaId }),
+        ...(chamada.corpo === undefined ? {} : { 'content-type': 'application/json' }),
       },
+      ...(chamada.corpo === undefined ? {} : { body: JSON.stringify(chamada.corpo) }),
       // A tela Hoje é o agora: uma resposta guardada mostraria um atraso que já passou.
       cache: 'no-store',
       ...(chamada.sinal === undefined ? {} : { signal: chamada.sinal }),

@@ -1,5 +1,5 @@
 import { criarDb, type Db } from '@fliqo/db';
-import { criarFila } from '@fliqo/db/fila';
+import { criarFila, FILA_OFERTA, SCHEMA_FILA } from '@fliqo/db/fila';
 import {
   ownerPool,
   prepararFilaDeTeste,
@@ -16,7 +16,7 @@ import { PassThrough } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { construirApp } from '../src/app';
 import type { Config } from '../src/config';
-import type { RespostaHoje } from '../src/rotas/hoje';
+import type { RespostaHoje, RespostaSemana } from '../src/rotas/hoje';
 
 /**
  * A tela Hoje, do lado da API.
@@ -73,6 +73,19 @@ async function chamar(
       ...(jwt === undefined ? {} : { authorization: `Bearer ${jwt}` }),
       ...(opcoes.clinica === undefined ? {} : { 'x-clinica': opcoes.clinica }),
     },
+  });
+}
+
+async function postar(url: string, opcoes: { userId: string; clinica: string; corpo: unknown }) {
+  return app.inject({
+    method: 'POST',
+    url,
+    headers: {
+      authorization: `Bearer ${await token(opcoes.userId)}`,
+      'x-clinica': opcoes.clinica,
+      'content-type': 'application/json',
+    },
+    payload: JSON.stringify(opcoes.corpo),
   });
 }
 
@@ -327,5 +340,186 @@ describe('o token não aparece no log', () => {
     const tudo = linhas.join('');
     expect(tudo).not.toContain(jwt);
     expect(tudo).toContain('[redigido]');
+  });
+});
+
+describe('GET /api/agenda/semana', () => {
+  it('devolve sete dias, de segunda a domingo, e marca qual é hoje', async () => {
+    const r = await chamar('/api/agenda/semana', { userId: DONA_DA_A, clinica: c.clinicA });
+    expect(r.statusCode).toBe(200);
+    const semana = r.json<RespostaSemana>();
+    expect(semana.dias).toHaveLength(7);
+    expect(semana.dias.filter((d) => d.ehHoje)).toHaveLength(1);
+  });
+
+  it('o atraso é calculado só na coluna de hoje', async () => {
+    // Projetar atraso para quinta seria inventar um número que nada sustenta, e
+    // a recepção remarcaria em cima dele.
+    const r = await chamar('/api/agenda/semana', { userId: DONA_DA_A, clinica: c.clinicA });
+    const semana = r.json<RespostaSemana>();
+    for (const dia of semana.dias) {
+      if (dia.ehHoje) continue;
+      expect(dia.consultas.every((x) => x.atrasoMin === 0)).toBe(true);
+    }
+    const hoje = semana.dias.find((d) => d.ehHoje);
+    expect(hoje?.consultas.some((x) => x.atrasoMin > 0)).toBe(true);
+  });
+
+  it('em dia que não é hoje o bloco fica onde foi marcado, mesmo com horários batidos', async () => {
+    // Sem esta invariante, projetar a semana inteira passaria despercebido: num
+    // dia futuro sem atendimento começado a projeção dá zero de atraso por
+    // acaso. O que a distingue é a SITUAÇÃO: fora de hoje, nada é "em
+    // atendimento" nem "finalizada", porque não se projeta outro dia.
+    const antes = await chamar('/api/agenda/semana', { userId: DONA_DA_A, clinica: c.clinicA });
+    const outroDia = antes.json<RespostaSemana>().dias.find((d) => !d.ehHoje);
+    expect(outroDia).toBeDefined();
+
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.appointments
+         (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
+          price_cents, status, started_at, finished_at, checked_in_at)
+       select $1, $2, $3, $4,
+              timezone(cl.timezone, ($5::date + time '09:00')),
+              timezone(cl.timezone, ($5::date + time '10:00')),
+              25000, 'realizado',
+              timezone(cl.timezone, ($5::date + time '09:40')),
+              timezone(cl.timezone, ($5::date + time '10:30')),
+              timezone(cl.timezone, ($5::date + time '08:55'))
+         from app.clinics cl where cl.id = $1
+       returning id`,
+      [c.clinicA, c.profA, c.patients[3]!, c.procEletivo, outroDia!.dataIso],
+    );
+
+    try {
+      const r = await chamar('/api/agenda/semana', { userId: DONA_DA_A, clinica: c.clinicA });
+      const dia = r.json<RespostaSemana>().dias.find((d) => d.dataIso === outroDia!.dataIso);
+      const plantada = dia?.consultas.find((x) => x.id === rows[0]!.id);
+      expect(plantada).toBeDefined();
+      expect(plantada!.situacao).toBe('aguardando');
+      expect(plantada!.atrasoMin).toBe(0);
+      expect(plantada!.inicioPrevisto).toBe(plantada!.inicioAgendado);
+    } finally {
+      await owner.query(`delete from app.appointments where id = $1`, [rows[0]!.id]);
+    }
+  });
+
+  it('filtra por profissional', async () => {
+    const r = await chamar(`/api/agenda/semana?profissionalId=${c.profA}`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(r.json<RespostaSemana>().profissionais.map((p) => p.id)).toEqual([c.profA]);
+  });
+
+  it('data mal formada é recusada antes de tocar no banco', async () => {
+    const r = await chamar('/api/agenda/semana?de=ontem', {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('a dona da A não vê a semana da B, e o 403 não carrega nada da B', async () => {
+    const r = await chamar('/api/agenda/semana', { userId: DONA_DA_A, clinica: c.clinicB });
+    expect(r.statusCode).toBe(403);
+    expect(r.body).not.toContain('99900');
+    expect(r.body).not.toContain('Dr. Beto');
+  });
+});
+
+describe('POST /api/fila/oferecer', () => {
+  async function jobsDeOferta(): Promise<number> {
+    const { rows } = await owner.query<{ n: string }>(
+      `select count(*) as n from ${SCHEMA_FILA}.job where name = $1`,
+      [FILA_OFERTA],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  const vaga = () => ({
+    profissionalId: c.profA,
+    inicio: daquiA(300).toISOString(),
+    fim: daquiA(360).toISOString(),
+  });
+
+  it('enfileira uma rodada para a vaga', async () => {
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    const r = await postar('/api/fila/oferecer', {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: vaga(),
+    });
+    expect(r.statusCode).toBe(202);
+    expect(await jobsDeOferta()).toBe(1);
+  });
+
+  it('duplo clique na mesma vaga não abre duas rodadas', async () => {
+    // Duas rodadas mandariam oferta em dobro para as mesmas pessoas da fila.
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    const pedido = vaga();
+    for (let i = 0; i < 2; i++) {
+      const r = await postar('/api/fila/oferecer', {
+        userId: DONA_DA_A,
+        clinica: c.clinicA,
+        corpo: pedido,
+      });
+      expect(r.statusCode).toBe(202);
+    }
+    expect(await jobsDeOferta()).toBe(1);
+  });
+
+  it('vagas diferentes abrem rodadas diferentes', async () => {
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    for (const minutos of [400, 500]) {
+      await postar('/api/fila/oferecer', {
+        userId: DONA_DA_A,
+        clinica: c.clinicA,
+        corpo: {
+          profissionalId: c.profA,
+          inicio: daquiA(minutos).toISOString(),
+          fim: daquiA(minutos + 60).toISOString(),
+        },
+      });
+    }
+    expect(await jobsDeOferta()).toBe(2);
+  });
+
+  it('intervalo invertido é recusado', async () => {
+    const r = await postar('/api/fila/oferecer', {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: {
+        profissionalId: c.profA,
+        inicio: daquiA(400).toISOString(),
+        fim: daquiA(300).toISOString(),
+      },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('profissional de outra clínica não é encontrado', async () => {
+    // A RLS não enxerga a linha: para a clínica A aquele profissional não existe.
+    const { rows } = await owner.query<{ id: string }>(
+      `select id from app.professionals where clinic_id = $1 limit 1`,
+      [c.clinicB],
+    );
+    const r = await postar('/api/fila/oferecer', {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { ...vaga(), profissionalId: rows[0]!.id },
+    });
+    expect(r.statusCode).toBe(404);
+  });
+
+  it('a dona da B não oferece vaga na agenda da A, e nada é enfileirado', async () => {
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    const r = await postar('/api/fila/oferecer', {
+      userId: DONA_DA_B,
+      clinica: c.clinicA,
+      corpo: vaga(),
+    });
+    expect(r.statusCode).toBe(403);
+    expect(r.body).not.toContain(c.profA);
+    expect(await jobsDeOferta()).toBe(0);
   });
 });
