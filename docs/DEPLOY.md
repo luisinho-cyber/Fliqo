@@ -158,6 +158,21 @@ apenas redefine a mesma senha.
 > Supabase não é. Se isso acontecer, fale com o suporte do Supabase: um papel com
 > `bypassrls` enxerga todas as clínicas de uma vez.
 
+### Se o passo "Conferir acesso das funções security definer" falhar
+
+Ele não conserta nada: só avisa. A mensagem nomeia a função, a tabela e o papel.
+
+O que aconteceu: uma função `security definer` roda com os poderes do dono dela.
+Se a tabela que ela lê tem `force row level security`, a política vale também
+para o dono, e a função devolve zero linha **sem dar erro**. A fila de ações
+para de rodar, a varredura de atrasos não acha clínica e o painel não acha a
+clínica de ninguém — tudo em silêncio.
+
+Não ligue `BYPASSRLS` no papel para destravar: é interruptor global e sai da
+vista. O conserto é uma migração nova com política explícita na tabela,
+liberando o papel dono pelo nome — visível no schema, auditável e com escopo por
+tabela. Me chame antes de aplicar.
+
 ## Passo 4 — Montar o `DATABASE_URL` da aplicação
 
 Pegue a string do **Transaction pooler** (passo 1) e troque duas coisas:

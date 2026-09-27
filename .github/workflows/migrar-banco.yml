@@ -51,3 +51,20 @@ jobs:
           FLIQO_APP_PASSWORD: ${{ secrets.FLIQO_APP_PASSWORD }}
           SUPABASE_REGION: ${{ vars.SUPABASE_REGION }}
         run: npm run db:papel-app
+
+      # Conferência, não correção. Uma função `security definer` roda com os
+      # poderes do DONO dela. Se a tabela que ela lê tem `force row level
+      # security`, a política passa a valer também para o dono e a função
+      # devolve zero linha — sem erro nenhum. A fila de ações pararia de rodar, a
+      # varredura de atrasos não acharia clínica e o painel não acharia a clínica
+      # de ninguém, tudo em silêncio.
+      #
+      # No banco local isso não aparece porque o `postgres` é superusuário e
+      # ignora RLS. No Supabase ele não é superusuário, então o lugar de
+      # conferir é aqui, contra o banco de verdade. O passo falha nomeando a
+      # função, a tabela e o papel.
+      - name: Conferir acesso das funções security definer
+        env:
+          DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+          SUPABASE_REGION: ${{ vars.SUPABASE_REGION }}
+        run: npm run db:conferir-rls
