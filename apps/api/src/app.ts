@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import rateLimit from '@fastify/rate-limit';
 import { comoConexaoDoBoss, conversas, numeros, pacientes, withClinic, type Db } from '@fliqo/db';
 import { FILA_BOTAO, FILA_CONVERSA } from '@fliqo/db/fila';
@@ -8,6 +9,8 @@ import { assinaturaConfere } from './assinatura';
 import type { Config } from './config';
 import { extrair, extrairEcos, PayloadWebhook } from './payload';
 import { registrarConexao } from './rotas/conexao';
+import { registrarConversas } from './rotas/conversas';
+import { registrarHoje } from './rotas/hoje';
 import { registrarPainel } from './rotas/painel';
 
 declare module 'fastify' {
@@ -41,10 +44,27 @@ export function construirApp(dep: Dependencias): FastifyInstance {
   const { config, db, boss } = dep;
 
   const app = Fastify({
-    logger:
-      dep.fluxoDeLog === undefined
+    logger: {
+      ...(dep.fluxoDeLog === undefined
         ? { level: config.LOG_LEVEL }
-        : { level: 'info', stream: dep.fluxoDeLog },
+        : { level: 'info', stream: dep.fluxoDeLog }),
+      // O token do painel é segredo de terceiro, como qualquer chave externa:
+      // não entra no log nem em pedaço. Log vaza para agregador, ticket e
+      // captura de tela — e um token inteiro ali é sessão roubada.
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'headers.authorization',
+          'headers.cookie',
+          'authorization',
+          'token',
+          'access_token',
+          'refresh_token',
+        ],
+        censor: '[redigido]',
+      },
+    },
     // A Meta assina o corpo como enviou. Se um proxy reescrever, o hash não bate.
     bodyLimit: 2 * 1024 * 1024,
   });
@@ -77,12 +97,18 @@ export function construirApp(dep: Dependencias): FastifyInstance {
         max: 300,
         timeWindow: '1 minute',
         keyGenerator: (req) => {
+          // Hash, não um pedaço do token: a chave fica em memória e em mensagem
+          // de erro do limitador, e nem um pedaço do token pode chegar lá.
           const auth = req.headers.authorization;
-          return typeof auth === 'string' ? auth.slice(-32) : req.ip;
+          return typeof auth === 'string'
+            ? createHash('sha256').update(auth).digest('base64url')
+            : req.ip;
         },
       });
       const segredoJwt = new TextEncoder().encode(config.SUPABASE_JWT_SECRET);
       registrarPainel(painel, { db, segredoJwt, boss });
+      registrarHoje(painel, { db, segredoJwt, boss });
+      registrarConversas(painel, { db, segredoJwt, boss });
       registrarConexao(painel, {
         db,
         segredoJwt,

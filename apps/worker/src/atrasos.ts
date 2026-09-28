@@ -1,12 +1,11 @@
 import {
   CONFIG_ATRASOS_PADRAO,
   decidirAvisos,
+  diaNoFuso,
   duracaoParaProjecao,
   esperandoDemais,
-  noFuso,
   projetarDia,
   respeitarLimiteDeAvisos,
-  somarDias,
   type ConsultaDoDia,
 } from '@fliqo/core';
 import { alertas, atrasos, numeros, pacientes, withClinic, type Db, type Trx } from '@fliqo/db';
@@ -85,7 +84,7 @@ async function processar(
   };
 
   const fuso = await atrasos.fusoDaClinica(trx, clinicId);
-  const { inicio, fim } = diaDaClinica(agora, fuso);
+  const { inicio, fim } = diaNoFuso(agora, fuso);
   const doDia = await atrasos.consultasDoDia(trx, inicio, fim);
   if (doDia.length === 0) return saida;
 
@@ -220,16 +219,6 @@ async function processar(
   }
 
   return saida;
-}
-
-/** O dia da clínica, no fuso dela — uma em Manaus vira o dia uma hora depois. */
-function diaDaClinica(agora: Date, fuso: string): { inicio: Date; fim: Date } {
-  // en-CA formata como AAAA-MM-DD.
-  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: fuso }).format(agora);
-  return {
-    inicio: noFuso(hoje, '00:00', fuso),
-    fim: noFuso(somarDias(hoje, 1), '00:00', fuso),
-  };
 }
 
 function hora(d: Date, fuso: string): string {

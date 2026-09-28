@@ -3,84 +3,14 @@ import {
   alertas,
   atrasos,
   comoConexaoDoBoss,
-  conversas,
   fila,
   pacientes,
   procedimentos,
-  withClinic,
-  type Db,
-  type Trx,
 } from '@fliqo/db';
-import { FILA_ATRASOS } from '@fliqo/db/fila';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { PgBoss } from 'pg-boss';
+import { FILA_ATRASOS, FILA_OFERTA } from '@fliqo/db/fila';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { autenticar, membroDaClinica, type Usuario } from '../auth';
-
-export interface ContextoPainel {
-  db: Db;
-  segredoJwt: Uint8Array;
-  boss: PgBoss;
-}
-
-/** Cabeçalho que diz em qual clínica a pessoa quer trabalhar. É pedido, não credencial. */
-const CABECALHO_CLINICA = 'x-clinica';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * O que `comUsuario` devolve.
- *
- * Precisa ser explícito: se o retorno fosse `T | undefined`, "já respondi 403" e
- * "a função devolveu undefined" seriam a mesma coisa, e uma rota cujo repositório
- * não acha a linha responderia como se o acesso tivesse sido negado.
- */
-type SaidaPainel<T> = { respondido: true } | { respondido: false; valor: T };
-
-/**
- * Roda `fn` já autenticado e dentro da clínica, ou responde 401/403.
- *
- * A ordem importa: a transação abre na clínica PEDIDA, e a primeira coisa que
- * acontece dentro dela é confirmar que a pessoa é membro. Nada é lido antes disso.
- * Pedir outra clínica não adianta: a RLS já limitou clinic_members ao tenant da
- * transação, então a consulta não acha a pessoa e o acesso é negado.
- */
-async function comUsuario<T>(
-  ctx: ContextoPainel,
-  req: FastifyRequest,
-  reply: FastifyReply,
-  fn: (trx: Trx, usuario: Usuario) => Promise<T>,
-): Promise<SaidaPainel<T>> {
-  const auth = await autenticar(req.headers.authorization, ctx.segredoJwt);
-  if (!auth.ok) {
-    await reply.code(401).send({ erro: auth.motivo });
-    return { respondido: true };
-  }
-
-  const clinicId = req.headers[CABECALHO_CLINICA];
-  if (typeof clinicId !== 'string' || !UUID.test(clinicId)) {
-    await reply.code(400).send({ erro: 'clinica_nao_informada' });
-    return { respondido: true };
-  }
-
-  const saida = await withClinic(
-    clinicId,
-    async (trx) => {
-      const papel = await membroDaClinica(trx, auth.userId);
-      if (papel === undefined) return { negado: true as const };
-      const valor = await fn(trx, { userId: auth.userId, clinicId, papel });
-      return { negado: false as const, valor };
-    },
-    ctx.db,
-  );
-
-  if (saida.negado) {
-    // 403 e não 404: a pessoa existe, o acesso é que não.
-    await reply.code(403).send({ erro: 'nao_e_membro_da_clinica' });
-    return { respondido: true };
-  }
-  return { respondido: false, valor: saida.valor };
-}
+import { comUsuario, UUID, type ContextoPainel } from './contexto';
 
 const Periodo = z.object({
   de: z.coerce.date(),
@@ -107,6 +37,11 @@ const NovaEspera = z.object({
   prioridade: z.number().int().min(0).max(3).optional(),
 });
 const Consentimento = z.object({ em: z.coerce.date().optional() });
+const Vaga = z.object({
+  profissionalId: z.string().uuid(),
+  inicio: z.coerce.date(),
+  fim: z.coerce.date(),
+});
 
 export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void {
   app.get('/api/agenda', async (req, reply) => {
@@ -253,46 +188,64 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
     return reply.code(201).send(r.valor);
   });
 
-  app.get('/api/conversas', async (req, reply) => {
-    const r = await comUsuario(ctx, req, reply, (trx) =>
-      trx
-        .selectFrom('app.conversations')
-        .selectAll()
-        .orderBy('last_inbound_at', 'desc')
-        .limit(100)
-        .execute(),
-    );
-    return r.respondido ? reply : reply.send(r.valor);
-  });
+  /**
+   * Oferecer um horário vago à lista de espera.
+   *
+   * O painel PEDE; quem executa é o worker, que é quem fala com o WhatsApp.
+   * A fila é `stately` com singletonKey na vaga: a recepção clicando duas vezes
+   * no mesmo horário não abre duas rodadas — e duas rodadas mandariam oferta em
+   * dobro para as mesmas pessoas da fila.
+   *
+   * O clinicId vai do servidor, da transação já autenticada. O corpo do pedido
+   * nunca diz de qual clínica é a vaga.
+   */
+  app.post('/api/fila/oferecer', async (req, reply) => {
+    const c = Vaga.safeParse(req.body);
+    if (!c.success) return reply.code(400).send({ erro: 'pedido_invalido' });
+    if (c.data.fim <= c.data.inicio) return reply.code(400).send({ erro: 'intervalo_invalido' });
 
-  app.get('/api/conversas/:id/mensagens', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) => conversas.ultimasMensagens(trx, id, 50));
-    return r.respondido ? reply : reply.send(r.valor);
-  });
+    const r = await comUsuario(ctx, req, reply, async (trx, u) => {
+      // O profissional precisa ser desta clínica: a RLS não deixa a consulta
+      // achar profissional de outra, então não achar é resposta de negócio.
+      const prof = await trx
+        .selectFrom('app.professionals')
+        .select(['id'])
+        .where('id', '=', c.data.profissionalId)
+        .executeTakeFirst();
+      if (!prof) return { ok: false as const };
 
-  app.post('/api/conversas/:id/assumir', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) =>
-      conversas.definirModo(trx, id, 'humano', 'assumida pelo painel'),
-    );
+      const chave = `${u.clinicId}:${c.data.profissionalId}:${c.data.inicio.toISOString()}`;
+      await ctx.boss.send({
+        name: FILA_OFERTA,
+        data: {
+          clinicId: u.clinicId,
+          profissionalId: c.data.profissionalId,
+          inicio: c.data.inicio.toISOString(),
+          fim: c.data.fim.toISOString(),
+        },
+        options: { singletonKey: chave, db: comoConexaoDoBoss(trx) },
+      });
+      return { ok: true as const };
+    });
     if (r.respondido) return reply;
-    return r.valor
-      ? reply.send(r.valor)
-      : reply.code(404).send({ erro: 'conversa_nao_encontrada' });
-  });
-
-  app.post('/api/conversas/:id/devolver', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) => conversas.definirModo(trx, id, 'ia'));
-    if (r.respondido) return reply;
-    return r.valor
-      ? reply.send(r.valor)
-      : reply.code(404).send({ erro: 'conversa_nao_encontrada' });
+    return r.valor.ok
+      ? reply.code(202).send({ ok: true })
+      : reply.code(404).send({ erro: 'profissional_nao_encontrado' });
   });
 
   app.get('/api/alertas', async (req, reply) => {
     const r = await comUsuario(ctx, req, reply, (trx) => alertas.abertos(trx));
     return r.respondido ? reply : reply.send(r.valor);
+  });
+
+  /** A única ação de cada linha da lista de decisões: resolvido, some da tela. */
+  app.post('/api/alertas/:id/resolver', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return reply.code(400).send({ erro: 'pedido_invalido' });
+    const r = await comUsuario(ctx, req, reply, (trx) => alertas.resolver(trx, id));
+    if (r.respondido) return reply;
+    // 404 também para o alerta que outra pessoa já resolveu: do ponto de vista
+    // de quem clicou agora, não há mais o que resolver.
+    return r.valor ? reply.send(r.valor) : reply.code(404).send({ erro: 'alerta_nao_encontrado' });
   });
 }

@@ -135,6 +135,29 @@ export default tseslint.config(
     languageOptions: { globals: { window: 'readonly', document: 'readonly' } },
   },
 
+  {
+    // O painel também é um app Next. A regra abaixo é o guarda do CLAUDE.md,
+    // regra 10: o navegador nunca lê tabela. `supabase.from('patients')` e
+    // qualquer outro `.from(` param aqui — inclusive `Array.from(`, que tem
+    // `[...x]` no lugar. O teste apps/web/tests/guardas.test.ts cobre o resto
+    // dos arquivos (.mjs, .css, o que o lint não olha).
+    files: ['apps/web/**/*.{ts,tsx}'],
+    languageOptions: { globals: { window: 'readonly', document: 'readonly' } },
+    rules: {
+      // O painel é um app Next com app/, componentes/ e lib/ lado a lado:
+      // `../../lib/api` continua dentro do mesmo app, não é fuga de pacote.
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [proibirApps] }],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[property.name='from']",
+          message:
+            'O painel fala só com a nossa API, que abre withClinic e passa pela RLS (CLAUDE.md, regra 10). Para copiar array, use [...x].',
+        },
+      ],
+    },
+  },
+
   // ------------------------------------------------------------------
   // Testes
   // ------------------------------------------------------------------

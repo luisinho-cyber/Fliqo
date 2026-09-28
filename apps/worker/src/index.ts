@@ -1,10 +1,18 @@
 import { ClienteAnthropic } from '@fliqo/ai';
 import { criarDb, withClinic } from '@fliqo/db';
-import { criarFila, FILA_ATRASOS, FILA_BOTAO, FILA_CONVERSA, FILA_RESPOSTA } from '@fliqo/db/fila';
+import {
+  criarFila,
+  FILA_ATRASOS,
+  FILA_BOTAO,
+  FILA_CONVERSA,
+  FILA_OFERTA,
+  FILA_RESPOSTA,
+} from '@fliqo/db/fila';
 import { ClienteMeta } from '@fliqo/whatsapp';
 import pino from 'pino';
 import { rodarUmaVez } from './acoes';
 import { varrerAtrasos, varrerClinica } from './atrasos';
+import { abrirRodada } from './ofertas';
 import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
@@ -69,6 +77,30 @@ await boss.work<{ clinicId: string }>(FILA_ATRASOS, async ([job]) => {
     log.info({ clinicId: job.data.clinicId, ...r }, 'atrasos após toque');
   }
 });
+
+// Horário vago oferecido pelo painel. Quem pediu foi a recepção; quem fala com
+// o WhatsApp é este worker. A fila é `stately` com singletonKey na vaga: dois
+// cliques no mesmo horário não viram duas rodadas de oferta.
+await boss.work<{ clinicId: string; profissionalId: string; inicio: string; fim: string }>(
+  FILA_OFERTA,
+  async ([job]) => {
+    if (!job) return;
+    const { clinicId, profissionalId, inicio, fim } = job.data;
+    const r = await withClinic(
+      clinicId,
+      (trx) =>
+        abrirRodada(
+          trx,
+          whatsapp,
+          clinicId,
+          { profissionalId, inicio: new Date(inicio), fim: new Date(fim) },
+          new Date(),
+        ),
+      db,
+    );
+    log.info({ clinicId, ofertados: r.ofertados, motivo: r.motivo }, 'vaga oferecida pelo painel');
+  },
+);
 
 let rodando = true;
 

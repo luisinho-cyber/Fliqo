@@ -97,3 +97,41 @@ mensagem.
 ```sql
 update app.clinics set active = false where id = '<id da clínica>';
 ```
+
+## Dado de paciente, para quando houver política de retenção
+
+Ainda não existe retenção, exportação nem exclusão automatizadas. Quando
+existirem, estas são as tabelas que guardam dado sobre paciente e precisam
+entrar nelas juntas:
+
+| Tabela                    | O que guarda                                              |
+| ------------------------- | --------------------------------------------------------- |
+| `app.patients`            | nome, telefone, consentimento                             |
+| `app.conversations`       | a conversa e por que ela saiu da assistente               |
+| `app.messages`            | o conteúdo do que a pessoa escreveu                       |
+| `app.lead_qualifications` | interesse, faixa de orçamento e a leitura de quem atendeu |
+| `app.alerts`              | título e corpo que citam a pessoa                         |
+| `app.delay_notices`       | quando e por que ela foi avisada                          |
+
+`app.lead_qualifications` é a mais fácil de esquecer: ela nasceu depois das
+outras e não é óbvia numa varredura por nome de tabela. Apagar um paciente sem
+apagar a qualificação dele deixa a leitura de quem atendeu órfã no banco.
+
+## Pendências para quando houver log de auditoria
+
+Hoje não existe log de auditoria. Duas coisas precisam ser resolvidas junto com
+ele, e não antes, porque hoje não há para onde apontar:
+
+- **`lead_qualifications.updated_by` não tem chave estrangeira.** O usuário mora
+  no Supabase Auth, fora do schema `app`. Enquanto a tabela tiver um escritor só
+  e o painel controlar o campo — ele vem do `sub` do JWT, nunca do navegador —,
+  isso é aceitável. Quando o log existir, o campo precisa passar a apontar para
+  algo que continue existindo depois que a pessoa sair da clínica, senão a
+  auditoria aponta para um id que não explica nada.
+- **Não há `created_at` na qualificação.** `updated_at` é sobrescrito a cada
+  edição, então hoje não dá para saber quando a qualificação nasceu — só quando
+  foi mexida pela última vez. Para auditoria isso importa: "quem qualificou e
+  quando" é a pergunta, e metade dela está faltando.
+
+Nenhuma das duas trava nada agora. As duas ficam caras se forem lembradas só
+depois de a tabela ter volume.

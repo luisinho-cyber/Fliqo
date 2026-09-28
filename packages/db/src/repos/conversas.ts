@@ -1,4 +1,4 @@
-import type { Selectable } from 'kysely';
+import { sql, type Selectable } from 'kysely';
 import { ehViolacaoDeUnicidade } from '../erros';
 import type {
   AutorMensagem,
@@ -123,4 +123,149 @@ export async function ultimasMensagens(
     .limit(quantidade)
     .execute();
   return recentes.reverse();
+}
+
+export interface ItemDaCaixa {
+  id: string;
+  modo: ModoConversa;
+  motivoHandover: string | null;
+  ultimaEntradaEm: Date | null;
+  pacienteId: string;
+  paciente: string;
+  telefone: string;
+  consentimentoEm: Date | null;
+  ultimaMensagem: { corpo: string | null; autor: AutorMensagem; em: Date } | undefined;
+}
+
+export type EstadoDaCaixa = 'humano' | 'assistente' | 'todas';
+
+/**
+ * A caixa de entrada da clínica.
+ *
+ * Conversa em modo humano vem em cima porque é a que tem alguém esperando: a
+ * assistente já calou naquela conversa e, se ninguém responder, ninguém
+ * responde. Ordenar só por recência empurraria uma pessoa esperando desde ontem
+ * para o fim da lista.
+ *
+ * O telefone sai daqui inteiro. Quem decide o que mostrar é a rota: mascarado
+ * na lista, inteiro na ficha.
+ */
+export async function listarParaCaixaDeEntrada(
+  trx: Trx,
+  opcoes: { estado?: EstadoDaCaixa; limite?: number } = {},
+): Promise<ItemDaCaixa[]> {
+  const estado = opcoes.estado ?? 'todas';
+
+  let q = trx
+    .selectFrom('app.conversations as c')
+    .innerJoin('app.patients as p', 'p.id', 'c.patient_id')
+    .select([
+      'c.id',
+      'c.mode',
+      'c.handover_reason',
+      'c.last_inbound_at',
+      'p.id as paciente_id',
+      'p.name as paciente',
+      'p.phone_e164',
+      'p.whatsapp_consent_at',
+    ]);
+
+  if (estado === 'humano') q = q.where('c.mode', '=', 'humano');
+  if (estado === 'assistente') q = q.where('c.mode', '=', 'ia');
+
+  // A ordenação é parte da regra, não enfeite: quem está esperando gente vem
+  // primeiro. Ordenar depois, em memória, perderia esses casos no limite.
+  const linhas = await q
+    .orderBy(sql`case when c.mode = 'humano' then 0 else 1 end`)
+    .orderBy('c.last_inbound_at', (ob) => ob.desc().nullsLast())
+    .limit(opcoes.limite ?? 100)
+    .execute();
+
+  const ultimas = await ultimaMensagemDe(
+    trx,
+    linhas.map((l) => l.id),
+  );
+
+  return linhas.map((l) => ({
+    id: l.id,
+    modo: l.mode,
+    motivoHandover: l.handover_reason,
+    ultimaEntradaEm: l.last_inbound_at,
+    pacienteId: l.paciente_id,
+    paciente: l.paciente,
+    telefone: l.phone_e164,
+    consentimentoEm: l.whatsapp_consent_at,
+    ultimaMensagem: ultimas.get(l.id),
+  }));
+}
+
+/** A última mensagem de cada conversa, numa consulta só. */
+async function ultimaMensagemDe(
+  trx: Trx,
+  conversaIds: string[],
+): Promise<Map<string, { corpo: string | null; autor: AutorMensagem; em: Date }>> {
+  if (conversaIds.length === 0) return new Map();
+  const linhas = await trx
+    .selectFrom('app.messages')
+    .distinctOn('conversation_id')
+    .select(['conversation_id', 'body', 'author', 'created_at'])
+    .where('conversation_id', 'in', conversaIds)
+    .orderBy('conversation_id')
+    .orderBy('created_at', 'desc')
+    .execute();
+  return new Map(
+    linhas.map((l) => [l.conversation_id, { corpo: l.body, autor: l.author, em: l.created_at }]),
+  );
+}
+
+export interface FichaDaConversa {
+  conversa: Conversa;
+  paciente: {
+    id: string;
+    nome: string;
+    telefone: string;
+    consentimentoEm: Date | null;
+  };
+  /** Quem falou primeiro: base para a origem do lead, sem guardar cópia dela. */
+  primeira: { autor: AutorMensagem; direcao: DirecaoMensagem; em: Date } | undefined;
+}
+
+export async function ficha(trx: Trx, conversaId: string): Promise<FichaDaConversa | undefined> {
+  const linha = await trx
+    .selectFrom('app.conversations as c')
+    .innerJoin('app.patients as p', 'p.id', 'c.patient_id')
+    .selectAll('c')
+    .select(['p.id as paciente_id', 'p.name as paciente', 'p.phone_e164', 'p.whatsapp_consent_at'])
+    .where('c.id', '=', conversaId)
+    .executeTakeFirst();
+  if (!linha) return undefined;
+
+  const primeira = await trx
+    .selectFrom('app.messages')
+    .select(['author', 'direction', 'created_at'])
+    .where('conversation_id', '=', conversaId)
+    .orderBy('created_at')
+    .limit(1)
+    .executeTakeFirst();
+
+  return {
+    conversa: {
+      id: linha.id,
+      clinic_id: linha.clinic_id,
+      patient_id: linha.patient_id,
+      mode: linha.mode,
+      handover_reason: linha.handover_reason,
+      last_inbound_at: linha.last_inbound_at,
+    },
+    paciente: {
+      id: linha.paciente_id,
+      nome: linha.paciente,
+      telefone: linha.phone_e164,
+      consentimentoEm: linha.whatsapp_consent_at,
+    },
+    primeira:
+      primeira === undefined
+        ? undefined
+        : { autor: primeira.author, direcao: primeira.direction, em: primeira.created_at },
+  };
 }

@@ -56,3 +56,15 @@ export function mesmoTelefone(a: string, b: string): boolean {
   const nb = normalizarTelefoneBR(b);
   return na.ok && nb.ok && na.e164 === nb.e164;
 }
+
+/**
+ * Telefone para quem está de passagem pela tela: a lista, o log, o alerta.
+ *
+ * A recepção reconhece a pessoa pelo DDD e pelos dois últimos dígitos sem
+ * precisar do número inteiro na frente de quem passa atrás do balcão. O número
+ * completo só aparece na ficha, quando alguém foi ver aquele paciente de
+ * propósito — e nunca em log (CLAUDE.md, estilo de código).
+ */
+export function mascararTelefone(telefone: string): string {
+  return telefone.length <= 6 ? '***' : `${telefone.slice(0, 5)}***${telefone.slice(-2)}`;
+}

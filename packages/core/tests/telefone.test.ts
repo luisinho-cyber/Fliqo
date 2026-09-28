@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizarTelefoneBR, mesmoTelefone } from '../src/telefone';
+import { mascararTelefone, mesmoTelefone, normalizarTelefoneBR } from '../src/telefone';
 
 /**
  * O caso que motiva isto: a Meta entrega o telefone de formas diferentes, e sem
@@ -62,5 +62,23 @@ describe('mesmoTelefone', () => {
   it('não confunde números diferentes', () => {
     expect(mesmoTelefone('+5511987654321', '+5511987654322')).toBe(false);
     expect(mesmoTelefone('+5511987654321', '+5521987654321')).toBe(false);
+  });
+});
+
+describe('mascararTelefone', () => {
+  it('mostra o DDD e os dois últimos dígitos', () => {
+    // A recepção reconhece a pessoa sem o número inteiro na tela do balcão.
+    expect(mascararTelefone('+5511999990001')).toBe('+5511***01');
+  });
+
+  it('número curto demais some inteiro em vez de vazar quase tudo', () => {
+    expect(mascararTelefone('+5511')).toBe('***');
+    expect(mascararTelefone('')).toBe('***');
+  });
+
+  it('nunca devolve o número completo', () => {
+    const completo = '+5511988887777';
+    expect(mascararTelefone(completo)).not.toContain('98888');
+    expect(mascararTelefone(completo)).not.toBe(completo);
   });
 });

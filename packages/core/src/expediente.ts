@@ -96,3 +96,59 @@ export function expedienteEmIntervalos(
   }
   return out.sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
 }
+
+/** A data que o relógio da clínica marca neste instante (AAAA-MM-DD). */
+export function dataNoFuso(instante: Date, fuso: string): string {
+  // en-CA formata como AAAA-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: fuso }).format(instante);
+}
+
+/**
+ * O dia da clínica, no fuso dela — uma em Manaus vira o dia uma hora depois.
+ * É o "hoje" que a varredura de atrasos e a tela Hoje precisam enxergar igual.
+ */
+export function diaNoFuso(
+  instante: Date,
+  fuso: string,
+): { dataIso: string; inicio: Date; fim: Date } {
+  const dataIso = dataNoFuso(instante, fuso);
+  return {
+    dataIso,
+    inicio: noFuso(dataIso, '00:00', fuso),
+    fim: noFuso(somarDias(dataIso, 1), '00:00', fuso),
+  };
+}
+
+export interface DiaDaSemana {
+  dataIso: string;
+  inicio: Date;
+  fim: Date;
+}
+
+/**
+ * A semana da clínica, de segunda a domingo, no fuso dela.
+ *
+ * Começa na segunda porque é assim que uma clínica pensa a semana: sábado é
+ * ponta, não começo. `dataIso` é qualquer dia dentro da semana desejada.
+ */
+export function semanaNoFuso(
+  dataIso: string,
+  fuso: string,
+): { inicio: Date; fim: Date; dias: DiaDaSemana[] } {
+  const semana = diaDaSemanaNoFuso(dataIso, fuso);
+  // getDay: 0 = domingo. Domingo é o sétimo dia, não o primeiro.
+  const recuo = semana === 0 ? 6 : semana - 1;
+  const segunda = somarDias(dataIso, -recuo);
+
+  const dias = Array.from({ length: 7 }, (_, i) => {
+    const dia = somarDias(segunda, i);
+    return {
+      dataIso: dia,
+      inicio: noFuso(dia, '00:00', fuso),
+      fim: noFuso(somarDias(dia, 1), '00:00', fuso),
+    };
+  });
+  // dias tem 7 posições fixas; o TS não estreita Array.from.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return { inicio: dias[0]!.inicio, fim: dias[6]!.fim, dias };
+}

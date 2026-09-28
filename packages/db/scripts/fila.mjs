@@ -29,6 +29,10 @@ export const FILA_RESPOSTA = 'resposta';
 // Varredura de atrasos. `stately` com singletonKey no clinic_id: dez toques
 // seguidos na recepção não viram dez varreduras em paralelo na mesma clínica.
 export const FILA_ATRASOS = 'atrasos';
+// Oferta de vaga pedida pelo painel. `stately` com singletonKey na vaga: a
+// recepção clicando duas vezes no mesmo horário não abre duas rodadas, e duas
+// rodadas para a mesma vaga mandariam oferta em dobro para a mesma fila.
+export const FILA_OFERTA = 'oferta';
 
 /**
  * Instância de runtime (API e worker): enfileira e consome, e só.
@@ -63,10 +67,11 @@ export async function prepararFila(connectionString) {
     await boss.createQueue(FILA_BOTAO, { policy: 'standard' });
     await boss.createQueue(FILA_RESPOSTA, { policy: 'standard' });
     await boss.createQueue(FILA_ATRASOS, { policy: 'stately' });
+    await boss.createQueue(FILA_OFERTA, { policy: 'stately' });
   } finally {
     await boss.stop();
   }
-  return [FILA_CONVERSA, FILA_BOTAO, FILA_RESPOSTA, FILA_ATRASOS];
+  return [FILA_CONVERSA, FILA_BOTAO, FILA_RESPOSTA, FILA_ATRASOS, FILA_OFERTA];
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

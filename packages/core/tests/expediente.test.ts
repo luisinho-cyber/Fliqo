@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { expedienteEmIntervalos, noFuso, somarDias, type FaixaDeExpediente } from '../src/index';
+import {
+  dataNoFuso,
+  diaNoFuso,
+  expedienteEmIntervalos,
+  noFuso,
+  semanaNoFuso,
+  somarDias,
+  type FaixaDeExpediente,
+} from '../src/index';
 
 const SP = 'America/Sao_Paulo';
 
@@ -49,5 +57,66 @@ describe('expediente', () => {
   it('somarDias atravessa o fim do mês', () => {
     expect(somarDias('2026-11-30', 1)).toBe('2026-12-01');
     expect(somarDias('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
+describe('diaNoFuso', () => {
+  it('o dia começa à meia-noite da clínica, não do servidor', () => {
+    // 02:30 UTC de 11/03 ainda é 23:30 de 10/03 em São Paulo (UTC-3).
+    const d = diaNoFuso(new Date('2026-03-11T02:30:00Z'), 'America/Sao_Paulo');
+    expect(d.dataIso).toBe('2026-03-10');
+    expect(d.inicio.toISOString()).toBe('2026-03-10T03:00:00.000Z');
+    expect(d.fim.toISOString()).toBe('2026-03-11T03:00:00.000Z');
+  });
+
+  it('Manaus vira o dia uma hora depois de São Paulo', () => {
+    const instante = new Date('2026-03-11T03:30:00Z');
+    expect(dataNoFuso(instante, 'America/Sao_Paulo')).toBe('2026-03-11'); // 00:30
+    expect(dataNoFuso(instante, 'America/Manaus')).toBe('2026-03-10'); // 23:30
+  });
+
+  it('a janela cobre 24 h e não deixa buraco entre um dia e o seguinte', () => {
+    const hoje = diaNoFuso(new Date('2026-07-15T15:00:00Z'), 'America/Sao_Paulo');
+    const amanha = diaNoFuso(new Date('2026-07-16T15:00:00Z'), 'America/Sao_Paulo');
+    expect(hoje.fim.getTime()).toBe(amanha.inicio.getTime());
+  });
+});
+
+describe('semanaNoFuso', () => {
+  it('começa na segunda, mesmo pedindo um dia do meio da semana', () => {
+    // 2026-11-11 é uma quarta-feira.
+    const s = semanaNoFuso('2026-11-11', SP);
+    expect(s.dias.map((d) => d.dataIso)).toEqual([
+      '2026-11-09',
+      '2026-11-10',
+      '2026-11-11',
+      '2026-11-12',
+      '2026-11-13',
+      '2026-11-14',
+      '2026-11-15',
+    ]);
+  });
+
+  it('domingo pertence à semana que começou na segunda anterior', () => {
+    // Sábado é ponta da semana numa clínica, não começo.
+    const s = semanaNoFuso('2026-11-15', SP);
+    expect(s.dias[0]?.dataIso).toBe('2026-11-09');
+  });
+
+  it('segunda pedida devolve ela mesma como primeiro dia', () => {
+    expect(semanaNoFuso('2026-11-09', SP).dias[0]?.dataIso).toBe('2026-11-09');
+  });
+
+  it('a janela vai da meia-noite de segunda à meia-noite da segunda seguinte', () => {
+    const s = semanaNoFuso('2026-11-11', SP);
+    expect(s.inicio.toISOString()).toBe('2026-11-09T03:00:00.000Z');
+    expect(s.fim.toISOString()).toBe('2026-11-16T03:00:00.000Z');
+  });
+
+  it('os dias se encaixam sem buraco nem sobreposição', () => {
+    const s = semanaNoFuso('2026-11-11', SP);
+    for (let i = 1; i < s.dias.length; i++) {
+      expect(s.dias[i]?.inicio.getTime()).toBe(s.dias[i - 1]?.fim.getTime());
+    }
   });
 });
