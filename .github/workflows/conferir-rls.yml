@@ -1,0 +1,41 @@
+name: Conferir RLS
+
+# Só de leitura, e por isso pode rodar de qualquer branch — ao contrário do
+# "Migrar banco", que muda o schema e só roda na main.
+#
+# Serve para responder uma pergunta antes de mesclar: no Supabase, o papel dono
+# do schema consegue mesmo ler o que as funções `security definer` leem? Se não
+# conseguir, a fila de ações, a varredura de atrasos e o painel param de
+# funcionar sem erro nenhum aparecer.
+#
+# O script só faz SELECT (e um `set local role` desfeito por rollback). Não
+# aplica migração, não cria papel, não muda permissão.
+on: workflow_dispatch
+
+concurrency: conferir-rls
+
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Usa o DATABASE_ADMIN_URL que já existe; nenhum secret novo.
+      #
+      # A saída conta nome de papel, super, bypassrls, função, tabela e
+      # veredito — e nada mais. Nem host, nem porta, nem usuário de conexão: o
+      # diagnóstico do pooler fica silenciado neste script (a migração continua
+      # com ele). Em erro, a URL também não sai (scripts/segredos.mjs).
+      - name: Conferir acesso das funções security definer
+        env:
+          DATABASE_ADMIN_URL: ${{ secrets.DATABASE_ADMIN_URL }}
+          SUPABASE_REGION: ${{ vars.SUPABASE_REGION }}
+        run: npm run db:conferir-rls
