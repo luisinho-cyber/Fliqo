@@ -1,6 +1,6 @@
 import { mascararTelefone } from '@fliqo/core';
 import { PerfilClinicaSchema } from '@fliqo/ai';
-import { agenda, conversas, ia, qualificacao, type Trx } from '@fliqo/db';
+import { agenda, conversas, FAIXAS_DE_ORCAMENTO, ia, qualificacao, type Trx } from '@fliqo/db';
 import type { FaixaDeOrcamento } from '@fliqo/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -24,10 +24,9 @@ const Estado = z.enum(['humano', 'assistente', 'todas']);
 
 const Qualificacao = z.object({
   interesse: z.string().max(200).nullable().optional(),
-  faixaDeOrcamento: z
-    .enum(['nao_informado', 'ate_1k', 'de_1k_a_3k', 'de_3k_a_10k', 'acima_10k'])
-    .nullable()
-    .optional(),
+  // A lista vem de packages/db, que é onde ela espelha o `check` da migração.
+  // Repetir os literais aqui deixaria a API e o banco divergirem em silêncio.
+  faixaDeOrcamento: z.enum(FAIXAS_DE_ORCAMENTO).nullable().optional(),
   observacao: z.string().max(1000).nullable().optional(),
 });
 

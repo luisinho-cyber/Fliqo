@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
-import { COLUNAS } from '../src/schema';
+import { COLUNAS, FAIXAS_DE_ORCAMENTO } from '../src/schema';
 import { ownerPool, resetDatabase } from './helpers';
 
 /**
@@ -51,5 +51,36 @@ describe('tipos do banco', () => {
         [...(noBanco ?? [])].sort(),
       );
     }
+  });
+
+  /**
+   * As faixas de orçamento existem em dois lugares: no `check` da 0008 e em
+   * FAIXAS_DE_ORCAMENTO, de onde a API monta o enum do Zod. Divergir não quebra
+   * nada no start — quebra na cara da recepção, com 500 ao salvar uma faixa que
+   * a API aceitou e o banco recusou, ou com uma faixa válida recusada antes de
+   * chegar ao banco.
+   */
+  it('as faixas de orçamento do banco são exatamente as do código', async () => {
+    const { rows } = await owner.query<{ definicao: string }>(
+      `select pg_get_constraintdef(c.oid) as definicao
+         from pg_constraint c
+         join pg_class t on t.oid = c.conrelid
+         join pg_namespace n on n.oid = t.relnamespace
+        where n.nspname = 'app' and t.relname = 'lead_qualifications'
+          and c.contype = 'c' and pg_get_constraintdef(c.oid) like '%budget_band%'`,
+    );
+    expect(rows, 'nenhum check de budget_band no banco').toHaveLength(1);
+
+    const noBanco = [...(rows[0]?.definicao.matchAll(/'([a-z0-9_]+)'/g) ?? [])]
+      .map((m) => m[1])
+      .sort();
+    expect(noBanco).toEqual([...FAIXAS_DE_ORCAMENTO].sort());
+  });
+
+  it('há folga de faixas: lista apertada empurra orçamento para dentro do texto livre', () => {
+    // Migração é só de acréscimo, então cada faixa nova é uma migração. Quando
+    // a lista aperta, a recepção escreve o valor em `note` — mil caracteres de
+    // texto livre sobre paciente, pior para retenção e para exportação.
+    expect(FAIXAS_DE_ORCAMENTO.length).toBeGreaterThanOrEqual(6);
   });
 });

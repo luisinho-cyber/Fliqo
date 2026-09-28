@@ -62,8 +62,15 @@ export interface Hoje {
   decisoes: DecisaoDaTela[];
 }
 
+/** Mesma lista do `check` da 0008. App não importa app, então ela se repete aqui. */
 export type FaixaDeOrcamento =
-  'nao_informado' | 'ate_1k' | 'de_1k_a_3k' | 'de_3k_a_10k' | 'acima_10k';
+  | 'nao_informado'
+  | 'ate_500'
+  | 'de_500_a_1k'
+  | 'de_1k_a_3k'
+  | 'de_3k_a_10k'
+  | 'de_10k_a_30k'
+  | 'acima_30k';
 
 export interface ItemDaCaixa {
   id: string;

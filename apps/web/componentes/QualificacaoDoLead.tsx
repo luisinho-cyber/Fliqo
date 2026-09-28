@@ -15,10 +15,12 @@ import type { FichaDaConversa } from '../lib/tipos';
 const FAIXAS = [
   { valor: '', rotulo: 'Não perguntei' },
   { valor: 'nao_informado', rotulo: 'Não quis dizer' },
-  { valor: 'ate_1k', rotulo: 'Até R$ 1.000' },
+  { valor: 'ate_500', rotulo: 'Até R$ 500' },
+  { valor: 'de_500_a_1k', rotulo: 'R$ 500 a R$ 1.000' },
   { valor: 'de_1k_a_3k', rotulo: 'R$ 1.000 a R$ 3.000' },
   { valor: 'de_3k_a_10k', rotulo: 'R$ 3.000 a R$ 10.000' },
-  { valor: 'acima_10k', rotulo: 'Acima de R$ 10.000' },
+  { valor: 'de_10k_a_30k', rotulo: 'R$ 10.000 a R$ 30.000' },
+  { valor: 'acima_30k', rotulo: 'Acima de R$ 30.000' },
 ] as const;
 
 const ORIGEM = {

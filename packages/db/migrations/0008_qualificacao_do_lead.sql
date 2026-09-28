@@ -31,11 +31,34 @@ create table app.lead_qualifications (
   interest         text check (interest is null or length(interest) <= 200),
   -- RÓTULO, não dinheiro: nenhuma conta sai daqui, nada vira centavo nem float
   -- (CLAUDE.md, regra 1). Serve para priorizar retorno, não para cobrar.
-  budget_band      text check (budget_band in
-                     ('nao_informado', 'ate_1k', 'de_1k_a_3k', 'de_3k_a_10k', 'acima_10k')),
+  --
+  -- Sete faixas, com folga de propósito. Migração é só de acréscimo, então cada
+  -- faixa nova depois é uma migração — e lista apertada não faz a recepção
+  -- desistir, faz ela escrever o orçamento dentro de `note`, que é mil
+  -- caracteres de texto livre sobre paciente. Pior para retenção, pior para
+  -- exportação, pior para qualquer conta que se queira fazer depois.
+  --
+  -- Os cortes seguem o que uma clínica cobra de verdade: limpeza na primeira
+  -- faixa, clareamento na segunda, harmonização e implante avulso no meio,
+  -- reabilitação oral nas duas últimas.
+  budget_band      text check (budget_band in (
+                     'nao_informado',
+                     'ate_500',
+                     'de_500_a_1k',
+                     'de_1k_a_3k',
+                     'de_3k_a_10k',
+                     'de_10k_a_30k',
+                     'acima_30k')),
   -- A leitura de quem atendeu. Nunca conteúdo copiado da conversa.
   note             text check (note is null or length(note) <= 1000),
   -- Quem editou por último: o `sub` do JWT, não o que o navegador mandou.
+  --
+  -- Sem chave estrangeira de propósito por ora: o usuário mora no Supabase Auth,
+  -- fora deste schema, e não há para onde apontar. Quando existir log de
+  -- auditoria, este campo precisa passar a apontar para algo que continue
+  -- existindo depois que a pessoa sair da clínica — e vai faltar um `created_at`
+  -- para saber quando a qualificação nasceu, que hoje `updated_at` esconde a
+  -- cada edição. Anotado em docs/OPERACAO.md.
   updated_by       uuid,
   updated_at       timestamptz not null default now(),
   foreign key (clinic_id, conversation_id) references app.conversations (clinic_id, id)

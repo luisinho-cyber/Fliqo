@@ -151,8 +151,24 @@ export interface TabelaConversas {
   last_inbound_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
-export type FaixaDeOrcamento =
-  'nao_informado' | 'ate_1k' | 'de_1k_a_3k' | 'de_3k_a_10k' | 'acima_10k';
+/**
+ * As faixas de orçamento, na mesma ordem do `check` da migração 0008.
+ *
+ * `FAIXAS_DE_ORCAMENTO` existe em runtime para o teste comparar esta lista com
+ * a do banco: se as duas divergirem, a API aceita um valor que o banco recusa
+ * (erro 500 na cara da recepção) ou recusa um que o banco aceitaria.
+ */
+export const FAIXAS_DE_ORCAMENTO = [
+  'nao_informado',
+  'ate_500',
+  'de_500_a_1k',
+  'de_1k_a_3k',
+  'de_3k_a_10k',
+  'de_10k_a_30k',
+  'acima_30k',
+] as const;
+
+export type FaixaDeOrcamento = (typeof FAIXAS_DE_ORCAMENTO)[number];
 
 /** O que a recepção sabe do lead e a agenda não guarda. Rótulo, nunca dinheiro. */
 export interface TabelaQualificacao {
