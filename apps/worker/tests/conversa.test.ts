@@ -327,6 +327,146 @@ describe('a IA pede, o código decide', () => {
   });
 });
 
+/**
+ * A ferramenta `transferir_para_humano`.
+ *
+ * É o caminho em que a ASSISTENTE decide passar a conversa — diferente das
+ * proteções determinísticas de `checarEntrada`, que disparam antes de o modelo
+ * ser chamado e já têm teste próprio em packages/ai. Aqui o modelo é chamado,
+ * lê a mensagem e escolhe transferir.
+ *
+ * Quatro coisas precisam acontecer juntas, e é a junção que importa: a conversa
+ * vira 'humano', o motivo fica gravado, a assistente para de responder ali, e a
+ * recepção fica sabendo por um alerta. Faltando qualquer uma, alguém está
+ * esperando resposta de quem não vai responder.
+ */
+describe('a assistente decide passar a conversa para a equipe', () => {
+  async function alertasDaConversa(conversaId: string) {
+    const { rows } = await owner.query<{
+      kind: string;
+      severity: string;
+      title: string;
+      body: string | null;
+      conversation_id: string | null;
+    }>(
+      `select kind, severity, title, body, conversation_id from app.alerts
+        where conversation_id = $1`,
+      [conversaId],
+    );
+    return rows;
+  }
+
+  async function modoDaConversa(conversaId: string) {
+    const { rows } = await owner.query<{ mode: string; handover_reason: string | null }>(
+      `select mode, handover_reason from app.conversations where id = $1`,
+      [conversaId],
+    );
+    return rows[0];
+  }
+
+  /** Os três motivos que o enunciado pede, cada um com a sua mensagem. */
+  const CASOS = [
+    {
+      nome: 'dúvida clínica',
+      texto: 'esse dente que tratei mês passado voltou a doer, é normal?',
+      motivo: 'duvida_clinica',
+      gravidade: 'atencao',
+    },
+    {
+      nome: 'reclamação',
+      texto: 'esperei quarenta minutos na última vez e ninguém me avisou nada',
+      motivo: 'reclamacao',
+      gravidade: 'atencao',
+    },
+    {
+      nome: 'pedido explícito do paciente',
+      texto: 'prefiro tratar disso com alguém da equipe, por favor',
+      motivo: 'pedido_do_paciente',
+      gravidade: 'atencao',
+    },
+  ] as const;
+
+  for (const caso of CASOS) {
+    it(`${caso.nome} leva a conversa para a equipe, com motivo e alerta`, async () => {
+      const { conversaId } = await conversaCom([caso.texto]);
+      llm.chama('transferir_para_humano', {
+        motivo: caso.motivo,
+        resumo: 'Resumo curto para a recepção não precisar ler tudo.',
+      });
+
+      const r = await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+      expect(r).toMatchObject({ atendida: true, saida: 'transferencia' });
+
+      // 1. a conversa virou humano, com o motivo gravado
+      expect(await modoDaConversa(conversaId)).toEqual({
+        mode: 'humano',
+        handover_reason: caso.motivo,
+      });
+
+      // 2. o alerta chegou no painel, apontando para a conversa
+      const alertas = await alertasDaConversa(conversaId);
+      expect(alertas).toHaveLength(1);
+      expect(alertas[0]).toMatchObject({
+        kind: 'conversa_assumida',
+        severity: caso.gravidade,
+        conversation_id: conversaId,
+      });
+      // O corpo é o resumo da assistente, não a mensagem crua do paciente.
+      expect(alertas[0]?.body).toContain(caso.motivo);
+      expect(alertas[0]?.body).not.toContain(caso.texto);
+    });
+  }
+
+  it('urgência entra como alerta urgente, não como aviso comum', async () => {
+    const { conversaId } = await conversaCom(['minha filha caiu e quebrou o dente da frente']);
+    llm.chama('transferir_para_humano', {
+      motivo: 'urgencia',
+      resumo: 'Criança com trauma no dente anterior, quer ser vista hoje.',
+    });
+
+    await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+
+    const alertas = await alertasDaConversa(conversaId);
+    expect(alertas[0]?.severity).toBe('urgente');
+  });
+
+  it('depois de transferir, a assistente não responde mais nada naquela conversa', async () => {
+    // É a parte que dói se faltar: sem isso, a recepção digita uma resposta e a
+    // assistente digita outra, e o paciente recebe as duas.
+    const { conversaId } = await conversaCom(['quero falar com uma pessoa da equipe']);
+    llm.chama('transferir_para_humano', {
+      motivo: 'pedido_do_paciente',
+      resumo: 'Paciente pediu atendimento humano.',
+    });
+    await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+
+    // Chega outra mensagem do paciente na MESMA conversa.
+    await owner.query(
+      `insert into app.messages (clinic_id, conversation_id, direction, author, wamid, body)
+       values ($1, $2, 'entrada', 'paciente', $3, 'e aí, alguém pode me responder?')`,
+      [c.clinicA, conversaId, `wamid.teste.depois.${conversaId}`],
+    );
+    await owner.query(`update app.conversations set last_inbound_at = $1 where id = $2`, [
+      new Date(AGORA.getTime() - 2_000),
+      conversaId,
+    ]);
+
+    // O balão da própria transferência já está na fila, e é certo que esteja:
+    // o paciente precisa saber que alguém vai falar com ele. O que não pode é a
+    // fila CRESCER depois disso.
+    const pedidosAntes = llm.pedidos.length;
+    const baloesAntes = await baloesNaFila();
+    expect(baloesAntes).toHaveLength(1);
+
+    const segunda = await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+
+    expect(segunda).toEqual({ atendida: false, motivo: 'humano' });
+    // Nem token gasto, nem balão novo: a assistente está calada ali.
+    expect(llm.pedidos).toHaveLength(pedidosAntes);
+    expect(await baloesNaFila()).toEqual(baloesAntes);
+  });
+});
+
 describe('quando a IA não responde', () => {
   it('cala na conversa que está com a equipe', async () => {
     const { conversaId } = await conversaCom(['e aí?'], { modo: 'humano' });
