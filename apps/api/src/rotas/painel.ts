@@ -79,11 +79,43 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
       : reply.code(409).send({ erro: r.valor.motivo });
   });
 
+  /**
+   * Cancelar pelo painel.
+   *
+   * O horário abriu, então a fila precisa ser chamada — igual ao cancelamento
+   * pelo botão do WhatsApp e ao da assistente. Este caminho, que é o que a
+   * recepção mais usa, ficou de fora até a invariante de
+   * apps/worker/tests/cancelamento.test.ts enumerar os quatro e acusar.
+   *
+   * O enfileiramento vai na MESMA transação do cancelamento: ou o horário fica
+   * livre e a fila é chamada, ou nenhum dos dois. Cancelar e não chamar ninguém
+   * é a promessa do produto quebrada em silêncio.
+   */
   app.post('/api/agenda/:id/cancelar', async (req, reply) => {
     const c = Cancelamento.safeParse(req.body);
     if (!c.success) return reply.code(400).send({ erro: 'pedido_invalido' });
     const { id } = req.params as { id: string };
-    const r = await comUsuario(ctx, req, reply, (trx) => agenda.cancelar(trx, id, c.data.motivo));
+
+    const r = await comUsuario(ctx, req, reply, async (trx, u) => {
+      const cancelada = await agenda.cancelar(trx, id, c.data.motivo);
+      if (!cancelada) return undefined;
+
+      // singletonKey na vaga: cancelar duas vezes não manda a mesma vaga para as
+      // mesmas pessoas da fila duas vezes.
+      const chave = `${u.clinicId}:${cancelada.professional_id}:${cancelada.starts_at.toISOString()}`;
+      await ctx.boss.send({
+        name: FILA_OFERTA,
+        data: {
+          clinicId: u.clinicId,
+          profissionalId: cancelada.professional_id,
+          inicio: cancelada.starts_at.toISOString(),
+          fim: cancelada.ends_at.toISOString(),
+        },
+        options: { singletonKey: chave, db: comoConexaoDoBoss(trx) },
+      });
+      return cancelada;
+    });
+
     if (r.respondido) return reply;
     return r.valor
       ? reply.send(r.valor)

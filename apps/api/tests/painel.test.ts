@@ -1,5 +1,5 @@
 import { criarDb, withClinic, type Db } from '@fliqo/db';
-import { criarFila, FILA_ATRASOS, SCHEMA_FILA } from '@fliqo/db/fila';
+import { criarFila, FILA_ATRASOS, FILA_OFERTA, SCHEMA_FILA } from '@fliqo/db/fila';
 import {
   prepararFilaDeTeste,
   ownerPool,
@@ -444,6 +444,255 @@ describe('os três toques da tela Hoje', () => {
 
   it('id que não é uuid é recusado antes de tocar no banco', async () => {
     const r = await chamar('POST', '/api/agenda/nao-e-uuid/chegou', {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(400);
+  });
+});
+
+/**
+ * Cancelar pelo painel.
+ *
+ * É a rota mais destrutiva do painel e estava sem teste. Três coisas importam:
+ * que cancele, que não alcance a agenda de outra clínica, e que cancelar duas
+ * vezes não faça nada duas vezes.
+ */
+describe('cancelar consulta pelo painel', () => {
+  let horaDoCancelamento = 60;
+
+  async function consultaParaCancelar(clinica: string, profissional: string, paciente: string) {
+    const daqui = horaDoCancelamento;
+    horaDoCancelamento += 2;
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.appointments
+         (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
+       values ($1,$2,$3,$4,
+               now() + make_interval(hours => $5), now() + make_interval(hours => $5 + 1), 25000)
+       returning id`,
+      [clinica, profissional, paciente, c.procEletivo, daqui],
+    );
+    return rows[0]!.id;
+  }
+
+  async function statusDa(id: string) {
+    const { rows } = await owner.query<{ status: string; cancel_reason: string | null }>(
+      `select status, cancel_reason from app.appointments where id = $1`,
+      [id],
+    );
+    return rows[0];
+  }
+
+  async function jobsDeOferta(): Promise<number> {
+    const { rows } = await owner.query<{ n: string }>(
+      `select count(*) as n from ${SCHEMA_FILA}.job where name = $1`,
+      [FILA_OFERTA],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  it('cancela e grava o motivo', async () => {
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[1]!);
+    const r = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { motivo: 'paciente pediu para desmarcar' },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(await statusDa(id)).toEqual({
+      status: 'cancelado',
+      cancel_reason: 'paciente pediu para desmarcar',
+    });
+  });
+
+  it('a dona da B não cancela consulta da A, e o 403 não carrega nada da A', async () => {
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[2]!);
+    const r = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_B,
+      clinica: c.clinicA,
+      corpo: { motivo: 'invadindo' },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(r.json()).toEqual({ erro: 'nao_e_membro_da_clinica' });
+    expect(r.body).not.toContain('Paciente');
+    expect(r.body).not.toContain('+5511');
+    expect(r.body).not.toContain('25000');
+
+    // E a consulta continua de pé.
+    expect((await statusDa(id))?.status).toBe('agendado');
+  });
+
+  it('consulta de outra clínica não é encontrada, mesmo pedindo a própria', async () => {
+    // A RLS não enxerga a linha: para a clínica B ela não existe.
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[3]!);
+    const r = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_B,
+      clinica: c.clinicB,
+      corpo: { motivo: 'tentando alcançar a A' },
+    });
+    expect(r.statusCode).toBe(404);
+    expect((await statusDa(id))?.status).toBe('agendado');
+  });
+
+  it('cancelar de novo é idempotente: não muda o motivo original', async () => {
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[0]!);
+    await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { motivo: 'primeiro motivo' },
+    });
+    const antes = await jobsDeOferta();
+
+    const segunda = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { motivo: 'segundo motivo' },
+    });
+    expect(segunda.statusCode).toBe(200);
+
+    // Uma segunda rodada de ofertas mandaria a mesma vaga para as mesmas
+    // pessoas da fila de novo.
+    expect(await jobsDeOferta()).toBe(antes);
+  });
+
+  it('motivo vazio é recusado antes de tocar no banco', async () => {
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[1]!);
+    const r = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { motivo: '' },
+    });
+    expect(r.statusCode).toBe(400);
+    expect((await statusDa(id))?.status).toBe('agendado');
+  });
+
+  it('cancelar abre rodada na lista de espera', async () => {
+    // O horário abriu: quem está na fila precisa ser chamado. É a mesma coisa
+    // que acontece quando o paciente cancela pelo botão, quando a assistente
+    // cancela e quando uma oferta expira em modo sequencial.
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[2]!);
+
+    const r = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { motivo: 'clínica precisou remarcar' },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(await jobsDeOferta()).toBe(1);
+  });
+});
+
+/**
+ * Alertas: a lista de decisões da tela Hoje.
+ *
+ * É a lista que diz à recepção o que precisa de gente agora. Alerta de outra
+ * clínica aparecendo aqui seria vazamento; alerta resolvido continuando na lista
+ * faria a recepção ligar duas vezes para a mesma pessoa.
+ */
+describe('alertas do painel', () => {
+  async function criarAlerta(
+    clinica: string,
+    titulo: string,
+    extras: { paciente?: string; corpo?: string } = {},
+  ): Promise<string> {
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.alerts (clinic_id, kind, severity, title, body, patient_id)
+       values ($1,'horario_vago','atencao',$2,$3,$4) returning id`,
+      [clinica, titulo, extras.corpo ?? null, extras.paciente ?? null],
+    );
+    return rows[0]!.id;
+  }
+
+  it('lista só os alertas da clínica do usuário', async () => {
+    await owner.query('delete from app.alerts');
+    const daA = await criarAlerta(c.clinicA, 'Vaga aberta na clínica A');
+    await criarAlerta(c.clinicB, 'Vaga aberta na clínica B');
+
+    const r = await chamar('GET', '/api/alertas', { userId: DONA_DA_A, clinica: c.clinicA });
+    expect(r.statusCode).toBe(200);
+    expect(r.json<{ id: string }[]>().map((a) => a.id)).toEqual([daA]);
+    expect(r.body).not.toContain('clínica B');
+  });
+
+  it('a dona da B não lê os alertas da A, e o 403 não carrega nada da A', async () => {
+    await owner.query('delete from app.alerts');
+    await criarAlerta(c.clinicA, 'Ligue para Paciente 1', {
+      paciente: c.patients[0]!,
+      corpo: 'Paciente 1, +5511999990001, R$ 25000 em risco',
+    });
+
+    const r = await chamar('GET', '/api/alertas', { userId: DONA_DA_B, clinica: c.clinicA });
+    expect(r.statusCode).toBe(403);
+    expect(r.json()).toEqual({ erro: 'nao_e_membro_da_clinica' });
+    expect(r.body).not.toContain('Paciente 1');
+    expect(r.body).not.toContain('+5511999990001');
+    expect(r.body).not.toContain('25000');
+  });
+
+  it('resolver tira o alerta da listagem', async () => {
+    await owner.query('delete from app.alerts');
+    const id = await criarAlerta(c.clinicA, 'Some depois de resolvido');
+
+    const resolver = await chamar('POST', `/api/alertas/${id}/resolver`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(resolver.statusCode).toBe(200);
+    expect(resolver.json().resolved_at).not.toBeNull();
+
+    const depois = await chamar('GET', '/api/alertas', { userId: DONA_DA_A, clinica: c.clinicA });
+    expect(depois.json()).toEqual([]);
+  });
+
+  it('a dona da B não resolve alerta da A, e o alerta continua aberto', async () => {
+    await owner.query('delete from app.alerts');
+    const id = await criarAlerta(c.clinicA, 'Não é da B');
+
+    const r = await chamar('POST', `/api/alertas/${id}/resolver`, {
+      userId: DONA_DA_B,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(403);
+    expect(r.body).not.toContain('Não é da B');
+
+    const { rows } = await owner.query<{ resolved_at: Date | null }>(
+      `select resolved_at from app.alerts where id = $1`,
+      [id],
+    );
+    expect(rows[0]?.resolved_at).toBeNull();
+  });
+
+  it('alerta de outra clínica não é encontrado, mesmo pedindo a própria', async () => {
+    await owner.query('delete from app.alerts');
+    const id = await criarAlerta(c.clinicA, 'Da A');
+    const r = await chamar('POST', `/api/alertas/${id}/resolver`, {
+      userId: DONA_DA_B,
+      clinica: c.clinicB,
+    });
+    // A RLS não enxerga a linha: para a clínica B ela não existe.
+    expect(r.statusCode).toBe(404);
+  });
+
+  it('resolver duas vezes devolve 404 na segunda', async () => {
+    await owner.query('delete from app.alerts');
+    const id = await criarAlerta(c.clinicA, 'Resolvido uma vez só');
+    const primeira = await chamar('POST', `/api/alertas/${id}/resolver`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(primeira.statusCode).toBe(200);
+
+    // Do ponto de vista de quem clicou agora, não há mais o que resolver.
+    const segunda = await chamar('POST', `/api/alertas/${id}/resolver`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+    });
+    expect(segunda.statusCode).toBe(404);
+  });
+
+  it('id que não é uuid é recusado antes de tocar no banco', async () => {
+    const r = await chamar('POST', '/api/alertas/nao-e-uuid/resolver', {
       userId: DONA_DA_A,
       clinica: c.clinicA,
     });
