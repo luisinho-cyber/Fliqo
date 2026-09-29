@@ -566,19 +566,10 @@ describe('cancelar consulta pelo painel', () => {
     expect((await statusDa(id))?.status).toBe('agendado');
   });
 
-  /**
-   * FALHA HOJE, DE PROPÓSITO — o teste está certo, o código é que não faz isso.
-   *
-   * Cancelar pelo painel NÃO chama a lista de espera. Os outros três caminhos
-   * de cancelamento chamam: o botão do WhatsApp (botao.ts), a ferramenta da
-   * assistente (executor.ts) e a expiração em modo sequencial (ofertas.ts).
-   * A recepção cancelando pelo painel — que é o caminho mais comum — abre o
-   * horário e não avisa ninguém da fila.
-   *
-   * `it.fails` mantém o CI honesto sem esconder o achado: quando a rota for
-   * corrigida, ESTE teste passa a falhar e obriga a tirar o `.fails`.
-   */
-  it.fails('cancelar pelo painel NÃO abre rodada na lista de espera (bug conhecido)', async () => {
+  it('cancelar abre rodada na lista de espera', async () => {
+    // O horário abriu: quem está na fila precisa ser chamado. É a mesma coisa
+    // que acontece quando o paciente cancela pelo botão, quando a assistente
+    // cancela e quando uma oferta expira em modo sequencial.
     await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
     const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[2]!);
 
