@@ -37,8 +37,8 @@ export function SemanaArrastavel({ dias, profissionais, fuso, aoSoltar }: Props)
         <div className="mb-2 grid grid-cols-7 gap-2">
           {dias.map((d, i) => (
             <div key={d.dataIso} className="text-[12px]">
-              <b className={d.ehHoje ? 'text-late' : ''}>{DIAS_CURTOS[i]}</b>{' '}
-              <span className="text-ink-suave font-mono tabular-nums">
+              <b className={d.ehHoje ? 'text-agora' : ''}>{DIAS_CURTOS[i]}</b>{' '}
+              <span className="text-ink-2 font-mono tabular-nums">
                 {d.dataIso.slice(8, 10)}/{d.dataIso.slice(5, 7)}
               </span>
             </div>
@@ -52,7 +52,7 @@ export function SemanaArrastavel({ dias, profissionais, fuso, aoSoltar }: Props)
               {prof.atrasoMin >= 10 && (
                 // O atraso vale só para hoje: é o efeito cascata do dia que está
                 // acontecendo, não uma previsão para a semana.
-                <span className="text-late text-[12px]">
+                <span className="text-agora text-[12px]">
                   hoje com cerca de {String(Math.round(prof.atrasoMin / 5) * 5)} min de atraso
                 </span>
               )}
@@ -65,8 +65,8 @@ export function SemanaArrastavel({ dias, profissionais, fuso, aoSoltar }: Props)
                 return (
                   <div
                     key={dia.dataIso}
-                    className={`border-linha min-h-[110px] rounded-[10px] border p-1 ${
-                      dia.ehHoje ? 'border-late' : ''
+                    className={`border-fio min-h-[110px] rounded-md border p-1 ${
+                      dia.ehHoje ? 'border-agora' : ''
                     }`}
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -99,10 +99,10 @@ export function SemanaArrastavel({ dias, profissionais, fuso, aoSoltar }: Props)
                           setArrastando(null);
                         }}
                         title={`${c.paciente} · ${c.procedimento}`}
-                        className={`mb-1 cursor-grab rounded-[6px] border px-1 py-0.5 text-[11px] ${
+                        className={`mb-1 cursor-grab rounded-sm border px-1 py-0.5 text-[11px] ${
                           c.status === 'confirmado'
                             ? 'border-ok bg-ok/15'
-                            : 'border-petrol border-dashed'
+                            : 'border-marca border-dashed'
                         } ${arrastando === c.id ? 'opacity-50' : ''}`}
                       >
                         <span className="font-mono tabular-nums">

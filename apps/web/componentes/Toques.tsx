@@ -25,14 +25,14 @@ export function Toques({ consultas, fuso }: { consultas: ConsultaDaTela[]; fuso:
         {abertas.map((c) => (
           <li
             key={c.id}
-            className="border-linha flex flex-wrap items-center gap-3 border-t py-2 first:border-t-0"
+            className="border-fio flex flex-wrap items-center gap-3 border-t py-2 first:border-t-0"
           >
             <span className="font-mono text-[13px] tabular-nums">
               {hhmm(Date.parse(c.inicioPrevisto), fuso)}
             </span>
             <span className="min-w-0 flex-1 truncate font-semibold">
               {primeiroNome(c.paciente)}{' '}
-              <span className="text-ink-suave font-normal">{c.procedimento}</span>
+              <span className="text-ink-2 font-normal">{c.procedimento}</span>
             </span>
             <Estado consulta={c} />
             <div className="flex gap-1">
@@ -56,12 +56,12 @@ function Estado({ consulta }: { consulta: ConsultaDaTela }) {
     return <span className="text-ok text-[12px] font-semibold">atendido</span>;
   }
   if (consulta.situacao === 'em_atendimento') {
-    return <span className="text-petrol text-[12px] font-semibold">em atendimento</span>;
+    return <span className="text-marca text-[12px] font-semibold">em atendimento</span>;
   }
   if (consulta.chegou) {
-    return <span className="text-ink-suave text-[12px]">na recepção</span>;
+    return <span className="text-ink-2 text-[12px]">na recepção</span>;
   }
-  return <span className="text-ink-suave text-[12px]">não chegou</span>;
+  return <span className="text-ink-2 text-[12px]">não chegou</span>;
 }
 
 function Botao({ consulta, toque, rotulo }: { consulta: string; toque: string; rotulo: string }) {
@@ -71,7 +71,7 @@ function Botao({ consulta, toque, rotulo }: { consulta: string; toque: string; r
       <input type="hidden" name="toque" value={toque} />
       <button
         type="submit"
-        className="border-linha-forte bg-paper rounded-full border px-3 py-1 text-[13px] font-semibold"
+        className="border-fio bg-paper rounded-pill border px-3 py-1 text-[13px] font-semibold"
       >
         {rotulo}
       </button>

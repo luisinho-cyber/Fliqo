@@ -17,10 +17,12 @@ import { oferecerVaga, remarcar, remarcarPorArraste } from '../acoes';
 
 export const dynamic = 'force-dynamic';
 
-const AVISOS: Record<string, { texto: string; tom: 'late' | 'ok' }> = {
+// O tom nunca é âmbar aqui: âmbar é este minuto ou atraso. "O horário acabou de
+// ser ocupado" é remarcação que não aconteceu — isso é risco.
+const AVISOS: Record<string, { texto: string; tom: 'risco' | 'ok' }> = {
   horario_ocupado: {
     texto: 'Esse horário acabou de ser ocupado. A consulta continua onde estava.',
-    tom: 'late',
+    tom: 'risco',
   },
   oferta_enviada: {
     texto: 'Vaga oferecida para a lista de espera. Aviso quando alguém aceitar.',
@@ -53,14 +55,14 @@ export default async function Agenda({
     <div className="flex min-h-screen flex-col">
       <Cabecalho atual="/agenda" clinica={ctx.clinica} clinicas={ctx.clinicas} />
       <main className="flex-1 p-5">
-        <section className="bg-paper border-linha rounded-[16px] border p-5">
+        <section className="bg-paper rounded-lg p-5">
           <h1 className="mb-3 text-xl">Semana</h1>
 
           {aviso !== undefined && (
             <p
               role="status"
-              className={`mb-4 rounded-[10px] border px-3 py-2 text-[13px] ${
-                aviso.tom === 'late' ? 'border-late text-late' : 'border-ok text-ok'
+              className={`mb-4 rounded-md border px-3 py-2 text-[13px] ${
+                aviso.tom === 'risco' ? 'border-risco text-risco' : 'border-ok text-ok'
               }`}
             >
               {aviso.texto}
@@ -83,7 +85,7 @@ export default async function Agenda({
                 aoSoltar={remarcarPorArraste}
               />
 
-              <div className="border-linha mt-5 grid gap-5 border-t pt-5 lg:grid-cols-2">
+              <div className="border-fio mt-5 grid gap-5 border-t pt-5 lg:grid-cols-2">
                 <FormularioDeRemarcacao semana={r.dados} />
                 <Vagas semana={r.dados} />
               </div>
@@ -117,10 +119,10 @@ function FormularioDeRemarcacao({ semana }: { semana: Semana }) {
     <form action={remarcar}>
       <h2 className="mb-2 text-base">Remarcar sem arrastar</h2>
       <label className="mb-3 block">
-        <span className="text-ink-suave mb-1 block text-[13px]">Consulta</span>
+        <span className="text-ink-2 mb-1 block text-[13px]">Consulta</span>
         <select
           name="consulta"
-          className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-2 py-1.5 text-[13px]"
+          className="border-fio bg-paper text-ink w-full rounded-sm border px-2 py-1.5 text-[13px]"
         >
           {consultas.map((c) => (
             <option key={c.id} value={c.id}>
@@ -131,17 +133,17 @@ function FormularioDeRemarcacao({ semana }: { semana: Semana }) {
         </select>
       </label>
       <label className="mb-3 block">
-        <span className="text-ink-suave mb-1 block text-[13px]">Novo horário</span>
+        <span className="text-ink-2 mb-1 block text-[13px]">Novo horário</span>
         <input
           type="datetime-local"
           name="novoInicio"
           required
-          className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-2 py-1.5 font-mono text-[13px]"
+          className="border-fio bg-paper text-ink w-full rounded-sm border px-2 py-1.5 font-mono text-[13px]"
         />
       </label>
       <button
         type="submit"
-        className="border-linha-forte bg-paper rounded-full border px-4 py-1.5 text-[13px] font-semibold"
+        className="border-fio bg-paper rounded-pill border px-4 py-1.5 text-[13px] font-semibold"
       >
         Remarcar
       </button>
@@ -170,13 +172,13 @@ function Vagas({ semana }: { semana: Semana }) {
         {vagas.map((v) => (
           <li
             key={`${v.profissionalId}-${v.inicio}`}
-            className="border-linha flex flex-wrap items-center gap-3 border-t py-2 first:border-t-0"
+            className="border-fio flex flex-wrap items-center gap-3 border-t py-2 first:border-t-0"
           >
             <span className="font-mono text-[13px] tabular-nums">
               {v.dataIso.slice(8, 10)}/{v.dataIso.slice(5, 7)}{' '}
               {hhmm(Date.parse(v.inicio), semana.fuso)}–{hhmm(Date.parse(v.fim), semana.fuso)}
             </span>
-            <span className="text-ink-suave min-w-0 flex-1 truncate text-[13px]">
+            <span className="text-ink-2 min-w-0 flex-1 truncate text-[13px]">
               {nomes.get(v.profissionalId) ?? ''}
             </span>
             <form action={oferecerVaga}>
@@ -185,7 +187,7 @@ function Vagas({ semana }: { semana: Semana }) {
               <input type="hidden" name="fim" value={v.fim} />
               <button
                 type="submit"
-                className="border-linha-forte bg-paper rounded-full border px-3 py-1 text-[13px] font-semibold"
+                className="border-fio bg-paper rounded-pill border px-3 py-1 text-[13px] font-semibold"
               >
                 Oferecer à lista de espera
               </button>

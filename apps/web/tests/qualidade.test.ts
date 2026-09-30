@@ -27,11 +27,11 @@ describe('leitura fresca', () => {
     expect(lerQualidade('amarelo', menosDias(0), agora, SP)).toMatchObject({
       idade: 'apurado hoje',
       rotulo: 'Amarelo',
-      tom: 'late',
+      tom: 'atencao',
     });
     expect(lerQualidade('vermelho', menosDias(1), agora, SP)).toMatchObject({
       idade: 'apurado ontem',
-      tom: 'risk',
+      tom: 'risco',
     });
   });
 

@@ -28,7 +28,9 @@ export function Manchete({
       <span className="font-mono tabular-nums">{formatBRL(naAgendaCents)}</span> na agenda.{' '}
       {semConfirmacaoCents > 0 ? (
         <>
-          <span className="text-risk font-mono tabular-nums">{formatBRL(semConfirmacaoCents)}</span>{' '}
+          <span className="text-risco font-mono tabular-nums">
+            {formatBRL(semConfirmacaoCents)}
+          </span>{' '}
           ainda sem confirmação.
         </>
       ) : (
