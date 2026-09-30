@@ -19,7 +19,11 @@ import type { ClienteWhatsApp, EnvioDeTemplate, ResultadoEnvio } from '@fliqo/wh
 
 export type ResultadoEnvioAtivo =
   | { ok: true; wamid: string }
-  | { ok: false; motivo: 'sem_consentimento' | 'recusado' | 'temporario'; detalhe: string };
+  | {
+      ok: false;
+      motivo: 'sem_consentimento' | 'recusado' | 'temporario' | 'credencial';
+      detalhe: string;
+    };
 
 export interface PedidoDeEnvioAtivo {
   clinicId: string;

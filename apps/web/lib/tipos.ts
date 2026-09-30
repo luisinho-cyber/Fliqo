@@ -55,6 +55,17 @@ export interface DecisaoDaTela {
   consultaId: string | null;
 }
 
+/** O que a queda de WhatsApp descartou. Telefone mascarado: é listagem. */
+export interface DescarteDaTela {
+  acaoId: string;
+  consultaId: string | null;
+  pacienteId: string | null;
+  paciente: string | null;
+  telefoneMascarado: string | null;
+  inicio: string | null;
+  acao: 'reenviar' | 'ligar';
+}
+
 export interface Hoje {
   clinica: ClinicaNaTela;
   fuso: string;
@@ -65,6 +76,7 @@ export interface Hoje {
   consultas: ConsultaDaTela[];
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
+  descartes: DescarteDaTela[];
 }
 
 /** Mesma lista do `check` da 0008. App não importa app, então ela se repete aqui. */

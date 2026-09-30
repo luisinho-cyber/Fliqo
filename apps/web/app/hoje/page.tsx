@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { Abas } from '../../componentes/Abas';
 import { Atualiza } from '../../componentes/Atualiza';
 import { Decisoes } from '../../componentes/Decisoes';
+import { Descartes } from '../../componentes/Descartes';
 import { LinhaDoDia } from '../../componentes/LinhaDoDia';
 import { Manchete } from '../../componentes/Manchete';
 import { Marca } from '../../componentes/Marca';
@@ -22,7 +23,11 @@ import { escolherClinica, sair } from '../acoes';
 // O dia de hoje não tem versão guardada: cada visita pergunta de novo.
 export const dynamic = 'force-dynamic';
 
-export default async function TelaHoje() {
+export default async function TelaHoje({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const token = await tokenDaSessao();
   if (token === undefined) redirect('/login?erro=sessao');
 
@@ -48,6 +53,21 @@ export default async function TelaHoje() {
 
   const hoje = resposta.dados;
   const agoraMs = Date.parse(hoje.agora);
+
+  /*
+   * O telefone inteiro só depois de ato deliberado: `?revelar=<paciente>` chega
+   * do botão "Ligar", e é só aí que o número é buscado — de um endpoint por
+   * paciente, nunca da listagem.
+   */
+  const q = await searchParams;
+  const revelarDe = typeof q.revelar === 'string' ? q.revelar : undefined;
+  const revelado =
+    revelarDe === undefined
+      ? undefined
+      : await chamarApi<{ telefone: string }>(`/api/pacientes/${revelarDe}/telefone`, {
+          token,
+          clinicaId: clinica.id,
+        });
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -113,6 +133,13 @@ export default async function TelaHoje() {
           <h2 className="mb-3 text-base">Decisões de hoje</h2>
           <Decisoes decisoes={hoje.decisoes} />
         </section>
+
+        <Descartes
+          descartes={hoje.descartes}
+          fuso={hoje.fuso}
+          reveladoDe={revelarDe}
+          telefoneRevelado={revelado?.ok === true ? revelado.dados.telefone : undefined}
+        />
       </main>
     </div>
   );

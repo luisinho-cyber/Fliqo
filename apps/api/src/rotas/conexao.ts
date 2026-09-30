@@ -1,4 +1,4 @@
-import { conexao, hoje, withClinic, type Db, type Trx } from '@fliqo/db';
+import { acoes, conexao, hoje, withClinic, type Db, type Trx } from '@fliqo/db';
 import { cifrar, OnboardingMeta } from '@fliqo/whatsapp';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -167,18 +167,38 @@ export function registrarConexao(app: FastifyInstance, ctx: ContextoConexao): vo
       const desligou = await conexao.desconectarPorId(trx, atual.id, 'desconectado pelo painel');
       if (!desligou) return { ok: false as const };
 
+      /*
+       * As ações de envio pendentes são canceladas em bloco, aqui e agora.
+       *
+       * Tratamento OPOSTO ao do número em erro, porque a intenção é oposta: quem
+       * teve o token revogado quer as confirmações de amanhã esperando o número
+       * voltar; quem desligou de propósito não pretende voltar amanhã, e segurar
+       * as ações dele só acumularia fila para um envio que ninguém mais quer.
+       *
+       * Na mesma transação do desligamento: ou as duas coisas acontecem, ou
+       * nenhuma — desligar sem cancelar deixaria a pilha viva sem número.
+       */
+      const canceladas = await acoes.cancelarEnviosPendentes(trx, quem.clinicId);
+
       await conexao.registrarEvento(trx, quem.clinicId, {
         kind: 'desconectou',
         numeroId: atual.id,
-        detalhe: 'pelo painel',
+        detalhe:
+          canceladas === 0
+            ? 'pelo painel'
+            : `pelo painel; ${String(canceladas)} envio(s) pendente(s) cancelado(s)`,
         autorUserId: quem.userId,
       });
-      return { ok: true as const, conexao: await conexao.status(trx) };
+      return {
+        ok: true as const,
+        conexao: await conexao.status(trx),
+        enviosCancelados: canceladas,
+      };
     });
 
     if (r.respondido) return reply;
     return r.valor.ok
-      ? reply.send(r.valor.conexao)
+      ? reply.send({ ...r.valor.conexao, enviosCancelados: r.valor.enviosCancelados })
       : reply.code(404).send({ erro: 'nenhum_numero_conectado' });
   });
 }
