@@ -46,7 +46,7 @@ export function LinhaDoDia({ profissionais, consultas, vagas, fuso, agoraMs }: P
           <div className="mb-5" key={prof.id}>
             <div className="mb-2 flex items-baseline justify-between gap-3">
               <b className="font-titulo tracking-[-0.02em]">{prof.nome}</b>
-              <span className="text-ink-suave text-[13px]">
+              <span className="text-ink-2 text-[13px]">
                 {prof.atrasoMin >= ATRASO_VISIVEL_MIN
                   ? `cerca de ${atrasoAproximado(prof.atrasoMin)} de atraso`
                   : 'no horário'}
@@ -87,21 +87,28 @@ export function LinhaDoDia({ profissionais, consultas, vagas, fuso, agoraMs }: P
                 const duracaoMs = c.duracaoEsperadaMin * MIN;
                 const atrasado = c.atrasoMin >= ATRASO_VISIVEL_MIN && c.situacao !== 'finalizada';
 
+                // Cancelado é horário disponível: hachura, sem nome de paciente e
+                // sem o tracejado do atraso. O que aconteceu fica na lista de
+                // decisões, não na faixa.
+                const cancelado = c.status === 'cancelado';
+
                 const classes = [
                   'bloco',
+                  cancelado ? 'cancelado' : '',
+                  c.status === 'agendado' ? 'marcado' : '',
                   c.status === 'confirmado' ? 'confirmado' : '',
-                  c.status === 'agendado' || c.status === 'em_risco' ? 'aguardando' : '',
+                  c.status === 'em_risco' ? 'em-risco' : '',
                   c.status === 'faltou' ? 'faltou' : '',
+                  atrasado && !cancelado ? 'atrasado' : '',
                   c.situacao === 'em_atendimento' ? 'atendendo' : '',
                   c.situacao === 'finalizada' ? 'finalizada' : '',
-                  atrasado ? 'atrasado' : '',
                 ]
                   .filter(Boolean)
                   .join(' ');
 
                 return (
                   <div key={c.id} role="listitem">
-                    {atrasado && (
+                    {atrasado && !cancelado && (
                       <>
                         <div
                           className="fantasma"
@@ -127,13 +134,21 @@ export function LinhaDoDia({ profissionais, consultas, vagas, fuso, agoraMs }: P
                         left: `${String(pct(previsto, janela))}%`,
                         width: `${String(largura(duracaoMs, janela))}%`,
                       }}
-                      title={`${c.paciente} · ${c.procedimento} · marcado ${hhmm(marcado, fuso)}${
-                        atrasado ? ` · deve começar ${hhmm(previsto, fuso)}` : ''
-                      }${c.chegou ? ' · já chegou' : ''}`}
+                      title={
+                        cancelado
+                          ? `Horário livre desde o cancelamento das ${hhmm(marcado, fuso)}`
+                          : `${c.paciente} · ${c.procedimento} · marcado ${hhmm(marcado, fuso)}${
+                              atrasado ? ` · deve começar ${hhmm(previsto, fuso)}` : ''
+                            }${c.chegou ? ' · já chegou' : ''}`
+                      }
                       data-testid={`bloco-${c.id}`}
                     >
-                      <span className="font-mono tabular-nums">{hhmm(previsto, fuso)}</span>{' '}
-                      {primeiroNome(c.paciente)}
+                      {!cancelado && (
+                        <>
+                          <span className="font-mono tabular-nums">{hhmm(previsto, fuso)}</span>{' '}
+                          {primeiroNome(c.paciente)}
+                        </>
+                      )}
                     </div>
                   </div>
                 );

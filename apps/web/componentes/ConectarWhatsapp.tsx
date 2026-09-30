@@ -133,9 +133,9 @@ export function ConectarWhatsapp({
         onChange={(e) => {
           setPin(e.target.value);
         }}
-        className="border-linha-forte bg-paper text-ink w-[140px] rounded-[6px] border px-3 py-2 tracking-[3px] tabular-nums"
+        className="border-fio bg-paper text-ink w-[140px] rounded-sm border px-3 py-2 tracking-[3px] tabular-nums"
       />
-      <p className="text-ink-suave mt-2 mb-3 max-w-[46ch] text-[13px]">
+      <p className="text-ink-2 mt-2 mb-3 max-w-[46ch] text-[13px]">
         É o PIN de verificação em duas etapas do WhatsApp da clínica. Se você ainda não tem um,
         escolha um agora e guarde — vamos pedir de novo se o número precisar ser religado.
       </p>
@@ -143,7 +143,7 @@ export function ConectarWhatsapp({
         type="button"
         onClick={() => void aoClicar()}
         disabled={estado === 'trabalhando'}
-        className="bg-petrol text-paper rounded-full px-4 py-2 font-semibold disabled:opacity-55"
+        className="bg-marca text-paper rounded-pill px-4 py-2 font-semibold disabled:opacity-55"
       >
         {estado === 'trabalhando'
           ? 'Abrindo a janela da Meta…'
@@ -152,7 +152,7 @@ export function ConectarWhatsapp({
             : 'Conectar WhatsApp'}
       </button>
       {aviso !== '' && (
-        <p role="status" className="text-risk mt-3 max-w-[52ch] text-[13px]">
+        <p role="status" className="text-risco mt-3 max-w-[52ch] text-[13px]">
           {aviso}
         </p>
       )}

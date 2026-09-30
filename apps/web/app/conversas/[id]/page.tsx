@@ -34,7 +34,7 @@ export default async function Conversa({ params }: { params: Promise<{ id: strin
     <div className="flex min-h-screen flex-col">
       <Cabecalho atual="/conversas" clinica={ctx.clinica} clinicas={ctx.clinicas} />
       <main className="flex-1 p-5">
-        <Link href="/conversas" className="text-petrol text-[13px] font-semibold">
+        <Link href="/conversas" className="text-marca text-[13px] font-semibold">
           ← Todas as conversas
         </Link>
 
@@ -51,25 +51,25 @@ export default async function Conversa({ params }: { params: Promise<{ id: strin
           </div>
         ) : (
           <div className="mt-3 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <section className="bg-paper border-linha min-w-0 rounded-[16px] border p-5">
+            <section className="bg-paper min-w-0 rounded-lg p-5">
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <div className="min-w-0">
                   <h1 className="truncate text-xl">{ficha.dados.paciente.nome}</h1>
-                  <p className="text-ink-suave font-mono text-[13px] tabular-nums">
+                  <p className="text-ink-2 font-mono text-[13px] tabular-nums">
                     {ficha.dados.paciente.telefone}
                   </p>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
                   {ficha.dados.modo === 'humano' ? (
                     <>
-                      <span className="text-late border-late rounded-full border px-2 py-0.5 text-[12px] font-bold">
+                      <span className="text-marca border-marca rounded-pill border px-2 py-0.5 text-[12px] font-semibold">
                         assistente parada
                       </span>
                       <form action={devolverConversa}>
                         <input type="hidden" name="conversa" value={ficha.dados.id} />
                         <button
                           type="submit"
-                          className="border-linha-forte bg-paper rounded-full border px-3 py-1 text-[13px] font-semibold"
+                          className="border-fio bg-paper rounded-pill border px-3 py-1 text-[13px] font-semibold"
                         >
                           Devolver para a assistente
                         </button>
@@ -80,7 +80,7 @@ export default async function Conversa({ params }: { params: Promise<{ id: strin
                       <input type="hidden" name="conversa" value={ficha.dados.id} />
                       <button
                         type="submit"
-                        className="bg-ink text-paper rounded-full px-3 py-1 text-[13px] font-semibold"
+                        className="bg-ink text-paper rounded-pill px-3 py-1 text-[13px] font-semibold"
                       >
                         Assumir
                       </button>
@@ -90,7 +90,7 @@ export default async function Conversa({ params }: { params: Promise<{ id: strin
               </div>
 
               {ficha.dados.modo === 'humano' && (
-                <p className="border-late text-late mb-4 rounded-[10px] border px-3 py-2 text-[13px]">
+                <p className="border-marca text-marca mb-4 rounded-md border px-3 py-2 text-[13px]">
                   Enquanto esta conversa estiver com a equipe, a assistente não responde nada aqui.
                   {ficha.dados.motivoHandover === null
                     ? ''
@@ -112,7 +112,7 @@ export default async function Conversa({ params }: { params: Promise<{ id: strin
                       key={m.id}
                       className={
                         m.direction === 'entrada'
-                          ? 'border-linha bg-ground max-w-[85%] self-start rounded-[12px] border px-3 py-2 text-[13px]'
+                          ? 'border-fio bg-ground max-w-[85%] self-start rounded-[12px] border px-3 py-2 text-[13px]'
                           : 'border-ok/40 bg-ok/10 max-w-[85%] self-end rounded-[12px] border px-3 py-2 text-[13px]'
                       }
                     >
@@ -120,7 +120,7 @@ export default async function Conversa({ params }: { params: Promise<{ id: strin
                       <p className="whitespace-pre-line">
                         {m.body ?? `(${m.media_kind ?? 'mensagem sem texto'})`}
                       </p>
-                      <span className="text-ink-suave mt-1 block font-mono text-[10px] tabular-nums">
+                      <span className="text-ink-2 mt-1 block font-mono text-[10px] tabular-nums">
                         {m.author === 'paciente'
                           ? 'paciente'
                           : m.author === 'ia'

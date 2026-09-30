@@ -34,14 +34,14 @@ export function QualificacaoDoLead({ ficha }: { ficha: FichaDaConversa }) {
   const proxima = ficha.proximasConsultas[0];
 
   return (
-    <aside className="bg-paper border-linha min-w-0 rounded-[16px] border p-5" data-testid="ficha">
+    <aside className="bg-paper min-w-0 rounded-lg p-5" data-testid="ficha">
       <h2 className="mb-3 text-base">Sobre este lead</h2>
 
       <dl className="m-0 text-[13px]">
         <Linha rotulo="Origem">
           {ORIGEM[q.origem.quem]}
           {q.origem.em !== null && (
-            <span className="text-ink-suave">
+            <span className="text-ink-2">
               {' '}
               em {new Date(q.origem.em).toLocaleDateString('pt-BR')}
             </span>
@@ -50,13 +50,11 @@ export function QualificacaoDoLead({ ficha }: { ficha: FichaDaConversa }) {
 
         <Linha rotulo="Urgência">
           {q.urgencia.nivel === 'alta' ? (
-            <span className="text-risk font-semibold">Alta</span>
+            <span className="text-risco font-semibold">Alta</span>
           ) : (
             'Normal'
           )}
-          {q.urgencia.motivo !== null && (
-            <span className="text-ink-suave"> · {q.urgencia.motivo}</span>
-          )}
+          {q.urgencia.motivo !== null && <span className="text-ink-2"> · {q.urgencia.motivo}</span>}
         </Linha>
 
         <Linha rotulo="Convênios da clínica">
@@ -81,26 +79,26 @@ export function QualificacaoDoLead({ ficha }: { ficha: FichaDaConversa }) {
         )}
       </dl>
 
-      <form action={salvarQualificacao} className="border-linha mt-4 border-t pt-4">
+      <form action={salvarQualificacao} className="border-fio mt-4 border-t pt-4">
         <input type="hidden" name="conversa" value={ficha.id} />
 
         <label className="mb-3 block">
-          <span className="text-ink-suave mb-1 block text-[13px]">O que a pessoa quer</span>
+          <span className="text-ink-2 mb-1 block text-[13px]">O que a pessoa quer</span>
           <input
             name="interesse"
             defaultValue={q.interesse ?? ''}
             maxLength={200}
             placeholder="harmonização, clareamento…"
-            className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-2 py-1.5 text-[13px]"
+            className="border-fio bg-paper text-ink w-full rounded-sm border px-2 py-1.5 text-[13px]"
           />
         </label>
 
         <label className="mb-3 block">
-          <span className="text-ink-suave mb-1 block text-[13px]">Faixa de orçamento</span>
+          <span className="text-ink-2 mb-1 block text-[13px]">Faixa de orçamento</span>
           <select
             name="faixaDeOrcamento"
             defaultValue={q.faixaDeOrcamento ?? ''}
-            className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-2 py-1.5 text-[13px]"
+            className="border-fio bg-paper text-ink w-full rounded-sm border px-2 py-1.5 text-[13px]"
           >
             {FAIXAS.map((f) => (
               <option key={f.valor} value={f.valor}>
@@ -111,25 +109,25 @@ export function QualificacaoDoLead({ ficha }: { ficha: FichaDaConversa }) {
         </label>
 
         <label className="mb-3 block">
-          <span className="text-ink-suave mb-1 block text-[13px]">Sua leitura</span>
+          <span className="text-ink-2 mb-1 block text-[13px]">Sua leitura</span>
           <textarea
             name="observacao"
             defaultValue={q.observacao ?? ''}
             maxLength={1000}
             rows={3}
             placeholder="o que ajudaria quem for atender depois de você"
-            className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-2 py-1.5 text-[13px]"
+            className="border-fio bg-paper text-ink w-full rounded-sm border px-2 py-1.5 text-[13px]"
           />
         </label>
 
         <button
           type="submit"
-          className="bg-ink text-paper w-full rounded-full px-3 py-2 text-[13px] font-semibold"
+          className="bg-ink text-paper w-full rounded-pill px-3 py-2 text-[13px] font-semibold"
         >
           Salvar
         </button>
         {q.atualizadoEm !== null && (
-          <p className="text-ink-suave mt-2 text-[12px]">
+          <p className="text-ink-2 mt-2 text-[12px]">
             Atualizado em {new Date(q.atualizadoEm).toLocaleString('pt-BR')}
           </p>
         )}
@@ -140,8 +138,8 @@ export function QualificacaoDoLead({ ficha }: { ficha: FichaDaConversa }) {
 
 function Linha({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
-    <div className="border-linha border-t py-2 first:border-t-0">
-      <dt className="text-ink-suave text-[12px]">{rotulo}</dt>
+    <div className="border-fio border-t py-2 first:border-t-0">
+      <dt className="text-ink-2 text-[12px]">{rotulo}</dt>
       <dd className="m-0">{children}</dd>
     </div>
   );

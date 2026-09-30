@@ -9,9 +9,11 @@ import type { LeituraDaQualidade } from '../lib/qualidade';
  */
 const PONTOS = {
   ok: 'bg-ok',
-  late: 'bg-late',
-  risk: 'bg-risk',
-  neutro: 'bg-linha-forte',
+  // Anel vazado: mesmo matiz do vermelho, forma diferente. Amarelo é alarme, e
+  // âmbar aqui mentiria — âmbar é tempo.
+  atencao: 'border-risco border-2',
+  risco: 'bg-risco',
+  neutro: 'bg-fio',
 } as const;
 
 export function Qualidade({ leitura }: { leitura: LeituraDaQualidade }) {
@@ -19,7 +21,7 @@ export function Qualidade({ leitura }: { leitura: LeituraDaQualidade }) {
     return (
       <span className="flex items-center gap-2">
         <Ponto tom="neutro" />
-        <span className="text-ink-suave">Qualidade ainda não apurada</span>
+        <span className="text-ink-2">Qualidade ainda não apurada</span>
       </span>
     );
   }
@@ -29,7 +31,7 @@ export function Qualidade({ leitura }: { leitura: LeituraDaQualidade }) {
       <span className="flex flex-wrap items-center gap-2">
         <Ponto tom="neutro" />
         <span>Qualidade sem leitura recente</span>
-        <span className="text-ink-suave text-[13px]">
+        <span className="text-ink-2 text-[13px]">
           · última em {leitura.data}, {leitura.idade}
         </span>
       </span>
@@ -40,11 +42,11 @@ export function Qualidade({ leitura }: { leitura: LeituraDaQualidade }) {
     <span className="flex flex-wrap items-center gap-2">
       <Ponto tom={leitura.tom} />
       <span className="font-semibold">{leitura.rotulo}</span>
-      <span className="text-ink-suave text-[13px]">· {leitura.idade}</span>
+      <span className="text-ink-2 text-[13px]">· {leitura.idade}</span>
     </span>
   );
 }
 
 function Ponto({ tom }: { tom: keyof typeof PONTOS }) {
-  return <span aria-hidden className={`inline-block size-2 rounded-full ${PONTOS[tom]}`} />;
+  return <span aria-hidden className={`inline-block size-2 rounded-pill ${PONTOS[tom]}`} />;
 }

@@ -46,7 +46,7 @@ export default async function Conversas({
     <div className="flex min-h-screen flex-col">
       <Cabecalho atual="/conversas" clinica={ctx.clinica} clinicas={ctx.clinicas} />
       <main className="flex-1 p-5">
-        <section className="bg-paper border-linha mx-auto max-w-[860px] rounded-[16px] border p-5">
+        <section className="bg-paper mx-auto max-w-[860px] rounded-lg p-5">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
             <h1 className="text-xl">Conversas</h1>
             <div className="flex gap-1">
@@ -57,8 +57,8 @@ export default async function Conversas({
                   aria-current={e.valor === estado ? 'true' : undefined}
                   className={
                     e.valor === estado
-                      ? 'bg-ink text-paper rounded-full px-3 py-1 text-[13px] font-semibold'
-                      : 'border-linha-forte text-ink-suave rounded-full border px-3 py-1 text-[13px] font-semibold'
+                      ? 'bg-ink text-paper rounded-pill px-3 py-1 text-[13px] font-semibold'
+                      : 'border-fio text-ink-2 rounded-pill border px-3 py-1 text-[13px] font-semibold'
                   }
                 >
                   {e.rotulo}
@@ -77,24 +77,24 @@ export default async function Conversas({
           ) : (
             <ul className="m-0 list-none p-0" data-testid="caixa-de-entrada">
               {r.dados.map((c) => (
-                <li key={c.id} className="border-linha border-t first:border-t-0">
+                <li key={c.id} className="border-fio border-t first:border-t-0">
                   <Link href={`/conversas/${c.id}`} className="block py-3">
                     <div className="flex flex-wrap items-baseline gap-2">
                       <b>{c.paciente}</b>
-                      <span className="text-ink-suave font-mono text-[12px] tabular-nums">
+                      <span className="text-ink-2 font-mono text-[12px] tabular-nums">
                         {c.telefoneMascarado}
                       </span>
                       {c.modo === 'humano' && (
                         // A marcação é o ponto: quem olha a lista precisa ver
                         // que ali a assistente não vai responder.
-                        <span className="text-late border-late rounded-full border px-2 text-[12px] font-bold">
+                        <span className="text-marca border-marca rounded-pill border px-2 text-[12px] font-semibold">
                           assistente parada
                         </span>
                       )}
                       {!c.temConsentimento && (
-                        <span className="text-ink-suave text-[12px]">sem consentimento</span>
+                        <span className="text-ink-2 text-[12px]">sem consentimento</span>
                       )}
-                      <span className="text-ink-suave ml-auto font-mono text-[12px] tabular-nums">
+                      <span className="text-ink-2 ml-auto font-mono text-[12px] tabular-nums">
                         {c.ultimaEntradaEm === null
                           ? ''
                           : new Date(c.ultimaEntradaEm).toLocaleString('pt-BR', {
@@ -106,13 +106,13 @@ export default async function Conversas({
                       </span>
                     </div>
                     {c.ultimaMensagem?.corpo != null && (
-                      <p className="text-ink-suave mt-1 truncate text-[13px]">
+                      <p className="text-ink-2 mt-1 truncate text-[13px]">
                         {c.ultimaMensagem.autor === 'paciente' ? '' : 'você: '}
                         {c.ultimaMensagem.corpo}
                       </p>
                     )}
                     {c.modo === 'humano' && c.motivoHandover !== null && (
-                      <p className="text-late mt-1 text-[12px]">{c.motivoHandover}</p>
+                      <p className="text-ink-2 mt-1 text-[12px]">{c.motivoHandover}</p>
                     )}
                   </Link>
                 </li>

@@ -22,8 +22,8 @@ export function Abas({ atual, ehDono }: { atual: string; ehDono: boolean }) {
             aria-current={aqui ? 'page' : undefined}
             className={
               aqui
-                ? 'bg-ink text-paper rounded-full px-3.5 py-1.5 font-semibold'
-                : 'border-linha-forte text-ink-suave hover:text-ink rounded-full border border-transparent px-3.5 py-1.5 font-semibold hover:border-current'
+                ? 'bg-ink text-paper rounded-pill px-3.5 py-1.5 font-semibold'
+                : 'border-fio text-ink-2 hover:text-ink rounded-pill border border-transparent px-3.5 py-1.5 font-semibold hover:border-current'
             }
           >
             {a.rotulo}
