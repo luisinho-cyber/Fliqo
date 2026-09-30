@@ -262,12 +262,42 @@ O que já existe, conferido no código, para não reescrever:
 | `expirar_oferta` | `planejarOferta` recusa `em_cima_da_hora` e `sem_tempo_para_resposta` | **nada**: a regra já está em `packages/core/src/fila.ts`, no lugar certo    |
 | `marcar_risco`   | `status !== 'agendado'`                                               | não é represada (não envia), então não forma pilha                          |
 
-Então o trabalho novo é um só: **a antecedência mínima em `confirmacao` e
-`lembrete_final`**. Os guardas de status pegam a consulta que alguém mexeu durante
-a queda; não pegam a que ninguém tocou e simplesmente passou da hora — e é
-exatamente essa que manda "confirme sua consulta de amanhã" sobre um horário de
-ontem. A regra é de negócio: mora em `packages/core`, com teste unitário, como a
-de `planejarOferta`.
+Então o trabalho novo é um só, e **não é um número de minutos**: é a afirmação do
+template continuar verdadeira na hora do envio.
+
+#### O limite sai do que o template afirma
+
+Escolher "X minutos de antecedência" empurra o problema para a frente: alguém vai
+reinterpretar o número. A regra é outra — cada template **afirma** algo sobre
+quando, e só pode sair enquanto essa afirmação for verdade **no momento do envio**.
+Abaixo disso a mensagem é falsa, por mais folga que sobre no relógio.
+
+| Template               | O que afirma          | Verdadeiro enquanto                                                               |
+| ---------------------- | --------------------- | --------------------------------------------------------------------------------- |
+| `confirmacao_consulta` | a consulta é "amanhã" | a consulta cai num dia de calendário **posterior ao de hoje**, no fuso da clínica |
+| `lembrete_final`       | a consulta é hoje, já | a consulta ainda **não começou** e é hoje no fuso da clínica                      |
+| `oferta_de_vaga`       | dá para aceitar e vir | `planejarOferta` já decide isso (`em_cima_da_hora`, `sem_tempo_para_resposta`)    |
+
+Por que dia de calendário e não minutos: às 23h, uma consulta às 8h de amanhã está
+a nove horas de distância e "amanhã" **é verdade**. Às 9h, uma consulta às 23h de
+**hoje** está a catorze horas e "amanhã" **é falso**. Qualquer limite em minutos
+acerta um desses dois casos e erra o outro. É a afirmação que decide, não a
+distância.
+
+E o piso, sem discussão: **consulta no passado é sempre `sem_proposito`**, para
+qualquer tipo.
+
+A regra mora em `packages/core` com teste unitário, recebendo o instante do envio
+(sem `Date.now()` escondido) e o fuso da clínica. Os casos de virada de dia são o
+teste que importa: 23h para 8h de amanhã passa; 9h para 23h de hoje não passa.
+
+**Uma fragilidade para escrever junto, porque não dá para testar:** o texto dos
+templates vive na Meta, não no repositório — `confirmacao` e `lembrete_final` são
+enviados **sem variáveis**, então a afirmação está inteira num texto que este código
+não vê. A declaração de cada afirmação fica ao lado de `TEMPLATES`, em
+`packages/whatsapp/src/cliente.ts`, e **trocar o texto de um template na Meta exige
+revisitar a afirmação declarada aqui**. Nenhum teste pega essa divergência; só a
+regra escrita.
 
 **O aviso de atraso não entra aqui.** Ele não é `scheduled_actions`: vem de
 `FILA_ATRASOS`, uma varredura periódica sobre a agenda do dia. Não há pilha para
@@ -280,6 +310,40 @@ amanhã, outra de consulta que venceu durante a queda. Número volta a `ativo` �
 primeira é enviada, a segunda termina em `sem_proposito`, e **nenhum alerta é
 aberto**. Por mutação, se a checagem de antecedência virar no-op, o teste vê dois
 envios e quebra; se `sem_proposito` virar `erro`, ele vê um alerta e quebra.
+
+### `sem_proposito` precisa de guarda, ou vira ação invisível
+
+Status novo que entra sem ninguém revisar as leituras é pior do que ação falhada:
+ação falhada aparece em algum lugar; ação com status que nenhuma consulta enumera
+não aparece em nenhum. Uma queda de três horas comeria um dia de confirmação e o
+status novo só esconderia isso de forma mais educada.
+
+Hoje o `check` de `scheduled_actions.status` tem cinco valores, e estes são todos os
+lugares que os leem ou escrevem — conferido, para a fase não descobrir um deles
+depois:
+
+| Onde                                   | O que faz com o status                         |
+| -------------------------------------- | ---------------------------------------------- |
+| `claim_due_actions` (0001)             | reclama só `pendente`; escreve `executando`    |
+| `requeue_stuck_actions` (0004)         | devolve `executando` para `pendente`           |
+| índice `scheduled_actions_due` (0001)  | parcial, só `pendente`                         |
+| índice `one_pending_per_kind` (0001)   | parcial, só `pendente`                         |
+| trigger de mudança de consulta (0001)  | cancela as `pendente` da consulta              |
+| `acoes.ts` — sucesso                   | escreve `feito`                                |
+| `acoes.ts` — `falhar` com `desiste`    | escreve `erro` **e abre alerta `acao_falhou`** |
+| `acoes.ts` — `falhar` com backoff      | volta para `pendente`                          |
+| `ofertas.ts` — insere `expirar_oferta` | nasce `pendente` pelo default                  |
+
+O teste, no formato das outras listas: ler os valores do `check` direto do
+`pg_constraint` e exigir que cada um esteja declarado numa tabela que diz, para cada
+status, se é **reclamável**, se é **terminal** e se **conta como falha**. Valor novo
+no `check` quebra o CI até aparecer lá. `sem_proposito` entra como: não reclamável,
+terminal, **não é falha** — e por isso não abre alerta.
+
+**A decisão que isso deixa aberta, e que a fase tem de tomar:** se `sem_proposito`
+não é falha e não é pendente, ele não aparece em nada. Alguém precisa saber que
+trinta confirmações foram descartadas — provavelmente o alerta `whatsapp_fora`
+dizendo quantas, ao ser resolvido. Silêncio aqui é o bug original com nome novo.
 
 ### Conferir, não supor
 
