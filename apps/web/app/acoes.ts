@@ -154,3 +154,32 @@ export async function remarcarPorArraste(consultaId: string, novoInicio: string)
   revalidatePath('/agenda');
   if (!r.ok) redirect('/agenda?aviso=horario_ocupado');
 }
+
+/**
+ * Conectar e reconectar o WhatsApp da clínica.
+ *
+ * Recebe o código que o SDK da Meta entregou ao navegador, e só ele: o token
+ * nunca passa pelo navegador nem por aqui. Quem troca o código por token é a
+ * nossa API, que é onde o segredo do app mora.
+ *
+ * Recebe argumentos, não FormData, porque quem chama é o componente de cliente
+ * que abriu o fluxo da Meta.
+ */
+export async function conectarWhatsapp(
+  codigo: string,
+  pin: string,
+  reconectar: boolean,
+): Promise<{ ok: boolean; erro?: string }> {
+  const caminho = reconectar ? '/api/whatsapp/reconectar' : '/api/whatsapp/conectar';
+  const r = await naApi(caminho, { codigo, pin, coexistencia: true });
+  revalidatePath('/configuracoes/whatsapp');
+  // A mensagem que chega à clínica é escolhida aqui, e não ecoada da Meta:
+  // texto de fora pode trazer segredo dentro.
+  if (r.ok) return { ok: true };
+  return { ok: false, erro: 'nao_conectou' };
+}
+
+export async function desconectarWhatsapp(): Promise<void> {
+  await naApi('/api/whatsapp/desconectar');
+  revalidatePath('/configuracoes/whatsapp');
+}

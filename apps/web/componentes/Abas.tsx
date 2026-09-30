@@ -2,15 +2,18 @@ import Link from 'next/link';
 
 /** Sem menu lateral: a navegação são abas no topo (DESIGN.md). */
 const ABAS = [
-  { href: '/hoje', rotulo: 'Linha do dia' },
-  { href: '/conversas', rotulo: 'Conversas' },
-  { href: '/agenda', rotulo: 'Agenda' },
+  { href: '/hoje', rotulo: 'Linha do dia', soDono: false },
+  { href: '/conversas', rotulo: 'Conversas', soDono: false },
+  { href: '/agenda', rotulo: 'Agenda', soDono: false },
+  // A API nega com 403 quem não é dono. A aba não aparece para não oferecer
+  // uma porta que bate na cara de quem abre.
+  { href: '/configuracoes/whatsapp', rotulo: 'WhatsApp', soDono: true },
 ] as const;
 
-export function Abas({ atual }: { atual: string }) {
+export function Abas({ atual, ehDono }: { atual: string; ehDono: boolean }) {
   return (
     <nav className="flex flex-wrap gap-1" aria-label="Seções do painel">
-      {ABAS.map((a) => {
+      {ABAS.filter((a) => !a.soDono || ehDono).map((a) => {
         const aqui = a.href === atual;
         return (
           <Link

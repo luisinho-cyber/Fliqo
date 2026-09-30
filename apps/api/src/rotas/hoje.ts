@@ -8,9 +8,17 @@ import {
   type ConsultaDoDia,
   type Intervalo,
 } from '@fliqo/core';
-import { alertas, atrasos, hoje, profissionais, withClinic, type Trx } from '@fliqo/db';
+import {
+  alertas,
+  atrasos,
+  hoje,
+  profissionais,
+  withClinic,
+  type PapelMembro,
+  type Trx,
+} from '@fliqo/db';
 import type { FastifyInstance } from 'fastify';
-import { autenticar } from '../auth';
+import { autenticar, membroDaClinica } from '../auth';
 import { comUsuario, UUID, type ContextoPainel } from './contexto';
 
 /**
@@ -25,9 +33,21 @@ import { comUsuario, UUID, type ContextoPainel } from './contexto';
  * com a hora errada na recepção não pode deslocar o dia de todo mundo.
  */
 
-export interface ClinicaDaPessoa {
+/** A clínica como identidade na tela: só o que o cabeçalho precisa escrever. */
+export interface ClinicaNaTela {
   id: string;
   nome: string;
+}
+
+export interface ClinicaDaPessoa extends ClinicaNaTela {
+  /**
+   * O papel da pessoa NAQUELA clínica. Vem de clinic_members, dentro da RLS —
+   * o painel usa isto para não oferecer o que a API vai negar com 403.
+   *
+   * É informação para a tela, não autorização: quem decide continua sendo cada
+   * rota, dentro da transação.
+   */
+  papel: PapelMembro;
 }
 
 export interface ConsultaDaTela {
@@ -69,7 +89,7 @@ export interface DecisaoDaTela {
 }
 
 export interface RespostaHoje {
-  clinica: ClinicaDaPessoa;
+  clinica: ClinicaNaTela;
   fuso: string;
   dataIso: string;
   agora: string;
@@ -91,7 +111,7 @@ export interface DiaDaSemanaApi {
 }
 
 export interface RespostaSemana {
-  clinica: ClinicaDaPessoa;
+  clinica: ClinicaNaTela;
   fuso: string;
   agora: string;
   profissionais: ProfissionalDaTela[];
@@ -136,8 +156,19 @@ export function registrarHoje(app: FastifyInstance, ctx: ContextoPainel): void {
     const ids = await hoje.clinicasDoUsuario(ctx.db, auth.userId);
     const lista: ClinicaDaPessoa[] = [];
     for (const id of ids) {
-      const c = await withClinic(id, (trx) => hoje.dadosDaClinica(trx, id), ctx.db);
-      lista.push({ id: c.id, nome: c.nome });
+      const c = await withClinic(
+        id,
+        async (trx) => ({
+          dados: await hoje.dadosDaClinica(trx, id),
+          papel: await membroDaClinica(trx, auth.userId),
+        }),
+        ctx.db,
+      );
+      // A função security definer devolveu esta clínica porque a pessoa é membro
+      // dela; papel indefinido aqui seria a RLS e a função discordando. Fica de
+      // fora em vez de virar um papel inventado.
+      if (c.papel === undefined) continue;
+      lista.push({ id: c.dados.id, nome: c.dados.nome, papel: c.papel });
     }
     return reply.send(lista);
   });

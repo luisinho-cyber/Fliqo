@@ -73,3 +73,52 @@ describe('nada de token em log', () => {
     expect(ondeAparece('console.')).toEqual([]);
   });
 });
+
+/**
+ * NEXT_PUBLIC_ por LISTA DE PERMISSÃO, não por proibição.
+ *
+ * Proibir nome a nome é correr atrás: `NEXT_PUBLIC_SUPABASE_URL` seria pega,
+ * `NEXT_PUBLIC_SUPABASE_ANON` também, e `NEXT_PUBLIC_TOKEN_DA_API` passaria
+ * batido porque ninguém pensou nela. A lista abaixo é o contrário: só o que
+ * está escrita aqui pode existir, e qualquer outra quebra o CI.
+ *
+ * Ela está vazia, e é assim que deve continuar enquanto o navegador não precisar
+ * de configuração nenhuma. Acrescentar uma linha aqui é uma decisão consciente
+ * de publicar um valor para todo mundo que abrir o painel.
+ */
+const NEXT_PUBLIC_PERMITIDAS: string[] = [];
+
+describe('nada de configuração vazando para o pacote do navegador', () => {
+  it('nenhuma variável NEXT_PUBLIC_ fora da lista de permissão', () => {
+    const achadas = new Set<string>();
+    for (const arquivo of arquivosDoPainel()) {
+      for (const achado of readFileSync(arquivo, 'utf8').matchAll(/NEXT_PUBLIC_[A-Z0-9_]+/g)) {
+        achadas.add(achado[0]);
+      }
+    }
+    expect(
+      [...achadas].filter((n) => !NEXT_PUBLIC_PERMITIDAS.includes(n)).sort(),
+      'NEXT_PUBLIC_ entra no pacote de TODAS as páginas. Passe como prop do componente de servidor.',
+    ).toEqual([]);
+  });
+
+  /**
+   * O painel nunca troca o código por token: quem faz isso é a nossa API, que é
+   * o único processo com o segredo do app. Se alguma destas palavras aparecer em
+   * apps/web, alguém está tentando falar com a Meta daqui — e o segredo teria
+   * que vir junto.
+   */
+  it('não existe segredo do app nem chamada à Graph API no painel', () => {
+    for (const agulha of [
+      'META_APP_SECRET',
+      'client_secret',
+      'oauth/access_token',
+      'graph.facebook.com',
+    ]) {
+      expect(
+        ondeAparece(agulha),
+        `${agulha} é assunto da API. O painel só entrega o código do navegador para ela.`,
+      ).toEqual([]);
+    }
+  });
+});

@@ -241,6 +241,14 @@ export interface TabelaAvisosAtraso {
 
 export type StatusWhatsapp = 'pendente' | 'conectado' | 'erro' | 'desconectado';
 
+/**
+ * Qualidade do número segundo a Meta, já traduzida na borda (packages/whatsapp).
+ * Lista em runtime porque o `check` da 0009 é a mesma lista, e o teste de tipos
+ * compara os dois — divergir quebra na cara do dono, não no start.
+ */
+export const QUALIDADES_DO_NUMERO = ['verde', 'amarelo', 'vermelho', 'desconhecida'] as const;
+export type QualidadeDoNumero = (typeof QUALIDADES_DO_NUMERO)[number];
+
 export interface TabelaNumerosWhatsapp {
   id: ComDefault<string>;
   clinic_id: string;
@@ -258,6 +266,15 @@ export interface TabelaNumerosWhatsapp {
   token_updated_at: ColumnType<Date | null, Date | null, Date | null>;
   connected_at: ColumnType<Date | null, Date | null, Date | null>;
   last_error: ColumnType<string | null, string | null, string | null>;
+  // Valor e carimbo sempre juntos: a 0009 tem `check` que proíbe um sem o outro.
+  verified_name: ColumnType<string | null, string | null, string | null>;
+  verified_name_updated_at: ColumnType<Date | null, Date | null, Date | null>;
+  quality_rating: ColumnType<
+    QualidadeDoNumero | null,
+    QualidadeDoNumero | null,
+    QualidadeDoNumero | null
+  >;
+  quality_updated_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
 export type TipoEventoConexao = 'conectou' | 'reconectou' | 'falhou' | 'desconectou';
@@ -269,6 +286,8 @@ export interface TabelaEventosConexao {
   kind: TipoEventoConexao;
   detail: string | null;
   created_at: Automatico<Date>;
+  // Quem pediu. Vem do `sub` do JWT, nunca do que o navegador mandou.
+  actor_user_id: ColumnType<string | null, string | null, string | null>;
 }
 
 export type TipoAlerta =
@@ -506,6 +525,10 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     token_updated_at: true,
     connected_at: true,
     last_error: true,
+    verified_name: true,
+    verified_name_updated_at: true,
+    quality_rating: true,
+    quality_updated_at: true,
   },
   'app.alerts': {
     id: true,
@@ -538,6 +561,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     kind: true,
     detail: true,
     created_at: true,
+    actor_user_id: true,
   },
   'app.lead_qualifications': {
     conversation_id: true,
