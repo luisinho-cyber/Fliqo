@@ -291,13 +291,31 @@ A regra mora em `packages/core` com teste unitário, recebendo o instante do env
 (sem `Date.now()` escondido) e o fuso da clínica. Os casos de virada de dia são o
 teste que importa: 23h para 8h de amanhã passa; 9h para 23h de hoje não passa.
 
-**Uma fragilidade para escrever junto, porque não dá para testar:** o texto dos
-templates vive na Meta, não no repositório — `confirmacao` e `lembrete_final` são
-enviados **sem variáveis**, então a afirmação está inteira num texto que este código
-não vê. A declaração de cada afirmação fica ao lado de `TEMPLATES`, em
-`packages/whatsapp/src/cliente.ts`, e **trocar o texto de um template na Meta exige
-revisitar a afirmação declarada aqui**. Nenhum teste pega essa divergência; só a
-regra escrita.
+**O texto dos templates não mora aqui, e há como detectar quando ele muda.** A
+afirmação está inteira num texto que vive na Meta — `confirmacao` e `lembrete_final`
+são enviados **sem variáveis**. Nenhum teste prova que a afirmação declarada é
+verdadeira, mas dá para detectar **o instante em que ela pode ter deixado de ser**:
+
+- ao lado de cada declaração em `TEMPLATES` (`packages/whatsapp/src/cliente.ts`),
+  guardar o **hash do texto aprovado**;
+- um passo periódico, ou a conferência de deploy, busca os textos com
+  `GET /{waba-id}/message_templates` e compara;
+- divergiu, **falha alto nomeando o template**: o texto mudou, a declaração precisa
+  ser revisitada.
+
+Não prova semântica, e não precisa. Precisa gritar quando alguém editou o texto na
+Meta, que é exatamente quando a regra escrita para de valer em silêncio.
+
+**Mas a conferência é por clínica, não global.** Cada clínica conecta a **própria**
+WABA, e os templates são aprovados por WABA — não há nada no repositório que crie ou
+aprove template, então hoje eles são pré-aprovados à mão na conta de cada clínica.
+Ou seja: trinta clínicas podem ter trinta textos diferentes sob o mesmo nome
+`confirmacao_consulta`, e um hash só não cobre isso. A conferência roda **uma vez
+por clínica conectada**, com o token daquela clínica — o que significa decifrar
+token, e portanto `WHATSAPP_TOKEN_KEY` no ambiente de quem roda a conferência. Não
+é o mesmo perfil de um passo de deploy que só lê schema: decidir onde isso roda faz
+parte da fase, e o "Conferir RLS" não serve de molde aqui porque ele não precisa de
+segredo de clínica nenhuma.
 
 **O aviso de atraso não entra aqui.** Ele não é `scheduled_actions`: vem de
 `FILA_ATRASOS`, uma varredura periódica sobre a agenda do dia. Não há pilha para
@@ -340,10 +358,34 @@ status, se é **reclamável**, se é **terminal** e se **conta como falha**. Val
 no `check` quebra o CI até aparecer lá. `sem_proposito` entra como: não reclamável,
 terminal, **não é falha** — e por isso não abre alerta.
 
-**A decisão que isso deixa aberta, e que a fase tem de tomar:** se `sem_proposito`
-não é falha e não é pendente, ele não aparece em nada. Alguém precisa saber que
-trinta confirmações foram descartadas — provavelmente o alerta `whatsapp_fora`
-dizendo quantas, ao ser resolvido. Silêncio aqui é o bug original com nome novo.
+**O descarte tem destino, e não é linha de relatório.** Resolvida a queda, o que
+foi descartado vira **decisão na tela Hoje**, no formato que ela já usa: "13
+consultas de hoje não foram confirmadas por causa da queda", com **a lista dos
+pacientes e uma ação por linha**. Um número não é acionável — "30 descartadas" conta
+à recepção que algo ruim aconteceu e não diz o que fazer. A lista diz: são estes,
+ligue para eles. É o que a Fliqo promete no resto do produto, transformar o que se
+perdeu em ação em vez de aviso. O alerta `whatsapp_fora` continua carregando a
+contagem ao ser resolvido, mas ele é o **resumo**; a decisão na Hoje é o que faz
+alguém agir.
+
+Duas coisas que isso obriga, achadas lendo a tela:
+
+- **As decisões da Hoje vêm só de `app.alerts` hoje**, uma linha por alerta, e a
+  única ação de cada linha é "Resolvido". Treze pacientes não podem ser treze
+  alertas — é exatamente a enxurrada que esta fase remove. Então a Hoje passa a ter
+  uma **segunda fonte** de decisão: uma consulta sobre as ações `sem_proposito` do
+  dia, ligada aos pacientes. Isso muda o contrato de `/api/hoje`, não só a tela.
+- **A ação por linha sai da mesma regra do template.** Para quem ainda dá para
+  confirmar (a afirmação continua verdadeira), a ação é **"Enviar confirmação
+  agora"** — o número voltou, e isso resolve sozinho. Para quem a afirmação já
+  venceu, não há mensagem possível: a ação é **ligar**, e aí a linha precisa do
+  telefone. O corte entre as duas ações é o mesmo `lerAfirmacao` do core, aplicado
+  agora em vez de na hora do envio.
+
+E uma tensão para decidir na fase, não para resolver aqui: a regra da tela Conversas
+é **telefone mascarado em lista, inteiro só na ficha**. Uma lista para ligar sem o
+número inteiro não serve para ligar. Ou a linha abre a ficha, ou esta lista é a
+exceção escrita — mas exceção à regra de telefone não se cria em silêncio.
 
 ### Conferir, não supor
 
