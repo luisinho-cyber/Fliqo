@@ -240,7 +240,14 @@ ele é o webhook do passo 8.
 - **Root Directory**: vazio
 - **Config-as-code file path**: `apps/worker/railway.json`
 
-O worker não atende HTTP: não gere domínio nem configure health check para ele.
+O worker atende HTTP numa rota só, `/health`, e o `railway.json` dele já aponta o
+health check para lá. **Não gere domínio**: o health check do Railway bate na porta
+interna do serviço, e o worker não tem nada para servir ao público.
+
+Um worker sem health check morre em silêncio, e silêncio aqui significa nenhuma
+confirmação enviada, nenhuma vaga oferecida e ninguém sabendo. O `/health` responde
+**503** quando um dos laços para de dar sinal — e é esse 503 que faz o Railway
+reiniciar o serviço.
 
 Em **Variables**:
 
@@ -253,6 +260,13 @@ Em **Variables**:
 
 `ANTHROPIC_MODEL` é opcional. Sem ela, vale `claude-haiku-4-5`. Trocar de modelo
 é mudar essa variável e reiniciar o worker.
+
+Não crie `PORT`: o Railway injeta, e o worker usa o que ele der para o `/health`.
+
+**`ANTHROPIC_API_KEY` vai SÓ aqui.** Não na api, não no painel, não no `.env` da
+sua máquina. Quem chama o modelo é o worker; nenhum outro serviço tem o que fazer
+com essa chave, e uma chave configurada onde não é usada é uma chave a mais para
+vazar quando alguém der acesso de leitura às variáveis de um serviço.
 
 ## Passo 7 — Serviço do painel no Railway
 
@@ -284,6 +298,76 @@ segredo aparecer em `apps/web`.
 
 `NODE_ENV=production` não é detalhe: é o que faz o cookie de sessão sair como
 `Secure`. Sem ele o cookie viaja também em http.
+
+Não crie `PORT`: o `start` do painel usa a que o Railway injetar. O health check
+aponta para `/health`, que é a única rota fora do `proxy.ts` — a raiz manda para
+`/login` com 307, e health check que segue redirecionamento não diz nada sobre o
+serviço estar de pé. Essa rota devolve `{"ok":true}` e mais nada.
+
+## Onde cada variável entra, e onde NÃO entra
+
+A tabela existe para responder a pergunta que dá errado: "esta variável, em qual
+serviço?". Configurar um segredo num serviço que não o usa não é inofensivo — é um
+lugar a mais de onde ele vaza no dia em que alguém ganhar acesso de leitura às
+variáveis daquele serviço.
+
+| Variável                | api | worker | web | Por quê                                                |
+| ----------------------- | :-: | :----: | :-: | ------------------------------------------------------ |
+| `DATABASE_URL`          |  ✓  |   ✓    |  —  | o painel não fala com o banco (CLAUDE.md, regra 10)    |
+| `DATABASE_ADMIN_URL`    |  —  |   —    |  —  | **em nenhum**, ver abaixo                              |
+| `SUPABASE_JWT_SECRET`   |  ✓  |   —    |  —  | quem verifica o token do painel é a api                |
+| `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel              |
+| `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                   |
+| `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                |
+| `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api       |
+| `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                   |
+| `WHATSAPP_TOKEN`        |  —  |   ✓    |  —  | quem envia mensagem é o worker                         |
+| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra; o worker decifra para enviar              |
+| `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela           |
+| `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil |
+| `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup               |
+| `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                         |
+| `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                    |
+| `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`              |
+| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                 |
+| `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão              |
+| `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel          |
+
+### `DATABASE_ADMIN_URL` não vai para o Railway em hipótese nenhuma
+
+Essa é a conexão do **dono do schema**, e o dono do schema **não passa pela RLS**
+(CLAUDE.md, regra 2). Um serviço que a conhece está a uma linha de virar vazamento
+entre clínicas — basta alguém trocar `criarDb(config.DATABASE_URL)` por ela num
+apuro de madrugada.
+
+Quem usa essa URL são as migrações e os scripts, que rodam no workflow do GitHub
+com ela como secret, ou na sua máquina. **Nenhum serviço do Railway.**
+
+Isto não é só documentação: **a api e o worker se recusam a subir** se a variável
+estiver no ambiente deles (`recusarAdminUrl`). A recusa vive no caminho de start e
+não na leitura da configuração, de propósito — o job de testes e o workflow de
+migração têm a variável no ambiente legitimamente, e uma recusa no carregamento do
+schema derrubaria o próprio CI que aplica a regra. Há guarda de teste para as duas
+coisas em `tests/deploy.test.ts`.
+
+## Teto de conexões: por que os números são estes
+
+Cada serviço abre **dois** pools, não um: o da Kysely (consultas) e o do pg-boss
+(fila), que é separado. Sem teto explícito, cada um assume 10 — ou seja, cada
+serviço consome 20 conexões, e ninguém percebe até o primeiro pico. O pooler do
+Supabase é compartilhado entre api, worker e as migrações, e quando ele esgota o
+sintoma é erro de conexão que parece problema do banco.
+
+| Serviço | `POOL_CONSULTAS` | `POOL_DA_FILA` | Total | Por quê                                                                                                                                                    |
+| ------- | :--------------: | :------------: | :---: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| api     |        8         |       2        |  10   | muitas consultas curtas de HTTP; o pg-boss dela quase não usa o pool próprio, porque ela enfileira dentro da transação da requisição (`comoConexaoDoBoss`) |
+| worker  |        6         |       5        |  11   | dois laços mais cinco filas com `work`; a fila precisa de mais que a da api porque aqui ela consome, não só enfileira                                      |
+
+Sobra folga para as migrações e para um `psql` de emergência. Se você aumentar a
+réplica de algum serviço, **multiplique**: duas réplicas da api são 20 conexões,
+não 10. Os números vivem como constantes no topo de `apps/api/src/index.ts` e
+`apps/worker/src/index.ts`, e há teste que quebra se alguém voltar a chamar
+`criarDb`/`criarFila` sem passá-los.
 
 Repare que nenhuma variável do painel começa com `NEXT_PUBLIC_`. Isso é de
 propósito: o navegador não fala com o Supabase nem com o banco, então nada disso

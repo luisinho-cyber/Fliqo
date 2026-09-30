@@ -33,6 +33,14 @@ export interface Dependencias {
   db: Db;
   whatsapp: ClienteWhatsApp;
   agora?: () => Date;
+  /**
+   * Batida de vida, chamada a CADA ação concluída — não ao fim da rodada.
+   *
+   * O health check precisa distinguir "está trabalhando devagar" de "travou". Uma
+   * rodada de cinquenta ações com envio lento demora minutos legitimamente; se o
+   * sinal só viesse no fim, o Railway reiniciaria o worker no meio do trabalho.
+   */
+  aoProgredir?: () => void;
 }
 
 async function reservar(db: Db, limite: number): Promise<AcaoPendente[]> {
@@ -244,6 +252,7 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
       },
       dep.db,
     );
+    dep.aoProgredir?.();
   }
 
   return { pegas: acoes.length, feitas, falhas, devolvidas };

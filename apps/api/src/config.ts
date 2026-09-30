@@ -6,7 +6,10 @@ import { z } from 'zod';
  */
 const Ambiente = z.object({
   DATABASE_URL: z.string().min(1),
-  DATABASE_ADMIN_URL: z.string().min(1).optional(),
+  // DATABASE_ADMIN_URL NÃO entra aqui de propósito, e não é esquecimento: a api
+  // nunca a usou. Declarar uma variável que o serviço não usa ensina a quem lê
+  // que ela é necessária, e daí ela acaba configurada no Railway. Quem recusa é
+  // `recusarAdminUrl`, no caminho de start (apps/api/src/index.ts).
   WHATSAPP_APP_SECRET: z.string().min(1),
   WHATSAPP_VERIFY_TOKEN: z.string().min(1),
   // Segredo com que o Supabase assina os tokens do painel.

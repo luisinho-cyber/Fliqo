@@ -60,6 +60,9 @@ function redirecionar(
 }
 
 export const config = {
-  // Tudo menos os arquivos do próprio Next: o painel inteiro exige sessão.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg).*)'],
+  // Tudo menos os arquivos do próprio Next e o health check: o painel inteiro
+  // exige sessão. `health` fica de fora porque o Railway precisa de um 200 sem
+  // sessão — atrás do guarda, ele receberia o 307 do /login e nunca saberia se o
+  // serviço subiu. A rota não devolve dado nenhum (app/health/route.ts).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg|health).*)'],
 };

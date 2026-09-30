@@ -148,6 +148,324 @@ Nome desatualizado não causa dano; nota de qualidade desatualizada esconde um
 número a caminho do bloqueio. O tratamento segue a consequência de estar errado,
 não a simetria.
 
+## Quando o WhatsApp da clínica cai (fase própria)
+
+Duas coisas tiram o WhatsApp da clínica do ar, e **elas não são a mesma coisa**:
+o dono desligar o número pelo painel, e a Meta revogar o token. O segundo
+acontece sem ninguém apertar nada.
+
+O diagnóstico está feito; não refaça. O estado atual de cada caminho:
+
+| Caminho                     | Sem número ativo               | Token revogado (401)         |
+| --------------------------- | ------------------------------ | ---------------------------- |
+| confirmação, lembrete final | `definitivo: true`, sem envio  | `recusado`, uma tentativa só |
+| aviso de atraso             | `continue`, sem envio          | idem                         |
+| oferta de vaga              | `sem_numero`, ninguém ofertado | idem                         |
+| aceitar oferta              | guardado por `!== undefined`   | idem                         |
+
+Ou seja: **não há tempestade de retentativa.** `meta.ts` classifica qualquer
+status que não seja 429 nem 5xx como `recusado`, e `#postar` desiste na hora. E o
+`last_error` que a execução escreve é o da `scheduled_actions`, sobrescrito a cada
+tentativa, não o de `whatsapp_numbers` — esse só é escrito ao conectar e ao
+desconectar, porque `conexao.marcarErro` **não tem um único chamador**.
+
+Os dois problemas de verdade:
+
+1. **Alerta por ação, não por causa.** Trinta consultas amanhã viram trinta
+   alertas `acao_falhou`, e nenhum deles diz "o WhatsApp da clínica está fora".
+2. **Ação queimada.** O token é revogado às 2h; as trinta confirmações de amanhã
+   são reclamadas uma a uma e falham como definitivo. Às 9h alguém reconecta — e os
+   trinta pacientes nunca foram confirmados, porque as ações já queimaram. Uma
+   queda de três horas come um dia inteiro de confirmação, em silêncio.
+
+### O que a fase faz
+
+**Um alerta, não N.** Na falha com cara de autenticação, chamar
+`conexao.marcarErro` uma vez e abrir **um** alerta de tipo novo (`whatsapp_fora`),
+em vez de um `acao_falhou` por ação.
+
+**`erro` segura, `desconectado` cancela.** São intenções opostas e recebem
+tratamentos opostos:
+
+| Situação                                    | O que acontece com as ações de envio pendentes |
+| ------------------------------------------- | ---------------------------------------------- |
+| `status = 'erro'` (token revogado)          | ficam `pendente` e **esperam** o número voltar |
+| `status = 'desconectado'` (o dono desligou) | são **canceladas em bloco**, na hora           |
+
+Quem teve o token revogado quer as confirmações de amanhã esperando. Quem desligou
+de propósito não pretende voltar amanhã, e segurar as ações dele só acumula fila
+para um envio que ninguém mais quer.
+
+**A exclusão no claim é por propriedade, não por nome.** `claim_due_actions` deixa
+de reclamar as ações **que enviam mensagem** de clínica com número em `erro` — e
+decide isso por uma classificação declarada num lugar só, não por lista de
+exceção caso a caso. Migração nova com `create or replace`; a 0001 não se edita
+(CLAUDE.md, regra 8).
+
+Classificação de hoje, para `app.action_kind`:
+
+| Tipo             | Envia? | Por quê                                                 |
+| ---------------- | ------ | ------------------------------------------------------- |
+| `confirmacao`    | sim    | manda o template de confirmação                         |
+| `lembrete_final` | sim    | manda o template de lembrete                            |
+| `expirar_oferta` | sim    | `expirarEPassarAdiante` oferece a vaga à próxima rodada |
+| `marcar_risco`   | não    | só muda o status da consulta                            |
+
+`expirar_oferta` está aqui porque **o nome enganou o critério na primeira vez**:
+expirar não depende do WhatsApp, mas passar a vaga adiante manda mensagem. Segurá-la
+durante a queda estica o prazo da oferta, e é o comportamento certo: hoje a rodada
+queima calada, porque `ofertas.ts` não acha número ativo, devolve `sem_numero` e
+oferece a ninguém.
+
+### As duas invariantes que impedem a próxima "porta ao lado"
+
+O ponto de classificar por propriedade é que tipo de ação novo não entra sem
+alguém decidir. Duas guardas, no padrão da lista `SEM_FORCE` e da lista das cinco
+funções `security definer` — invariante enumerada em vez de acordo tácito:
+
+1. **Nada fica sem classificação.** Duas listas em `packages/db/src/schema.ts`,
+   `ACOES_QUE_ENVIAM` e `ACOES_QUE_NAO_ENVIAM`, e um teste que exige que a união
+   delas seja **exatamente** os valores de `app.action_kind` no `pg_enum`. Tipo novo
+   na enum quebra o CI até aparecer numa das duas.
+2. **O banco e o código não discordam de quem envia.** A propriedade mora no banco
+   (uma função `immutable` que o claim usa), e o teste pergunta o veredito dela para
+   cada valor da enum e compara com `ACOES_QUE_ENVIAM`. Divergir não quebraria no
+   start: quebraria numa queda, com uma ação sendo consumida quando devia esperar.
+
+E o **padrão inseguro é o seguro**: a função do banco trata valor que não conhece
+como "envia", ou seja, segura a ação. Segurar é recuperável, queimar não é. Assim o
+CI falha alto antes de o tipo novo chegar à produção, e se chegar, ele erra para o
+lado que não perde confirmação.
+
+Teste do comportamento: número em `erro`, três ações vencidas → nenhuma reclamada,
+nenhuma tentativa de envio, um alerta; o número volta a ativo → as três são
+reclamadas e enviadas. Por mutação, se a exclusão no claim virar no-op, o teste vê
+as três consumidas e quebra. Segundo teste, para o outro lado: `marcar_risco`
+vencida com o número em `erro` continua sendo reclamada e executada.
+
+### Retomar não é reexecutar
+
+Quando o número volta a `ativo`, a pilha represada é reclamada de uma vez — e uma
+ação que fazia sentido às 2h pode não fazer mais às 9h. Cada uma precisa de uma
+checagem de **pertinência** antes de enviar. Ação que não passa é encerrada como
+`sem_proposito`, e isso **não vira alerta**: não é problema, é consequência
+esperada da queda. (`sem_proposito` é valor novo no `check` de
+`scheduled_actions.status`, que hoje aceita `pendente`, `executando`, `feito`,
+`cancelado` e `erro` — migração nova que troca a constraint, nunca edição da 0001.)
+
+O que já existe, conferido no código, para não reescrever:
+
+| Ação             | Guarda de hoje                                                        | Falta                                                                       |
+| ---------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `confirmacao`    | `consulta.status !== 'agendado'` devolve ok, sem envio                | **a antecedência**: consulta que já passou e ninguém tocou segue `agendado` |
+| `lembrete_final` | status em `agendado`, `confirmado` ou `em_risco`                      | a mesma — nenhuma checagem de tempo                                         |
+| `expirar_oferta` | `planejarOferta` recusa `em_cima_da_hora` e `sem_tempo_para_resposta` | **nada**: a regra já está em `packages/core/src/fila.ts`, no lugar certo    |
+| `marcar_risco`   | `status !== 'agendado'`                                               | não é represada (não envia), então não forma pilha                          |
+
+Então o trabalho novo é um só, e **não é um número de minutos**: é a afirmação do
+template continuar verdadeira na hora do envio.
+
+#### O limite sai do que o template afirma
+
+Escolher "X minutos de antecedência" empurra o problema para a frente: alguém vai
+reinterpretar o número. A regra é outra — cada template **afirma** algo sobre
+quando, e só pode sair enquanto essa afirmação for verdade **no momento do envio**.
+Abaixo disso a mensagem é falsa, por mais folga que sobre no relógio.
+
+| Template               | O que afirma          | Verdadeiro enquanto                                                               |
+| ---------------------- | --------------------- | --------------------------------------------------------------------------------- |
+| `confirmacao_consulta` | a consulta é "amanhã" | a consulta cai num dia de calendário **posterior ao de hoje**, no fuso da clínica |
+| `lembrete_final`       | a consulta é hoje, já | a consulta ainda **não começou** e é hoje no fuso da clínica                      |
+| `oferta_de_vaga`       | dá para aceitar e vir | `planejarOferta` já decide isso (`em_cima_da_hora`, `sem_tempo_para_resposta`)    |
+
+Por que dia de calendário e não minutos: às 23h, uma consulta às 8h de amanhã está
+a nove horas de distância e "amanhã" **é verdade**. Às 9h, uma consulta às 23h de
+**hoje** está a catorze horas e "amanhã" **é falso**. Qualquer limite em minutos
+acerta um desses dois casos e erra o outro. É a afirmação que decide, não a
+distância.
+
+E o piso, sem discussão: **consulta no passado é sempre `sem_proposito`**, para
+qualquer tipo.
+
+A regra mora em `packages/core` com teste unitário, recebendo o instante do envio
+(sem `Date.now()` escondido) e o fuso da clínica. Os casos de virada de dia são o
+teste que importa: 23h para 8h de amanhã passa; 9h para 23h de hoje não passa.
+
+**O texto dos templates não mora aqui, e há como detectar quando ele muda.** A
+afirmação está inteira num texto que vive na Meta — `confirmacao` e `lembrete_final`
+são enviados **sem variáveis**. Nenhum teste prova que a afirmação declarada é
+verdadeira, mas dá para detectar **o instante em que ela pode ter deixado de ser**:
+
+- ao lado de cada declaração em `TEMPLATES` (`packages/whatsapp/src/cliente.ts`),
+  guardar o **hash do texto aprovado**;
+- um passo periódico, ou a conferência de deploy, busca os textos com
+  `GET /{waba-id}/message_templates` e compara;
+- divergiu, **falha alto nomeando o template**: o texto mudou, a declaração precisa
+  ser revisitada.
+
+Não prova semântica, e não precisa. Precisa gritar quando alguém editou o texto na
+Meta, que é exatamente quando a regra escrita para de valer em silêncio.
+
+**A conferência roda no worker, uma vez por dia, e nunca no CI.** Ela é por clínica,
+não global: cada clínica conecta a **própria** WABA, e template é aprovado por WABA,
+então trinta clínicas podem ter trinta textos sob o mesmo nome
+`confirmacao_consulta`. Comparar exige o token daquela clínica, e decifrar token
+exige `WHATSAPP_TOKEN_KEY`.
+
+A resposta não é escolher onde pôr a chave: é **não pôr em lugar novo**. O worker já
+a tem, porque já envia mensagem. O CI não tem, e não pode ter — colocar chave de
+cifragem e token de clínica num runner de CI é abrir uma superfície nova para
+conferir texto de template. Então é job periódico no worker, diário, uma clínica por
+vez; divergiu, abre alerta `template_divergente` nomeando a clínica e o template. O
+CI continua sem segredo de clínica nenhum, que é o que ele é hoje e deve continuar
+sendo.
+
+**E um buraco de implantação que a varredura expôs e ninguém tinha escrito: nada no
+repositório cria ou aprova template.** Não há chamada de criação em lugar algum —
+hoje eles são aprovados **à mão, por clínica**. Trinta clínicas, trinta aprovações
+manuais, cada uma podendo digitar o texto de um jeito diferente. É por isso que o
+hash por clínica não é zelo excessivo: é a única coisa que enxerga o texto que a
+clínica realmente aprovou. Automatizar a criação dos templates na conexão é fase
+própria, e não existe hoje.
+
+**O aviso de atraso não entra aqui.** Ele não é `scheduled_actions`: vem de
+`FILA_ATRASOS`, uma varredura periódica sobre a agenda do dia. Não há pilha para
+retomar — quando o número volta, a varredura seguinte olha o dia corrente e se
+corrige sozinha. Represar não se aplica, e por isso a checagem de "a consulta já
+terminou?" também não.
+
+Teste do retorno: número em `erro`, duas confirmações represadas — uma de consulta
+amanhã, outra de consulta que venceu durante a queda. Número volta a `ativo` → a
+primeira é enviada, a segunda termina em `sem_proposito`, e **nenhum alerta é
+aberto**. Por mutação, se a checagem de antecedência virar no-op, o teste vê dois
+envios e quebra; se `sem_proposito` virar `erro`, ele vê um alerta e quebra.
+
+### `sem_proposito` precisa de guarda, ou vira ação invisível
+
+Status novo que entra sem ninguém revisar as leituras é pior do que ação falhada:
+ação falhada aparece em algum lugar; ação com status que nenhuma consulta enumera
+não aparece em nenhum. Uma queda de três horas comeria um dia de confirmação e o
+status novo só esconderia isso de forma mais educada.
+
+Hoje o `check` de `scheduled_actions.status` tem cinco valores, e estes são todos os
+lugares que os leem ou escrevem — conferido, para a fase não descobrir um deles
+depois:
+
+| Onde                                   | O que faz com o status                         |
+| -------------------------------------- | ---------------------------------------------- |
+| `claim_due_actions` (0001)             | reclama só `pendente`; escreve `executando`    |
+| `requeue_stuck_actions` (0004)         | devolve `executando` para `pendente`           |
+| índice `scheduled_actions_due` (0001)  | parcial, só `pendente`                         |
+| índice `one_pending_per_kind` (0001)   | parcial, só `pendente`                         |
+| trigger de mudança de consulta (0001)  | cancela as `pendente` da consulta              |
+| `acoes.ts` — sucesso                   | escreve `feito`                                |
+| `acoes.ts` — `falhar` com `desiste`    | escreve `erro` **e abre alerta `acao_falhou`** |
+| `acoes.ts` — `falhar` com backoff      | volta para `pendente`                          |
+| `ofertas.ts` — insere `expirar_oferta` | nasce `pendente` pelo default                  |
+
+O teste, no formato das outras listas: ler os valores do `check` direto do
+`pg_constraint` e exigir que cada um esteja declarado numa tabela que diz, para cada
+status, se é **reclamável**, se é **terminal** e se **conta como falha**. Valor novo
+no `check` quebra o CI até aparecer lá. `sem_proposito` entra como: não reclamável,
+terminal, **não é falha** — e por isso não abre alerta.
+
+**O descarte tem destino, e não é linha de relatório.** Resolvida a queda, o que
+foi descartado vira **decisão na tela Hoje**, no formato que ela já usa: "13
+consultas de hoje não foram confirmadas por causa da queda", com **a lista dos
+pacientes e uma ação por linha**. Um número não é acionável — "30 descartadas" conta
+à recepção que algo ruim aconteceu e não diz o que fazer. A lista diz: são estes,
+ligue para eles. É o que a Fliqo promete no resto do produto, transformar o que se
+perdeu em ação em vez de aviso. O alerta `whatsapp_fora` continua carregando a
+contagem ao ser resolvido, mas ele é o **resumo**; a decisão na Hoje é o que faz
+alguém agir.
+
+Duas coisas que isso obriga, achadas lendo a tela:
+
+- **As decisões da Hoje vêm só de `app.alerts` hoje**, uma linha por alerta, e a
+  única ação de cada linha é "Resolvido". Treze pacientes não podem ser treze
+  alertas — é exatamente a enxurrada que esta fase remove. Então a Hoje passa a ter
+  uma **segunda fonte** de decisão: uma consulta sobre as ações `sem_proposito` do
+  dia, ligada aos pacientes. Isso muda o contrato de `/api/hoje`, não só a tela.
+- **A ação por linha sai da mesma regra do template.** Para quem ainda dá para
+  confirmar (a afirmação continua verdadeira), a ação é **"Enviar confirmação
+  agora"** — o número voltou, e isso resolve sozinho. Para quem a afirmação já
+  venceu, não há mensagem possível: a ação é **ligar**, e aí a linha precisa do
+  telefone. O corte entre as duas ações é o mesmo `lerAfirmacao` do core, aplicado
+  agora em vez de na hora do envio.
+
+A lista para ligar **não é exceção à regra do telefone**. Na tela, a regra está em
+`DESIGN.md`: inteiro só depois de ato deliberado, e tocar em **Ligar** é um ato
+deliberado — no celular dispara `tel:` e o número vai para o discador, não para a
+tela; no computador é revelado na própria linha. Na API, a lista desta decisão **não
+recebe o inteiro**: ela chama o endpoint de revelação por paciente, como qualquer
+outra. Ver "Telefone inteiro: de onde ele pode sair", abaixo.
+
+**Dois valores novos de `check` que esta fase acrescenta**, além de `sem_proposito`
+em `scheduled_actions.status`: `whatsapp_fora` e `template_divergente` em
+`alerts.kind`, cuja lista fechada está na 0003. São migrações, e a 0003 não se edita.
+
+### Conferir, não supor
+
+`claim_due_actions` passará a ler `whatsapp_numbers`. Ela é `security definer` e
+cruza clínicas, então essa referência nova entra no escopo da conferência.
+`whatsapp_numbers` está na lista `SEM_FORCE`
+(`packages/db/tests/rls-cobertura.test.ts`), o que **deve** bastar: sem `force`, o
+dono do schema lê a tabela sem precisar de política.
+
+Isso é uma expectativa, não um resultado. O workflow **Conferir RLS** existe para
+essa frase não ser uma aposta: ele é só de leitura e roda de qualquer branch
+(`workflow_dispatch`). Rode-o a partir da branch da fase, antes de mesclar, e
+trate o veredito dele como a resposta. Nesta sessão o disparo por API foi negado
+(`Resource not accessible by integration`, falta `actions: write`), então quem
+dispara é o fundador, pelo painel do GitHub.
+
+## Telefone inteiro: de onde ele pode sair
+
+A regra visual está em `DESIGN.md` — número inteiro só depois de ato deliberado. Mas
+guardar isso pelo que a tela renderiza é frágil: distinguir "lista" de "ficha" por
+caminho de arquivo é convenção de pasta, e convenção não é guarda. **O problema
+desaparece se a listagem nunca receber o inteiro. Lista não vaza o que não tem.**
+
+Então a regra é de API, e é curta:
+
+> **Nenhum endpoint de listagem devolve telefone inteiro, nunca.** O inteiro sai de
+> dois lugares só: a ficha do paciente, e um endpoint de **revelação por paciente** —
+> que é o que o botão "Ligar" chama.
+
+A guarda é irmã do teste que já existe para log, **e funciona do mesmo jeito: casando
+o valor plantado, não um padrão de telefone.** Planta-se um telefone de paciente
+conhecido na fixture e exige-se que **aquele valor** não apareça no corpo de nenhuma
+listagem.
+
+A forma importa mais do que parece. Uma guarda que casa _padrão de número_ fica
+vermelha no `telefoneExibicao` de `GET /api/whatsapp/status` — que é o número **da
+clínica**, de outro dono, legitimamente inteiro. Alguém então afrouxa o padrão para
+o CI voltar ao verde, e a guarda para de pegar o caso real. Casando o valor plantado,
+esse caso nunca fica vermelho: é outro número. Sem afrouxar critério, sem exceção,
+sem a guarda perder o dente.
+
+Dois cuidados na implementação, do mesmo espírito:
+
+- **Plante o número e confira as formas em que ele pode sair**: E.164 (`+5511…`), só
+  dígitos, e o formato nacional com parênteses e hífen. Um vazamento reformatado
+  escapa de uma comparação literal única — é a mesma exposição que o teste de log já
+  tem, e aqui ela é barata de fechar.
+- **Compare sempre o valor completo, nunca fragmento.** O mascarado guarda os
+  primeiros dígitos e os dois últimos; procurar "os últimos quatro" acusaria a própria
+  máscara, e aí voltaríamos a afrouxar.
+
+### `GET /api/pacientes?telefone=…` mascara, e não vira revelação
+
+Ele devolve hoje o paciente inteiro, com `phone_e164`, dentro de um array — tem forma
+de listagem e viola a regra. **Passa a mascarar.** Quem chama já tem o número inteiro,
+porque ele é o parâmetro da busca: devolvê-lo não informa nada.
+
+O motivo de **não** reclassificá-lo como endpoint de revelação é mais importante que o
+motivo de mascarar. O valor da revelação é que cada linha dela no log de auditoria
+significa "uma pessoa pediu este número de propósito". Uma busca disparando essa linha
+a cada consulta transforma o log em ruído, e log de auditoria ruidoso é log que
+ninguém lê. O sinal não se dilui antes mesmo de existir.
+
 ## Pendências para quando houver log de auditoria
 
 Hoje não existe log de auditoria. Duas coisas precisam ser resolvidas junto com
@@ -164,6 +482,11 @@ ele, e não antes, porque hoje não há para onde apontar:
   clínica?", que antes da 0009 não tinha resposta nenhuma. Vale a mesma ressalva:
   quando o log existir, precisa apontar para algo que continue existindo depois
   que a pessoa sair da clínica.
+- **O endpoint de revelação de telefone é onde a auditoria de acesso vai morar.**
+  Quem revelou o telefone de quem, e quando. É o único lugar do produto em que o
+  número inteiro sai por pedido explícito de uma pessoa, então é o único que produz
+  uma linha de auditoria que significa algo. Não construir agora: anotar, e construir
+  junto com o log.
 - **Não há `created_at` na qualificação.** `updated_at` é sobrescrito a cada
   edição, então hoje não dá para saber quando a qualificação nasceu — só quando
   foi mexida pela última vez. Para auditoria isso importa: "quem qualificou e
