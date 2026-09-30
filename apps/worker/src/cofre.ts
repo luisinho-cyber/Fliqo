@@ -17,6 +17,33 @@ import { decifrar, type CofreDeTokens } from '@fliqo/whatsapp';
  */
 
 /**
+ * Por que NÃO há invalidação entre processos.
+ *
+ * A pergunta volta sozinha: o cofre vive no worker, e `desconectar` e
+ * `reconectar` acontecem na api — não seria preciso a api avisar o worker para
+ * esquecer o número? Não, e vale a pena ficar escrito para a discussão não
+ * reabrir daqui a dois meses.
+ *
+ * 1. **Desconectar já está coberto antes de chegar aqui.** Todo caminho de envio
+ *    passa por `numeros.ativoDaClinica`, que filtra `active`: `acoes.ts` (:71 e
+ *    :100), `atrasos.ts` (:157), `ofertas.ts` (:112 e :253) e `conversa.ts`
+ *    (:119). Desligado o número, o `phoneNumberId` nem chega ao cofre — não há
+ *    entrada velha que possa causar envio.
+ * 2. **Reconectar também.** O número segue ativo e o token muda: ou o antigo
+ *    ainda vale na Meta (inofensivo, e sai pelo número certo de qualquer forma),
+ *    ou é recusado — e aí a renovação por credencial recusada troca por fresco na
+ *    mesma tentativa.
+ * 3. **O mecanismo custaria mais do que compra.** Avisar de um processo ao outro
+ *    exigiria fila nova, e fila nova só existe depois de `db:migrate`: o worker
+ *    passaria a depender de uma migração para poder enviar mensagem. Esse
+ *    acoplamento de ordem de deploy é pior que o problema que ele resolveria.
+ *
+ * `esquecer` existe e é testado porque a renovação por 401 precisa dele em
+ * processo. Se algum dia um caminho de envio deixar de passar por
+ * `ativoDaClinica`, o item 1 cai e esta decisão precisa ser revisitada.
+ */
+
+/**
  * Teto de entradas.
  *
  * Cada entrada é um token de acesso EM CLARO na memória do processo. Sem teto, o
