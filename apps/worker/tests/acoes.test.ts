@@ -94,6 +94,48 @@ async function statusDaConsulta(id: string): Promise<string> {
   return rows[0]?.status ?? 'sumiu';
 }
 
+/**
+ * A batida de vida do health check.
+ *
+ * Ela existe para o `/health` distinguir "trabalhando devagar" de "travou". Se o
+ * sinal só viesse ao fim da rodada, uma rodada legítima de cinquenta ações com
+ * envio lento passaria da janela e o Railway reiniciaria o worker NO MEIO do
+ * trabalho — perdendo o que estava na mão para descobrir que estava tudo bem.
+ */
+describe('batida de vida durante a rodada', () => {
+  it('bate a cada ação concluída, não uma vez ao fim', async () => {
+    await marcarConsulta(c.patients[0]!, 30);
+    await marcarConsulta(c.patients[1]!, 40);
+    await vencerAcoes('confirmacao');
+
+    let batidas = 0;
+    const r = await rodarUmaVez({
+      db,
+      whatsapp,
+      aoProgredir: () => {
+        batidas += 1;
+      },
+    });
+
+    expect(r.pegas).toBeGreaterThanOrEqual(2);
+    expect(batidas).toBe(r.pegas);
+  });
+
+  it('rodada sem ação nenhuma não bate — e nem precisa', async () => {
+    // O laço bate ao fim da volta de qualquer jeito; aqui só não pode inventar
+    // batida por ação que não existiu.
+    let batidas = 0;
+    await rodarUmaVez({
+      db,
+      whatsapp,
+      aoProgredir: () => {
+        batidas += 1;
+      },
+    });
+    expect(batidas).toBe(0);
+  });
+});
+
 describe('confirmação', () => {
   it('envia o template com os três botões e marca a ação como feita', async () => {
     await marcarConsulta(c.patients[0]!, 30);

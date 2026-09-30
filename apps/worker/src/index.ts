@@ -1,5 +1,5 @@
 import { ClienteAnthropic } from '@fliqo/ai';
-import { criarDb, withClinic } from '@fliqo/db';
+import { criarDb, recusarAdminUrl, withClinic } from '@fliqo/db';
 import {
   criarFila,
   FILA_ATRASOS,
@@ -16,12 +16,27 @@ import { abrirRodada } from './ofertas';
 import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
+import { criarParada, rodarLaco } from './parada';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
+import { criarBatimento, servidorDeSaude } from './saude';
+
+/**
+ * Tetos de conexão, explícitos.
+ *
+ * São dois pools por serviço — o da Kysely e o do pg-boss — e o pooler do
+ * Supabase é compartilhado com a api e com as migrações. Sem teto, cada serviço
+ * consome o dobro do que parece e o pooler esgota no primeiro pico. A conta de
+ * onde saem estes números está em docs/DEPLOY.md.
+ */
+const POOL_CONSULTAS = 6;
+const POOL_DA_FILA = 5;
 
 const config = lerConfigWorker();
+// Antes de qualquer conexão: o worker não sobe conhecendo a URL de dono do schema.
+recusarAdminUrl('o worker');
 const log = pino({ level: config.LOG_LEVEL });
-const db = criarDb(config.DATABASE_URL);
-const boss = criarFila(config.DATABASE_URL);
+const db = criarDb(config.DATABASE_URL, POOL_CONSULTAS);
+const boss = criarFila(config.DATABASE_URL, POOL_DA_FILA);
 const whatsapp = new ClienteMeta({ token: config.WHATSAPP_TOKEN });
 const llm = new ClienteAnthropic({
   apiKey: config.ANTHROPIC_API_KEY,
@@ -102,48 +117,84 @@ await boss.work<{ clinicId: string; profissionalId: string; inicio: string; fim:
   },
 );
 
-let rodando = true;
+const parada = criarParada();
+const batimentoDeAcoes = criarBatimento();
+const batimentoDeAtrasos = criarBatimento();
 
 /** Laço das ações agendadas. Roda a cada 30 s, sem sobrepor uma rodada na outra. */
-async function laco(): Promise<void> {
-  while (rodando) {
-    try {
-      const r = await rodarUmaVez({ db, whatsapp });
-      if (r.pegas > 0 || r.devolvidas > 0) log.info(r, 'rodada de ações');
-    } catch (erro) {
-      // Uma rodada ruim não pode matar o worker: o próximo ciclo tenta de novo.
-      log.error({ erro: erro instanceof Error ? erro.message : erro }, 'rodada falhou');
-    }
-    await new Promise((resolve) => setTimeout(resolve, 30_000));
-  }
-}
+const laco = rodarLaco({
+  parada,
+  intervaloMs: 30_000,
+  // Uma rodada ruim não pode matar o worker: o próximo ciclo tenta de novo.
+  aoFalhar: (erro) => {
+    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'rodada falhou');
+  },
+  tarefa: async () => {
+    const r = await rodarUmaVez({ db, whatsapp, aoProgredir: batimentoDeAcoes.marcar });
+    batimentoDeAcoes.marcar();
+    if (r.pegas > 0 || r.devolvidas > 0) log.info(r, 'rodada de ações');
+  },
+});
 
 /**
  * Laço dos atrasos. A cada 2 min porque um atraso que cresce entre uma volta e
  * outra ainda dá tempo de ser avisado antes de o paciente sair de casa.
  */
-async function lacoDeAtrasos(): Promise<void> {
-  while (rodando) {
-    try {
-      const r = await varrerAtrasos({ db, whatsapp });
-      if (r.avisosAoPaciente > 0 || r.alertasDeRecepcao > 0 || r.alertasDeEspera > 0) {
-        log.info(r, 'varredura de atrasos');
-      }
-    } catch (erro) {
-      log.error(
-        { erro: erro instanceof Error ? erro.message : erro },
-        'varredura de atrasos falhou',
-      );
+const lacoDeAtrasos = rodarLaco({
+  parada,
+  intervaloMs: 120_000,
+  aoFalhar: (erro) => {
+    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'varredura de atrasos falhou');
+  },
+  tarefa: async () => {
+    const r = await varrerAtrasos({ db, whatsapp });
+    batimentoDeAtrasos.marcar();
+    if (r.avisosAoPaciente > 0 || r.alertasDeRecepcao > 0 || r.alertasDeEspera > 0) {
+      log.info(r, 'varredura de atrasos');
     }
-    await new Promise((resolve) => setTimeout(resolve, 120_000));
-  }
-}
+  },
+});
+
+const lacos = Promise.all([laco, lacoDeAtrasos]);
+
+const saude = servidorDeSaude({
+  porta: config.PORT,
+  batimentos: { acoes: batimentoDeAcoes, atrasos: batimentoDeAtrasos },
+});
+
+/**
+ * SIGTERM chega a cada deploy do Railway.
+ *
+ * A ordem é o que evita ação travada: primeiro para de reclamar trabalho novo,
+ * depois espera a volta em curso terminar, e só então fecha fila e banco. Sair
+ * antes deixaria a linha em `executando` esperando o requeue — que continua sendo
+ * a rede de baixo, mas deixa de ser o caminho normal de todo deploy.
+ *
+ * O prazo existe porque o Railway não espera para sempre: passado ele, é melhor
+ * sair e deixar o requeue trabalhar do que levar SIGKILL no meio.
+ */
+const PRAZO_DE_SAIDA_MS = 25_000;
 
 const encerrar = async (sinal: string): Promise<void> => {
-  log.info({ sinal }, 'encerrando');
-  rodando = false;
+  log.info({ sinal }, 'encerrando: terminando o que está na mão');
+  parada.pedir();
+  saude.close();
+
+  const noPrazo = await Promise.race([
+    lacos.then(() => true),
+    new Promise<false>((resolve) => {
+      setTimeout(() => {
+        resolve(false);
+      }, PRAZO_DE_SAIDA_MS);
+    }),
+  ]);
+  if (!noPrazo) {
+    log.warn({ prazoMs: PRAZO_DE_SAIDA_MS }, 'prazo esgotado, saindo com volta aberta');
+  }
+
   await boss.stop();
   await db.destroy();
+  log.info({ sinal, noPrazo }, 'encerrado');
 };
 
 for (const sinal of ['SIGTERM', 'SIGINT'] as const) {
@@ -152,5 +203,5 @@ for (const sinal of ['SIGTERM', 'SIGINT'] as const) {
   });
 }
 
-log.info('worker no ar');
-await Promise.all([laco(), lacoDeAtrasos()]);
+log.info({ porta: config.PORT }, 'worker no ar');
+await lacos;

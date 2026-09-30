@@ -42,13 +42,22 @@ export const FILA_OFERTA = 'oferta';
  * migrar o schema da fila no start e morrer com erro de permissão. Com isso, ela
  * confere a versão e reclama que falta rodar as migrações — que é a verdade.
  */
-export function criarFila(connectionString) {
+/**
+ * A fila da aplicação. `max` é o teto de conexões DESTA instância, e ele existe
+ * porque o pg-boss abre um pool próprio, separado do da Kysely: sem teto, cada
+ * serviço consome o dobro do que parece, e o pooler do Supabase esgota no
+ * primeiro pico. O sintoma é erro de conexão que parece problema do banco.
+ *
+ * Quem chama passa o número, e o número está justificado em docs/DEPLOY.md.
+ */
+export function criarFila(connectionString, max = 5) {
   return new PgBoss({
     connectionString,
     schema: SCHEMA_FILA,
     supervise: false,
     schedule: false,
     migrate: false,
+    max,
   });
 }
 

@@ -6,6 +6,8 @@ const Ambiente = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   // O modelo é configuração, não código: trocar não exige publicar de novo.
   ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-4-5'),
+  // O worker atende HTTP numa rota só, /health. O Railway injeta a porta.
+  PORT: z.coerce.number().int().positive().default(3100),
   LOG_LEVEL: z.string().default('info'),
 });
 

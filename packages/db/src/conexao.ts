@@ -17,6 +17,29 @@ export function criarDb(connectionString: string, maxConexoes = 10): Db {
   });
 }
 
+/**
+ * Recusa subir se a URL de dono do schema estiver no ambiente.
+ *
+ * O dono do schema NÃO passa pela RLS (CLAUDE.md, regra 2). Um processo que
+ * atende requisição não tem por que conhecer essa conexão, e um processo que a
+ * conhece é um bug de configuração a uma linha de distância de virar vazamento
+ * entre clínicas — basta alguém trocar `criarDb(config.DATABASE_URL)` por ela
+ * num apuro de madrugada.
+ *
+ * Isto mora no CAMINHO DE START, nunca na leitura do schema de configuração: a
+ * variável existe legitimamente no workflow de migração e nos jobs de teste, e
+ * uma recusa no schema derrubaria o próprio CI que aplica esta regra.
+ */
+export function recusarAdminUrl(quem: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (env.DATABASE_ADMIN_URL === undefined || env.DATABASE_ADMIN_URL === '') return;
+  // A mensagem não repete o valor: ela nomeia a variável, e nada mais.
+  throw new Error(
+    `${quem} não sobe com DATABASE_ADMIN_URL no ambiente. ` +
+      'Essa conexão é do dono do schema, não passa pela RLS e só as migrações a usam. ' +
+      'Remova a variável deste serviço.',
+  );
+}
+
 let padrao: Db | undefined;
 
 /**

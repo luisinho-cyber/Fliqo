@@ -16,7 +16,10 @@
     "packages/*/src/**/*.ts",
     "packages/*/tests/**/*.ts",
     "apps/*/src/**/*.ts",
-    "apps/*/tests/**/*.ts"
+    "apps/*/tests/**/*.ts",
+    // tests/ na raiz: as guardas que são do repositório inteiro, e não de um app
+    // — hoje as do deploy, que olham os três serviços de uma vez.
+    "tests/**/*.ts"
   ],
   // apps/demo e apps/web têm tsconfig próprio (Next, JSX): ficam fora do
   // typecheck da raiz e rodam em `typecheck:demo` e `typecheck:web`.
