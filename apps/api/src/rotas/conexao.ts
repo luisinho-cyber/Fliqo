@@ -1,4 +1,4 @@
-import { conexao, withClinic, type Db, type Trx } from '@fliqo/db';
+import { conexao, hoje, withClinic, type Db, type Trx } from '@fliqo/db';
 import { cifrar, OnboardingMeta } from '@fliqo/whatsapp';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -16,11 +16,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Saida<T> = { respondido: true } | { respondido: false; valor: T };
 
-async function comUsuario<T>(
+/** Quem pediu. O userId vem do `sub` do JWT e é o que vai para `actor_user_id`. */
+interface QuemPediu {
+  userId: string;
+  clinicId: string;
+}
+
+async function comDono<T>(
   ctx: ContextoConexao,
   req: FastifyRequest,
   reply: FastifyReply,
-  fn: (trx: Trx, clinicId: string) => Promise<T>,
+  fn: (trx: Trx, quem: QuemPediu) => Promise<T>,
 ): Promise<Saida<T>> {
   const auth = await autenticar(req.headers.authorization, ctx.segredoJwt);
   if (!auth.ok) {
@@ -40,7 +46,10 @@ async function comUsuario<T>(
       if (papel === undefined) return { negado: true as const };
       // Ligar o WhatsApp da clínica é decisão de quem manda nela.
       if (papel !== 'dono') return { negado: true as const };
-      return { negado: false as const, valor: await fn(trx, clinicId) };
+      return {
+        negado: false as const,
+        valor: await fn(trx, { userId: auth.userId, clinicId }),
+      };
     },
     ctx.db,
   );
@@ -67,9 +76,12 @@ const PedidoDeConexao = z.object({
 
 export function registrarConexao(app: FastifyInstance, ctx: ContextoConexao): void {
   app.get('/api/whatsapp/status', async (req, reply) => {
-    const r = await comUsuario(ctx, req, reply, async (trx) => ({
+    const r = await comDono(ctx, req, reply, async (trx, quem) => ({
       conexao: (await conexao.status(trx)) ?? null,
       eventos: await conexao.eventos(trx, 10),
+      // O fuso vem junto porque tudo nesta tela é data, e data sem relógio da
+      // clínica mente: "apurado ontem" tem que dizer ontem para quem está lá.
+      fuso: (await hoje.dadosDaClinica(trx, quem.clinicId)).fuso,
     }));
     return r.respondido ? reply : reply.send(r.valor);
   });
@@ -94,19 +106,17 @@ export function registrarConexao(app: FastifyInstance, ctx: ContextoConexao): vo
         pin: c.data.pin,
       });
 
-      const r = await comUsuario(ctx, req, reply, async (trx, clinicId) => {
+      const r = await comDono(ctx, req, reply, async (trx, quem) => {
         if (!resultado.ok) {
-          await conexao.registrarEvento(
-            trx,
-            clinicId,
-            'falhou',
-            undefined,
-            `${resultado.motivo}: ${resultado.detalhe}`,
-          );
+          await conexao.registrarEvento(trx, quem.clinicId, {
+            kind: 'falhou',
+            detalhe: `${resultado.motivo}: ${resultado.detalhe}`,
+            autorUserId: quem.userId,
+          });
           return { ok: false as const, motivo: resultado.motivo };
         }
 
-        const { id } = await conexao.gravarConexao(trx, clinicId, {
+        const { id } = await conexao.gravarConexao(trx, quem.clinicId, {
           phoneNumberId: resultado.phoneNumberId,
           wabaId: resultado.wabaId,
           ...(resultado.telefoneExibicao === undefined
@@ -114,8 +124,18 @@ export function registrarConexao(app: FastifyInstance, ctx: ContextoConexao): vo
             : { telefoneExibicao: resultado.telefoneExibicao }),
           coexistencia: c.data.coexistencia,
           token: cifrar(resultado.token, ctx.chaveDoToken),
+          // Nome e qualidade só chegam aqui quando a Meta os informou. Sem
+          // leitura, sem carimbo: a tela precisa poder dizer "não sei agora".
+          ...(resultado.nomeVerificado === undefined
+            ? {}
+            : { nomeVerificado: resultado.nomeVerificado }),
+          ...(resultado.qualidade === undefined ? {} : { qualidade: resultado.qualidade }),
         });
-        await conexao.registrarEvento(trx, clinicId, evento, id);
+        await conexao.registrarEvento(trx, quem.clinicId, {
+          kind: evento,
+          numeroId: id,
+          autorUserId: quem.userId,
+        });
 
         // Devolve o status, que por construção não inclui o token.
         return { ok: true as const, conexao: await conexao.status(trx) };
@@ -127,4 +147,38 @@ export function registrarConexao(app: FastifyInstance, ctx: ContextoConexao): vo
         : reply.code(502).send({ erro: r.valor.motivo });
     });
   }
+
+  /**
+   * Desligar o WhatsApp da clínica.
+   *
+   * Apaga o token cifrado e desativa o número — a partir daí o webhook não acha
+   * mais a clínica (`clinic_by_phone_number_id` filtra `active`) e a assistente
+   * fica sem por onde falar. Por isso é do dono, como conectar, e por isso o
+   * evento guarda QUEM fez: "o WhatsApp parou" precisa ter uma resposta.
+   *
+   * Não fala com a Meta: revogar o token do lado dela é decisão da clínica, na
+   * conta dela. O que está nas nossas mãos é deixar de guardar o token.
+   */
+  app.post('/api/whatsapp/desconectar', async (req, reply) => {
+    const r = await comDono(ctx, req, reply, async (trx, quem) => {
+      const atual = await conexao.status(trx);
+      if (atual === undefined) return { ok: false as const };
+
+      const desligou = await conexao.desconectarPorId(trx, atual.id, 'desconectado pelo painel');
+      if (!desligou) return { ok: false as const };
+
+      await conexao.registrarEvento(trx, quem.clinicId, {
+        kind: 'desconectou',
+        numeroId: atual.id,
+        detalhe: 'pelo painel',
+        autorUserId: quem.userId,
+      });
+      return { ok: true as const, conexao: await conexao.status(trx) };
+    });
+
+    if (r.respondido) return reply;
+    return r.valor.ok
+      ? reply.send(r.valor.conexao)
+      : reply.code(404).send({ erro: 'nenhum_numero_conectado' });
+  });
 }

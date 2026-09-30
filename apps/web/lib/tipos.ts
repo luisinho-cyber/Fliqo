@@ -5,9 +5,14 @@
  * (CLAUDE.md, regra de dependência). O que amarra os dois é o teste da API.
  */
 
-export interface ClinicaDaPessoa {
+export interface ClinicaNaTela {
   id: string;
   nome: string;
+}
+
+export interface ClinicaDaPessoa extends ClinicaNaTela {
+  /** Papel na clínica. Serve para não oferecer o que a API vai negar com 403. */
+  papel: 'dono' | 'recepcao' | 'profissional' | 'financeiro';
 }
 
 export type SituacaoDaConsulta = 'finalizada' | 'em_atendimento' | 'aguardando';
@@ -51,7 +56,7 @@ export interface DecisaoDaTela {
 }
 
 export interface Hoje {
-  clinica: ClinicaDaPessoa;
+  clinica: ClinicaNaTela;
   fuso: string;
   dataIso: string;
   agora: string;
@@ -119,9 +124,38 @@ export interface DiaDaSemana {
 }
 
 export interface Semana {
-  clinica: ClinicaDaPessoa;
+  clinica: ClinicaNaTela;
   fuso: string;
   agora: string;
   profissionais: ProfissionalDaTela[];
   dias: DiaDaSemana[];
+}
+
+/** O que /api/whatsapp/status devolve. Nenhum campo de token, por construção. */
+export interface ConexaoDoWhatsapp {
+  id: string;
+  phoneNumberId: string;
+  telefoneExibicao: string | null;
+  wabaId: string | null;
+  status: 'pendente' | 'conectado' | 'erro' | 'desconectado';
+  coexistencia: boolean;
+  conectadoEm: string | null;
+  ultimoErro: string | null;
+  nomeVerificado: string | null;
+  nomeVerificadoEm: string | null;
+  qualidade: 'verde' | 'amarelo' | 'vermelho' | 'desconhecida' | null;
+  qualidadeEm: string | null;
+}
+
+export interface EventoDeConexao {
+  id: string;
+  kind: 'conectou' | 'reconectou' | 'falhou' | 'desconectou';
+  detail: string | null;
+  created_at: string;
+}
+
+export interface StatusDoWhatsapp {
+  conexao: ConexaoDoWhatsapp | null;
+  eventos: EventoDeConexao[];
+  fuso: string;
 }

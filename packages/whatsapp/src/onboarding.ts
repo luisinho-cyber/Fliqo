@@ -25,6 +25,39 @@ export const CAMPOS_DE_WEBHOOK = [
   'account_update',
 ] as const;
 
+/**
+ * Qualidade do número segundo a Meta, traduzida aqui na borda.
+ *
+ * A mesma lista é o `check` da 0009 e QUALIDADES_DO_NUMERO em @fliqo/db. Este
+ * pacote não pode importar db (CLAUDE.md, regra de dependência), então a lista
+ * se repete — e apps/api, que importa os dois, tem o teste que prova que elas
+ * são iguais.
+ *
+ * `desconhecida` é o que a Meta manda de verdade em número novo, e também onde
+ * cai qualquer valor que ela invente amanhã: melhor uma leitura honesta de
+ * "não sei" do que gravar texto cru da Meta numa coluna com lista fechada.
+ */
+export const QUALIDADES = ['verde', 'amarelo', 'vermelho', 'desconhecida'] as const;
+export type Qualidade = (typeof QUALIDADES)[number];
+
+const DA_META: Record<string, Qualidade> = {
+  GREEN: 'verde',
+  YELLOW: 'amarelo',
+  RED: 'vermelho',
+  UNKNOWN: 'desconhecida',
+  NA: 'desconhecida',
+};
+
+/**
+ * Traduz o quality_rating da Meta. Ausente devolve `undefined`, e não
+ * 'desconhecida': campo ausente é NÃO HAVER LEITURA, e não haver leitura não
+ * pode virar um carimbo de agora — a tela mentiria dizendo que apurou.
+ */
+export function qualidadeDaMeta(valor: string | undefined): Qualidade | undefined {
+  if (valor === undefined) return undefined;
+  return DA_META[valor.trim().toUpperCase()] ?? 'desconhecida';
+}
+
 export interface ConfigOnboarding {
   appId: string;
   appSecret: string;
@@ -40,8 +73,19 @@ export type ResultadoConexao =
       wabaId: string;
       phoneNumberId: string;
       telefoneExibicao?: string;
+      /** Ausente quer dizer "a Meta não informou", nunca "está vazio". */
+      nomeVerificado?: string;
+      qualidade?: Qualidade;
     }
   | { ok: false; motivo: MotivoDeConexao; detalhe: string };
+
+/** O que a Cloud API conta sobre o número. Tudo opcional: a Meta omite campo. */
+export interface NumeroDaMeta {
+  id: string;
+  telefone?: string;
+  nomeVerificado?: string;
+  qualidade?: Qualidade;
+}
 
 export type MotivoDeConexao =
   'codigo_invalido' | 'sem_numero' | 'assinatura_falhou' | 'registro_falhou' | 'indisponivel';
@@ -57,7 +101,13 @@ interface RespostaWabas {
 }
 
 interface RespostaNumeros {
-  data?: { id: string; display_phone_number?: string }[];
+  data?: {
+    id: string;
+    display_phone_number?: string;
+    // Campos oficiais da Cloud API. Nada de API não oficial em nenhuma hipótese.
+    verified_name?: string;
+    quality_rating?: string;
+  }[];
   error?: { message?: string };
 }
 
@@ -102,8 +152,8 @@ export class OnboardingMeta {
   }
 
   /** Nada que veio da Meta vira log ou linha de banco sem passar por aqui. */
-  #limpar(texto: string): string {
-    return redigirSegredos(texto, [this.#appSecret]);
+  #limpar(texto: string, extras: string[] = []): string {
+    return redigirSegredos(texto, [this.#appSecret, ...extras]);
   }
 
   /**
@@ -127,8 +177,15 @@ export class OnboardingMeta {
 
     const { corpo: cru } = await this.#json(url);
     const corpo = cru as RespostaToken;
+    // O código entra na lista de redação junto com o segredo do app: ele é
+    // trocável por token enquanto não expira, então é credencial, não
+    // identificador. A regex de `code=` não alcança a Meta ecoando o valor
+    // solto ("Invalid code: ABC123").
     return corpo.access_token === undefined
-      ? { ok: false, detalhe: this.#limpar(corpo.error?.message ?? 'resposta sem access_token') }
+      ? {
+          ok: false,
+          detalhe: this.#limpar(corpo.error?.message ?? 'resposta sem access_token', [codigo]),
+        }
       : { ok: true, token: corpo.access_token };
   }
 
@@ -171,20 +228,20 @@ export class OnboardingMeta {
     return (cru as RespostaWabas).data?.[0]?.id;
   }
 
-  async descobrirNumero(
-    wabaId: string,
-    token: string,
-  ): Promise<{ id: string; telefone?: string } | undefined> {
+  async descobrirNumero(wabaId: string, token: string): Promise<NumeroDaMeta | undefined> {
     const { corpo: cru } = await this.#json(this.#url(`${wabaId}/phone_numbers`), {
       headers: { authorization: `Bearer ${token}` },
     });
     const primeiro = (cru as RespostaNumeros).data?.[0];
     if (!primeiro) return undefined;
+    const qualidade = qualidadeDaMeta(primeiro.quality_rating);
     return {
       id: primeiro.id,
       ...(primeiro.display_phone_number === undefined
         ? {}
         : { telefone: primeiro.display_phone_number }),
+      ...(primeiro.verified_name === undefined ? {} : { nomeVerificado: primeiro.verified_name }),
+      ...(qualidade === undefined ? {} : { qualidade }),
     };
   }
 
@@ -207,7 +264,10 @@ export class OnboardingMeta {
       return { ok: false, motivo: 'sem_numero', detalhe: 'não achei a conta da clínica' };
     }
 
-    const numero =
+    // Com o número já sabido não há consulta, e portanto não há leitura de nome
+    // nem de qualidade. É de propósito: sem leitura, sem carimbo — a tela diz
+    // que não sabe, em vez de inventar um "apurado agora".
+    const numero: NumeroDaMeta | undefined =
       entrada.phoneNumberId === undefined
         ? await this.descobrirNumero(wabaId, token)
         : { id: entrada.phoneNumberId };
@@ -230,7 +290,9 @@ export class OnboardingMeta {
       token,
       wabaId,
       phoneNumberId: numero.id,
-      ...('telefone' in numero ? { telefoneExibicao: numero.telefone } : {}),
+      ...(numero.telefone === undefined ? {} : { telefoneExibicao: numero.telefone }),
+      ...(numero.nomeVerificado === undefined ? {} : { nomeVerificado: numero.nomeVerificado }),
+      ...(numero.qualidade === undefined ? {} : { qualidade: numero.qualidade }),
     };
   }
 }

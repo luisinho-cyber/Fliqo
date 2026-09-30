@@ -38,11 +38,15 @@ npm run typecheck:web
 npm run build:web
 ```
 
-## O que ainda não está ligado
+## Conexão do WhatsApp
 
-`public/conectar-whatsapp.html` é a página do Embedded Signup, da fase da
-conexão com a Meta. Ela ainda não faz parte do painel: espera um
+`/configuracoes/whatsapp` é componente de servidor, como o resto do painel. O
+único pedaço que roda no navegador é `componentes/ConectarWhatsapp.tsx`, porque
+o SDK da Meta não roda de outro lugar. Ele recebe dois identificadores públicos
+por prop (`META_APP_ID` e `META_CONFIG_ID`, lidos no servidor) e devolve um
+CÓDIGO — nunca um token. O código vai para a nossa API por server action, e é lá
+que ele vira token, com o segredo do app.
+
+A página antiga `public/conectar-whatsapp.html` foi apagada: ela esperava um
 `window.FLIQO_CONFIG` com o token dentro do navegador, que é justamente o que a
-sessão em cookie httpOnly existe para evitar. Antes de ligá-la ao painel, ela
-precisa passar a chamar a nossa API pelo servidor, como o resto daqui. Enquanto
-isso, o `proxy.ts` mantém a página atrás do login.
+sessão em cookie httpOnly existe para evitar.

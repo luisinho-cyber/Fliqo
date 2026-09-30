@@ -117,6 +117,37 @@ entrar nelas juntas:
 outras e não é óbvia numa varredura por nome de tabela. Apagar um paciente sem
 apagar a qualificação dele deixa a leitura de quem atendeu órfã no banco.
 
+## Qualidade e nome verificado do número: falta quem atualize
+
+`app.whatsapp_numbers` guarda o que a Meta contou sobre o número no momento da
+conexão, cada coisa com o carimbo de quando foi apurada:
+
+| Coluna                     | O que é                                   |
+| -------------------------- | ----------------------------------------- |
+| `verified_name`            | nome que o paciente vê como remetente     |
+| `verified_name_updated_at` | quando esse nome foi lido                 |
+| `quality_rating`           | verde / amarelo / vermelho / desconhecida |
+| `quality_updated_at`       | quando essa nota foi lida                 |
+
+O `check` da 0009 impede valor sem carimbo: os dois andam juntos ou nenhum dos
+dois existe. É isso que permite à tela dizer a idade do dado.
+
+**Hoje esses valores só são atualizados quando alguém reconecta o número.** Os
+webhooks que a Meta manda quando a nota muda — `phone_number_quality_update` e
+`message_template_quality_update` — **não estão assinados** (veja
+`CAMPOS_DE_WEBHOOK` em `packages/whatsapp/src/onboarding.ts`). Assiná-los e fazer
+com que eles escrevam nessas colunas, sempre com o carimbo, é uma fase própria.
+
+Enquanto isso não existir, a tela `/configuracoes/whatsapp` faz a única coisa
+honesta: passados 7 dias da apuração, ela **para de mostrar o valor** e diz que
+não há leitura recente, com a data e a idade. Um "verde" de três meses atrás não
+é informação sobre hoje, e o dono da clínica agiria em cima dele.
+
+O nome verificado é tratado de outro jeito de propósito: data seca, sem alarme.
+Nome desatualizado não causa dano; nota de qualidade desatualizada esconde um
+número a caminho do bloqueio. O tratamento segue a consequência de estar errado,
+não a simetria.
+
 ## Pendências para quando houver log de auditoria
 
 Hoje não existe log de auditoria. Duas coisas precisam ser resolvidas junto com
@@ -128,6 +159,11 @@ ele, e não antes, porque hoje não há para onde apontar:
   isso é aceitável. Quando o log existir, o campo precisa passar a apontar para
   algo que continue existindo depois que a pessoa sair da clínica, senão a
   auditoria aponta para um id que não explica nada.
+- **`whatsapp_connection_events.actor_user_id` também não tem chave
+  estrangeira,** pelo mesmo motivo. Ele responde "quem desligou o WhatsApp da
+  clínica?", que antes da 0009 não tinha resposta nenhuma. Vale a mesma ressalva:
+  quando o log existir, precisa apontar para algo que continue existindo depois
+  que a pessoa sair da clínica.
 - **Não há `created_at` na qualificação.** `updated_at` é sobrescrito a cada
   edição, então hoje não dá para saber quando a qualificação nasceu — só quando
   foi mexida pela última vez. Para auditoria isso importa: "quem qualificou e

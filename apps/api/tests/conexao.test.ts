@@ -1,7 +1,7 @@
-import { conexao, criarDb, withClinic, type Db } from '@fliqo/db';
+import { conexao, criarDb, withClinic, QUALIDADES_DO_NUMERO, type Db } from '@fliqo/db';
 import { criarFila } from '@fliqo/db/fila';
 import { ownerPool, resetDatabase, seed, urlDoTester, type Scenario } from '@fliqo/db/testing';
-import { decifrar, lerChave, OnboardingMeta } from '@fliqo/whatsapp';
+import { decifrar, lerChave, OnboardingMeta, QUALIDADES } from '@fliqo/whatsapp';
 import type { FastifyInstance } from 'fastify';
 import { SignJWT } from 'jose';
 import type { PgBoss } from 'pg-boss';
@@ -39,7 +39,14 @@ let c: Scenario;
  * Meta falsa. Cada chamada que o onboarding faz é atendida por uma resposta
  * roteirizada — conectar de verdade exigiria a Meta do outro lado.
  */
-function metaFalsa(opcoes: { falharNa?: 'token' | 'assinatura' | 'registro' } = {}) {
+function metaFalsa(
+  opcoes: {
+    falharNa?: 'token' | 'assinatura' | 'registro';
+    /** A Meta calada sobre nome e qualidade: acontece, e a tela tem que aguentar. */
+    semLeitura?: boolean;
+    qualidade?: string;
+  } = {},
+) {
   const chamadas: { url: string; corpo?: unknown }[] = [];
   const buscar: typeof fetch = (entrada, init) => {
     const url = entrada instanceof Request ? entrada.url : entrada.toString();
@@ -59,7 +66,20 @@ function metaFalsa(opcoes: { falharNa?: 'token' | 'assinatura' | 'registro' } = 
     }
     if (url.includes('me/businesses')) return responder(200, { data: [{ id: 'WABA-123' }] });
     if (url.includes('/phone_numbers')) {
-      return responder(200, { data: [{ id: 'PN-999', display_phone_number: '+5511333322221' }] });
+      return responder(200, {
+        data: [
+          {
+            id: 'PN-999',
+            display_phone_number: '+5511333322221',
+            ...(opcoes.semLeitura === true
+              ? {}
+              : {
+                  verified_name: 'Clínica A',
+                  quality_rating: opcoes.qualidade ?? 'GREEN',
+                }),
+          },
+        ],
+      });
     }
     if (url.includes('subscribed_apps')) {
       return opcoes.falharNa === 'assinatura'
@@ -495,5 +515,273 @@ describe('o client_secret nunca escapa', () => {
 
     // E a resposta ao painel também não.
     expect(r.body).not.toContain('segredo-do-app');
+  });
+});
+
+describe('o que a Meta contou sobre o número, com carimbo', () => {
+  it('nome verificado e qualidade chegam ao status, cada um com a data de apuração', async () => {
+    await montarApp(metaFalsa({ qualidade: 'YELLOW' }));
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    const r = await chamar('GET', '/api/whatsapp/status', { userId: DONA, clinica: c.clinicA });
+    expect(r.json()).toMatchObject({
+      conexao: { nomeVerificado: 'Clínica A', qualidade: 'amarelo' },
+    });
+    const { conexao: viva } = r.json<{
+      conexao: { nomeVerificadoEm: string; qualidadeEm: string };
+    }>();
+    // O carimbo é o ponto: sem ele a tela não tem como dizer a idade do dado.
+    expect(Date.parse(viva.nomeVerificadoEm)).toBeGreaterThan(0);
+    expect(Date.parse(viva.qualidadeEm)).toBeGreaterThan(0);
+  });
+
+  /**
+   * A 0009 proíbe valor sem carimbo. Este teste é a prova de que a proibição
+   * está no banco, e não só no código que grava: um `update` direto, como o de
+   * um webhook futuro escrito às pressas, bate na mesma parede.
+   */
+  it('o banco recusa qualidade sem carimbo', async () => {
+    await montarApp(metaFalsa());
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    await expect(
+      owner.query(
+        `update app.whatsapp_numbers
+            set quality_rating = 'verde', quality_updated_at = null
+          where phone_number_id = 'PN-999'`,
+      ),
+    ).rejects.toThrow(/qualidade_carimbada/);
+
+    await expect(
+      owner.query(
+        `update app.whatsapp_numbers
+            set verified_name = 'Outro Nome', verified_name_updated_at = null
+          where phone_number_id = 'PN-999'`,
+      ),
+    ).rejects.toThrow(/verified_name_carimbado/);
+  });
+
+  it('Meta calada não carimba nada, e o status diz isso com nulo', async () => {
+    await montarApp(metaFalsa({ semLeitura: true }));
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    const { conexao: viva } = (
+      await chamar('GET', '/api/whatsapp/status', { userId: DONA, clinica: c.clinicA })
+    ).json<{ conexao: Record<string, unknown> }>();
+
+    expect(viva.qualidade).toBeNull();
+    expect(viva.qualidadeEm).toBeNull();
+    expect(viva.nomeVerificado).toBeNull();
+    expect(viva.nomeVerificadoEm).toBeNull();
+  });
+
+  /**
+   * Religar sem leitura nova não pode apagar a leitura antiga: a data da última
+   * apuração é justamente o que a tela mostra quando o dado envelheceu
+   * ("última em 12/06, há 92 dias"). Apagar trocaria "velho e datado" por
+   * "nunca houve", que é pior e falso.
+   */
+  it('religar sem leitura nova preserva a leitura antiga, com o carimbo antigo', async () => {
+    await montarApp(metaFalsa({ qualidade: 'RED' }));
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+    const antes = (
+      await chamar('GET', '/api/whatsapp/status', { userId: DONA, clinica: c.clinicA })
+    ).json<{ conexao: { qualidade: string; qualidadeEm: string } }>();
+
+    await montarApp(metaFalsa({ semLeitura: true }));
+    await chamar('POST', '/api/whatsapp/reconectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    const depois = (
+      await chamar('GET', '/api/whatsapp/status', { userId: DONA, clinica: c.clinicA })
+    ).json<{ conexao: { qualidade: string; qualidadeEm: string } }>();
+
+    expect(depois.conexao.qualidade).toBe('vermelho');
+    expect(depois.conexao.qualidadeEm).toBe(antes.conexao.qualidadeEm);
+  });
+});
+
+describe('quem mexeu na conexão fica registrado', () => {
+  it('conectar guarda o autor, e é o do token, não o que o corpo pediu', async () => {
+    await montarApp(metaFalsa());
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      // Tentativa de escolher o autor pelo corpo. Ignorada: quem vale é o `sub`.
+      corpo: { ...pedido, actorUserId: RECEPCAO, autorUserId: RECEPCAO },
+    });
+
+    const { rows } = await owner.query<{ kind: string; actor_user_id: string | null }>(
+      'select kind, actor_user_id from app.whatsapp_connection_events',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actor_user_id).toBe(DONA);
+  });
+
+  it('a falha também tem autor: "tentou e não deu" precisa de nome', async () => {
+    await montarApp(metaFalsa({ falharNa: 'registro' }));
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+    const { rows } = await owner.query<{ kind: string; actor_user_id: string | null }>(
+      'select kind, actor_user_id from app.whatsapp_connection_events',
+    );
+    expect(rows[0]).toMatchObject({ kind: 'falhou', actor_user_id: DONA });
+  });
+});
+
+describe('desconectar', () => {
+  async function conectada(): Promise<void> {
+    await montarApp(metaFalsa());
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+  }
+
+  it('apaga o token, desativa o número e registra quem desligou', async () => {
+    await conectada();
+    const r = await chamar('POST', '/api/whatsapp/desconectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(200);
+
+    const { rows } = await owner.query<{
+      status: string;
+      active: boolean;
+      token_ciphertext: Buffer | null;
+      token_iv: Buffer | null;
+      token_tag: Buffer | null;
+      token_updated_at: Date | null;
+    }>(
+      `select status, active, token_ciphertext, token_iv, token_tag, token_updated_at
+         from app.whatsapp_numbers where phone_number_id = 'PN-999'`,
+    );
+    expect(rows[0]).toMatchObject({ status: 'desconectado', active: false });
+    // As três partes do token vão juntas: meio token guardado é o bug que a
+    // constraint `token_completo` existe para impedir.
+    expect(rows[0]?.token_ciphertext).toBeNull();
+    expect(rows[0]?.token_iv).toBeNull();
+    expect(rows[0]?.token_tag).toBeNull();
+    expect(rows[0]?.token_updated_at).toBeNull();
+
+    const { rows: evts } = await owner.query<{ kind: string; actor_user_id: string | null }>(
+      'select kind, actor_user_id from app.whatsapp_connection_events order by created_at',
+    );
+    expect(evts.map((e) => e.kind)).toEqual(['conectou', 'desconectou']);
+    expect(evts[1]?.actor_user_id).toBe(DONA);
+  });
+
+  it('desligado, o worker não acha mais a clínica pelo número', async () => {
+    // `clinic_by_phone_number_id` filtra `active`: é o que faz o webhook parar.
+    await conectada();
+    await chamar('POST', '/api/whatsapp/desconectar', { userId: DONA, clinica: c.clinicA });
+
+    const { rows } = await owner.query<{ clinica: string | null }>(
+      `select app.clinic_by_phone_number_id('PN-999') as clinica`,
+    );
+    expect(rows[0]?.clinica).toBeNull();
+  });
+
+  it('a recepção não desliga o WhatsApp da clínica', async () => {
+    await conectada();
+    const r = await chamar('POST', '/api/whatsapp/desconectar', {
+      userId: RECEPCAO,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(403);
+
+    const { rows } = await owner.query<{ status: string }>(
+      `select status from app.whatsapp_numbers where phone_number_id = 'PN-999'`,
+    );
+    expect(rows[0]?.status).toBe('conectado');
+  });
+
+  it('a dona da clínica B não desliga o número da A, e o 403 não conta nada da A', async () => {
+    await conectada();
+    const r = await chamar('POST', '/api/whatsapp/desconectar', {
+      userId: DONA_DA_B,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(403);
+
+    // O corpo do 403 não confirma sequer que existe número ligado na A.
+    for (const vazamento of ['PN-999', '+5511333322221', 'Clínica A', 'WABA-123', 'conectado']) {
+      expect(r.body).not.toContain(vazamento);
+    }
+
+    const { rows } = await owner.query<{ status: string }>(
+      `select status from app.whatsapp_numbers where phone_number_id = 'PN-999'`,
+    );
+    expect(rows[0]?.status).toBe('conectado');
+  });
+
+  it('sem número ligado, 404 — e não um 200 que faz a pessoa achar que desligou algo', async () => {
+    await montarApp(metaFalsa());
+    const r = await chamar('POST', '/api/whatsapp/desconectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+    });
+    expect(r.statusCode).toBe(404);
+    expect(r.json()).toEqual({ erro: 'nenhum_numero_conectado' });
+    expect((await owner.query('select id from app.whatsapp_connection_events')).rows).toHaveLength(
+      0,
+    );
+  });
+
+  it('religar depois de desligar traz o número de volta, com token novo', async () => {
+    await conectada();
+    await chamar('POST', '/api/whatsapp/desconectar', { userId: DONA, clinica: c.clinicA });
+
+    await montarApp(metaFalsa());
+    const r = await chamar('POST', '/api/whatsapp/reconectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+    expect(r.statusCode).toBe(200);
+
+    const { rows } = await owner.query<{ status: string; active: boolean }>(
+      `select status, active from app.whatsapp_numbers where phone_number_id = 'PN-999'`,
+    );
+    expect(rows[0]).toMatchObject({ status: 'conectado', active: true });
+  });
+});
+
+describe('as duas listas de qualidade são a mesma lista', () => {
+  /**
+   * A lista vive em dois lugares por força da regra de dependência: o `check` da
+   * 0009 (espelhado em QUALIDADES_DO_NUMERO, em @fliqo/db) e QUALIDADES, em
+   * @fliqo/whatsapp, que não pode importar db. Este teste mora aqui porque
+   * apps/api é quem importa os dois.
+   *
+   * Divergir não quebra no start: quebra na hora de gravar, com a Meta mandando
+   * um valor que a borda traduziu e o banco recusou.
+   */
+  it('QUALIDADES (whatsapp) e QUALIDADES_DO_NUMERO (db) coincidem', () => {
+    expect([...QUALIDADES].sort()).toEqual([...QUALIDADES_DO_NUMERO].sort());
   });
 });

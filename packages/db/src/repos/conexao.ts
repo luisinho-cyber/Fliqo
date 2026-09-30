@@ -1,5 +1,10 @@
 import type { Selectable } from 'kysely';
-import type { StatusWhatsapp, TabelaEventosConexao, TipoEventoConexao } from '../schema';
+import type {
+  QualidadeDoNumero,
+  StatusWhatsapp,
+  TabelaEventosConexao,
+  TipoEventoConexao,
+} from '../schema';
 import type { Trx } from '../withClinic';
 
 /**
@@ -23,6 +28,17 @@ export interface StatusConexao {
   coexistencia: boolean;
   conectadoEm: Date | null;
   ultimoErro: string | null;
+  /**
+   * Nome verificado e qualidade, cada um com o instante em que foi APURADO.
+   *
+   * O carimbo vem junto porque sem ele a tela não tem como ser honesta: um
+   * "verde" de três meses atrás não é informação sobre hoje. Quem decide o que
+   * fazer com a idade é a tela; o banco só garante que ela existe.
+   */
+  nomeVerificado: string | null;
+  nomeVerificadoEm: Date | null;
+  qualidade: QualidadeDoNumero | null;
+  qualidadeEm: Date | null;
 }
 
 export async function status(trx: Trx): Promise<StatusConexao | undefined> {
@@ -37,6 +53,10 @@ export async function status(trx: Trx): Promise<StatusConexao | undefined> {
       'coexistencia',
       'connected_at',
       'last_error',
+      'verified_name',
+      'verified_name_updated_at',
+      'quality_rating',
+      'quality_updated_at',
     ])
     .orderBy('created_at', 'desc')
     .executeTakeFirst();
@@ -51,6 +71,10 @@ export async function status(trx: Trx): Promise<StatusConexao | undefined> {
     coexistencia: linha.coexistencia,
     conectadoEm: linha.connected_at,
     ultimoErro: linha.last_error,
+    nomeVerificado: linha.verified_name,
+    nomeVerificadoEm: linha.verified_name_updated_at,
+    qualidade: linha.quality_rating,
+    qualidadeEm: linha.quality_updated_at,
   };
 }
 
@@ -82,6 +106,9 @@ export interface ConexaoGravada {
   telefoneExibicao?: string;
   coexistencia: boolean;
   token: TokenGuardado;
+  /** Ausente é "a Meta não informou nesta conexão", e então nada é regravado. */
+  nomeVerificado?: string;
+  qualidade?: QualidadeDoNumero;
 }
 
 /**
@@ -94,6 +121,22 @@ export async function gravarConexao(
   c: ConexaoGravada,
 ): Promise<{ id: string }> {
   const agora = new Date();
+
+  /**
+   * Leitura nova traz valor e carimbo juntos. Leitura ausente NÃO zera o que
+   * havia: apagar perderia a data da última apuração, que é justamente o que a
+   * tela precisa para dizer "última em 12/06, há 92 dias". Reconectar sem
+   * leitura deixa o dado velho no lugar, velho e datado.
+   */
+  const apurado = {
+    ...(c.nomeVerificado === undefined
+      ? {}
+      : { verified_name: c.nomeVerificado, verified_name_updated_at: agora }),
+    ...(c.qualidade === undefined
+      ? {}
+      : { quality_rating: c.qualidade, quality_updated_at: agora }),
+  };
+
   const linha = await trx
     .insertInto('app.whatsapp_numbers')
     .values({
@@ -110,6 +153,7 @@ export async function gravarConexao(
       token_updated_at: agora,
       connected_at: agora,
       last_error: null,
+      ...apurado,
     })
     .onConflict((oc) =>
       oc.column('phone_number_id').doUpdateSet({
@@ -124,6 +168,7 @@ export async function gravarConexao(
         token_updated_at: agora,
         connected_at: agora,
         last_error: null,
+        ...apurado,
       }),
     )
     .returning(['id'])
@@ -141,39 +186,62 @@ export async function marcarErro(trx: Trx, numeroId: string, detalhe: string): P
 }
 
 /**
- * O número saiu da coexistência (a clínica registrou no WhatsApp normal).
- * Apaga o token: ele não vale mais nada e não tem por que continuar guardado.
+ * Desligar o número: apaga o token, que não vale mais nada e não tem por que
+ * continuar guardado. O nome verificado e a qualidade ficam, com os carimbos —
+ * são o histórico do número, não credencial.
  */
+function desligar(trx: Trx, detalhe: string) {
+  return trx.updateTable('app.whatsapp_numbers').set({
+    status: 'desconectado',
+    active: false,
+    last_error: detalhe,
+    token_ciphertext: null,
+    token_iv: null,
+    token_tag: null,
+    token_updated_at: null,
+  });
+}
+
+/** O número saiu da coexistência (a clínica registrou no WhatsApp normal). */
 export async function desconectar(trx: Trx, phoneNumberId: string, detalhe: string): Promise<void> {
-  await trx
-    .updateTable('app.whatsapp_numbers')
-    .set({
-      status: 'desconectado',
-      active: false,
-      last_error: detalhe,
-      token_ciphertext: null,
-      token_iv: null,
-      token_tag: null,
-      token_updated_at: null,
-    })
-    .where('phone_number_id', '=', phoneNumberId)
-    .execute();
+  await desligar(trx, detalhe).where('phone_number_id', '=', phoneNumberId).execute();
+}
+
+/**
+ * O dono desligou pelo painel. Devolve se achou a linha: sem isso a rota
+ * responderia 200 para um id que não existe, e quem tocou o botão acharia que
+ * desconectou algo.
+ */
+export async function desconectarPorId(
+  trx: Trx,
+  numeroId: string,
+  detalhe: string,
+): Promise<boolean> {
+  const r = await desligar(trx, detalhe).where('id', '=', numeroId).returning('id').execute();
+  return r.length > 0;
+}
+
+export interface EventoNovo {
+  kind: TipoEventoConexao;
+  numeroId?: string;
+  detalhe?: string;
+  /** O `sub` do JWT de quem pediu. Nunca o que o navegador mandou. */
+  autorUserId?: string;
 }
 
 export async function registrarEvento(
   trx: Trx,
   clinicId: string,
-  kind: TipoEventoConexao,
-  numeroId?: string,
-  detalhe?: string,
+  evento: EventoNovo,
 ): Promise<EventoConexao> {
   return trx
     .insertInto('app.whatsapp_connection_events')
     .values({
       clinic_id: clinicId,
-      whatsapp_number_id: numeroId ?? null,
-      kind,
-      detail: detalhe ?? null,
+      whatsapp_number_id: evento.numeroId ?? null,
+      kind: evento.kind,
+      detail: evento.detalhe ?? null,
+      actor_user_id: evento.autorUserId ?? null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();

@@ -267,12 +267,20 @@ que a clínica abre.
 
 Em **Variables**:
 
-| Variável            | De onde vem                                     |
-| ------------------- | ----------------------------------------------- |
-| `API_URL`           | o domínio do passo 5, sem barra no fim          |
-| `SUPABASE_URL`      | Supabase > Project Settings > API > Project URL |
-| `SUPABASE_ANON_KEY` | Supabase > Project Settings > API > anon public |
-| `NODE_ENV`          | `production`                                    |
+| Variável            | De onde vem                                                 |
+| ------------------- | ----------------------------------------------------------- |
+| `API_URL`           | o domínio do passo 5, sem barra no fim                      |
+| `SUPABASE_URL`      | Supabase > Project Settings > API > Project URL             |
+| `SUPABASE_ANON_KEY` | Supabase > Project Settings > API > anon public             |
+| `META_APP_ID`       | Meta > seu app > Configurações básicas                      |
+| `META_CONFIG_ID`    | Meta > seu app > WhatsApp > Embedded Signup, a configuração |
+| `NODE_ENV`          | `production`                                                |
+
+`META_APP_ID` e `META_CONFIG_ID` são identificadores públicos: o painel os passa
+como prop para abrir a janela da Meta, que roda no navegador. **O
+`META_APP_SECRET` não entra aqui** — ele fica só no serviço da api, que é quem
+troca o código por token. Há guarda de teste que quebra o CI se o nome do
+segredo aparecer em `apps/web`.
 
 `NODE_ENV=production` não é detalhe: é o que faz o cookie de sessão sair como
 `Secure`. Sem ele o cookie viaja também em http.
@@ -280,7 +288,9 @@ Em **Variables**:
 Repare que nenhuma variável do painel começa com `NEXT_PUBLIC_`. Isso é de
 propósito: o navegador não fala com o Supabase nem com o banco, então nada disso
 precisa chegar até ele. Quem lê o cookie da sessão e chama a API é o servidor do
-painel.
+painel. A lista de `NEXT_PUBLIC_` permitidas está em
+`apps/web/tests/guardas.test.ts`, e hoje está vazia — qualquer variável nova com
+esse prefixo quebra o CI até alguém escrevê-la ali de propósito.
 
 ### Criar a primeira pessoa
 

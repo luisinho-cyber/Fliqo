@@ -45,6 +45,8 @@ const DONA_DA_A = '11111111-1111-4111-8111-111111111111';
 const DONA_DA_B = '22222222-2222-4222-8222-222222222222';
 const DAS_DUAS = '33333333-3333-4333-8333-333333333333';
 const DE_NENHUMA = '44444444-4444-4444-8444-444444444444';
+/** Dona de uma clínica e do financeiro da outra: o papel não pode viajar. */
+const MISTA = '55555555-5555-4555-8555-555555555555';
 
 let app: FastifyInstance;
 let db: Db;
@@ -297,13 +299,39 @@ describe('isolamento entre clínicas na tela Hoje', () => {
 
   it('minhas-clinicas devolve só as clínicas da pessoa', async () => {
     const daA = await chamar('/api/minhas-clinicas', { userId: DONA_DA_A });
-    expect(daA.json()).toEqual([{ id: c.clinicA, nome: 'Clínica A' }]);
+    expect(daA.json()).toEqual([{ id: c.clinicA, nome: 'Clínica A', papel: 'dono' }]);
 
     const daB = await chamar('/api/minhas-clinicas', { userId: DONA_DA_B });
-    expect(daB.json()).toEqual([{ id: c.clinicB, nome: 'Clínica B' }]);
+    expect(daB.json()).toEqual([{ id: c.clinicB, nome: 'Clínica B', papel: 'dono' }]);
 
     const nenhuma = await chamar('/api/minhas-clinicas', { userId: DE_NENHUMA });
     expect(nenhuma.json()).toEqual([]);
+  });
+
+  /**
+   * O papel vem POR CLÍNICA, e não por pessoa: quem é dono numa e recepção na
+   * outra não pode levar o "dono" de uma para a outra. É o que o painel usa para
+   * decidir se mostra a aba do WhatsApp, e é a API que nega de verdade.
+   */
+  it('o papel é lido dentro de cada clínica, não herdado entre elas', async () => {
+    await owner.query(
+      `insert into app.clinic_members (clinic_id, user_id, role) values ($1,$2,'dono')`,
+      [c.clinicA, MISTA],
+    );
+    await owner.query(
+      `insert into app.clinic_members (clinic_id, user_id, role) values ($1,$2,'financeiro')`,
+      [c.clinicB, MISTA],
+    );
+
+    const lista = (await chamar('/api/minhas-clinicas', { userId: MISTA })).json<
+      { id: string; papel: string }[]
+    >();
+    expect(new Map(lista.map((x) => [x.id, x.papel]))).toEqual(
+      new Map([
+        [c.clinicA, 'dono'],
+        [c.clinicB, 'financeiro'],
+      ]),
+    );
   });
 
   it('quem é das duas escolhe uma de cada vez, e cada uma mostra só o que é dela', async () => {
