@@ -393,12 +393,12 @@ Duas coisas que isso obriga, achadas lendo a tela:
   telefone. O corte entre as duas ações é o mesmo `lerAfirmacao` do core, aplicado
   agora em vez de na hora do envio.
 
-A lista para ligar **não é exceção à regra do telefone**. A regra foi reenunciada
-pelo propósito em `DESIGN.md`: telefone inteiro só depois de ato deliberado, e tocar
-em **Ligar** é um ato deliberado — no celular dispara `tel:` e o número vai para o
-discador, não para a tela; no computador é revelado na própria linha. A listagem
-continua mascarando de saída, e o critério passa a cobrir este caso em vez de ser
-contornado por ele.
+A lista para ligar **não é exceção à regra do telefone**. Na tela, a regra está em
+`DESIGN.md`: inteiro só depois de ato deliberado, e tocar em **Ligar** é um ato
+deliberado — no celular dispara `tel:` e o número vai para o discador, não para a
+tela; no computador é revelado na própria linha. Na API, a lista desta decisão **não
+recebe o inteiro**: ela chama o endpoint de revelação por paciente, como qualquer
+outra. Ver "Telefone inteiro: de onde ele pode sair", abaixo.
 
 **Dois valores novos de `check` que esta fase acrescenta**, além de `sem_proposito`
 em `scheduled_actions.status`: `whatsapp_fora` e `template_divergente` em
@@ -419,6 +419,41 @@ trate o veredito dele como a resposta. Nesta sessão o disparo por API foi negad
 (`Resource not accessible by integration`, falta `actions: write`), então quem
 dispara é o fundador, pelo painel do GitHub.
 
+## Telefone inteiro: de onde ele pode sair
+
+A regra visual está em `DESIGN.md` — número inteiro só depois de ato deliberado. Mas
+guardar isso pelo que a tela renderiza é frágil: distinguir "lista" de "ficha" por
+caminho de arquivo é convenção de pasta, e convenção não é guarda. **O problema
+desaparece se a listagem nunca receber o inteiro. Lista não vaza o que não tem.**
+
+Então a regra é de API, e é curta:
+
+> **Nenhum endpoint de listagem devolve telefone inteiro, nunca.** O inteiro sai de
+> dois lugares só: a ficha do paciente, e um endpoint de **revelação por paciente** —
+> que é o que o botão "Ligar" chama.
+
+A guarda é irmã do teste que já existe para log: o teste que planta um telefone e
+confere que ele não aparece em log ganha um irmão que **varre o corpo de resposta de
+todo endpoint de listagem** procurando o padrão de número inteiro. Não depende de
+convenção de pasta, não depende de alguém lembrar, e falha alto quando um campo novo
+carrega o telefone por descuido.
+
+**Duas coisas que essa varredura encontra hoje, conferidas antes de escrever.** Elas
+importam porque o jeito de uma guarda morrer é ficar vermelha num caso legítimo e ser
+afrouxada até parar de pegar o caso real:
+
+- **`GET /api/pacientes?telefone=…` devolve o paciente inteiro, com `phone_e164`.**
+  É array (`[p]` ou `[]`), então tem forma de listagem, e viola a regra como
+  enunciada. Atenuante: quem chama já sabe o telefone, porque ele é o parâmetro da
+  busca — não é revelar um número desconhecido. Mesmo assim é decisão, não isenção:
+  ou ele devolve o número mascarado (o chamador já tem o inteiro), ou é reclassificado
+  como endpoint de revelação e passa a ser auditado como tal. **Não vale ensinar a
+  varredura a ignorá-lo.**
+- **`GET /api/whatsapp/status` devolve `telefoneExibicao`**, que é o número **da
+  clínica**, não de paciente. A varredura tem de distinguir por **de quem é o
+  número**, não relaxando o padrão — relaxar o padrão é desligar a guarda com outro
+  nome.
+
 ## Pendências para quando houver log de auditoria
 
 Hoje não existe log de auditoria. Duas coisas precisam ser resolvidas junto com
@@ -435,6 +470,11 @@ ele, e não antes, porque hoje não há para onde apontar:
   clínica?", que antes da 0009 não tinha resposta nenhuma. Vale a mesma ressalva:
   quando o log existir, precisa apontar para algo que continue existindo depois
   que a pessoa sair da clínica.
+- **O endpoint de revelação de telefone é onde a auditoria de acesso vai morar.**
+  Quem revelou o telefone de quem, e quando. É o único lugar do produto em que o
+  número inteiro sai por pedido explícito de uma pessoa, então é o único que produz
+  uma linha de auditoria que significa algo. Não construir agora: anotar, e construir
+  junto com o log.
 - **Não há `created_at` na qualificação.** `updated_at` é sobrescrito a cada
   edição, então hoje não dá para saber quando a qualificação nasceu — só quando
   foi mexida pela última vez. Para auditoria isso importa: "quem qualificou e
