@@ -243,6 +243,44 @@ reclamadas e enviadas. Por mutação, se a exclusão no claim virar no-op, o tes
 as três consumidas e quebra. Segundo teste, para o outro lado: `marcar_risco`
 vencida com o número em `erro` continua sendo reclamada e executada.
 
+### Retomar não é reexecutar
+
+Quando o número volta a `ativo`, a pilha represada é reclamada de uma vez — e uma
+ação que fazia sentido às 2h pode não fazer mais às 9h. Cada uma precisa de uma
+checagem de **pertinência** antes de enviar. Ação que não passa é encerrada como
+`sem_proposito`, e isso **não vira alerta**: não é problema, é consequência
+esperada da queda. (`sem_proposito` é valor novo no `check` de
+`scheduled_actions.status`, que hoje aceita `pendente`, `executando`, `feito`,
+`cancelado` e `erro` — migração nova que troca a constraint, nunca edição da 0001.)
+
+O que já existe, conferido no código, para não reescrever:
+
+| Ação             | Guarda de hoje                                                        | Falta                                                                       |
+| ---------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `confirmacao`    | `consulta.status !== 'agendado'` devolve ok, sem envio                | **a antecedência**: consulta que já passou e ninguém tocou segue `agendado` |
+| `lembrete_final` | status em `agendado`, `confirmado` ou `em_risco`                      | a mesma — nenhuma checagem de tempo                                         |
+| `expirar_oferta` | `planejarOferta` recusa `em_cima_da_hora` e `sem_tempo_para_resposta` | **nada**: a regra já está em `packages/core/src/fila.ts`, no lugar certo    |
+| `marcar_risco`   | `status !== 'agendado'`                                               | não é represada (não envia), então não forma pilha                          |
+
+Então o trabalho novo é um só: **a antecedência mínima em `confirmacao` e
+`lembrete_final`**. Os guardas de status pegam a consulta que alguém mexeu durante
+a queda; não pegam a que ninguém tocou e simplesmente passou da hora — e é
+exatamente essa que manda "confirme sua consulta de amanhã" sobre um horário de
+ontem. A regra é de negócio: mora em `packages/core`, com teste unitário, como a
+de `planejarOferta`.
+
+**O aviso de atraso não entra aqui.** Ele não é `scheduled_actions`: vem de
+`FILA_ATRASOS`, uma varredura periódica sobre a agenda do dia. Não há pilha para
+retomar — quando o número volta, a varredura seguinte olha o dia corrente e se
+corrige sozinha. Represar não se aplica, e por isso a checagem de "a consulta já
+terminou?" também não.
+
+Teste do retorno: número em `erro`, duas confirmações represadas — uma de consulta
+amanhã, outra de consulta que venceu durante a queda. Número volta a `ativo` → a
+primeira é enviada, a segunda termina em `sem_proposito`, e **nenhum alerta é
+aberto**. Por mutação, se a checagem de antecedência virar no-op, o teste vê dois
+envios e quebra; se `sem_proposito` virar `erro`, ele vê um alerta e quebra.
+
 ### Conferir, não supor
 
 `claim_due_actions` passará a ler `whatsapp_numbers`. Ela é `security definer` e
