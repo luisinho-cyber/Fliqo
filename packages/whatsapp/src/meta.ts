@@ -135,19 +135,27 @@ export class ClienteMeta implements ClienteWhatsApp {
         // Sem token não há envio possível, e repetir não cria credencial. É
         // `recusado` de propósito: `temporario` faria a régua tentar quatro vezes
         // e depois mais três rodadas, sem nada mudar entre elas.
-        return { ok: false, motivo: 'recusado', detalhe: 'sem token de envio para este número' };
+        // Sem token é problema de credencial também: quem trata é o mesmo
+        // caminho, e repetir não cria token.
+        return {
+          ok: false,
+          motivo: 'credencial',
+          detalhe: 'sem token de envio para este número',
+        };
       }
 
       const r = await this.#tentar(phoneNumberId, corpo, token);
       if (r.ok) return r;
       if (r.credencial !== true) return r;
       if (renovando) {
-        // Já era o token fresco. O problema é a credencial, não o cache.
-        return { ok: false, motivo: 'recusado', detalhe: r.detalhe };
+        // Já era o token fresco: o problema é a credencial, não o cache. Motivo
+        // próprio, para quem chama poder marcar o número em erro uma vez em vez
+        // de tratar como recusa comum e alertar por ação.
+        return { ok: false, motivo: 'credencial', detalhe: r.detalhe };
       }
     }
     // Inalcançável: o laço acima sempre retorna. Fica explícito para o tipo.
-    return { ok: false, motivo: 'recusado', detalhe: 'credencial recusada' };
+    return { ok: false, motivo: 'credencial', detalhe: 'credencial recusada' };
   }
 
   async #postar(phoneNumberId: string, corpo: unknown): Promise<ResultadoEnvio> {
@@ -162,8 +170,10 @@ export class ClienteMeta implements ClienteWhatsApp {
 
       const r = await this.#tentarComCredencialViva(phoneNumberId, corpo);
       if (r.ok) return r;
-      // Recusa definitiva não melhora com repetição.
-      if (r.motivo === 'recusado') return r;
+      // Recusa definitiva não melhora com repetição — e credencial recusada é
+      // definitiva também: o token fresco já foi tentado lá dentro, e o backoff
+      // de rede não conserta credencial.
+      if (r.motivo === 'recusado' || r.motivo === 'credencial') return r;
       ultimo = { motivo: r.motivo, detalhe: r.detalhe };
     }
 

@@ -96,7 +96,9 @@ describe('token de verdade inválido', () => {
     const cliente = new ClienteMeta({ cofre, buscar: meta.buscar, relogio: RELOGIO_PARADO });
 
     const r = await cliente.enviarTemplate(envio());
-    expect(r).toMatchObject({ ok: false, motivo: 'recusado' });
+    // Motivo próprio: é o que permite ao worker marcar o número em erro uma vez,
+    // em vez de tratar como recusa comum e alertar por ação.
+    expect(r).toMatchObject({ ok: false, motivo: 'credencial' });
     // Exatamente duas: a original e a renovada. Nem uma terceira, nem o backoff
     // de falha temporária — são coisas diferentes e não se somam.
     expect(meta.vistos).toHaveLength(2);
@@ -130,8 +132,8 @@ describe('sem token', () => {
     const cliente = new ClienteMeta({ cofre, buscar: meta.buscar, relogio: RELOGIO_PARADO });
 
     const r = await cliente.enviarTemplate(envio('PN-SEM-TOKEN'));
-    // `recusado` e não `temporario`: repetir não cria credencial nenhuma.
-    expect(r).toMatchObject({ ok: false, motivo: 'recusado' });
+    // `credencial` e não `temporario`: repetir não cria credencial nenhuma.
+    expect(r).toMatchObject({ ok: false, motivo: 'credencial' });
     expect(meta.vistos, 'gastou chamada de rede sem ter com que autenticar').toHaveLength(0);
     // Nem tentou renovar: sem token não há credencial velha para esquecer.
     expect(esquecidos).toEqual([]);

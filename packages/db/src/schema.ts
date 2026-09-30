@@ -20,7 +20,34 @@ export type StatusConsulta =
   'agendado' | 'confirmado' | 'em_risco' | 'cancelado' | 'faltou' | 'realizado';
 
 export type TipoAcao = 'confirmacao' | 'lembrete_final' | 'marcar_risco' | 'expirar_oferta';
-export type StatusAcao = 'pendente' | 'executando' | 'feito' | 'cancelado' | 'erro';
+/**
+ * `sem_proposito` é terminal e NÃO é falha: a ação venceu durante uma queda de
+ * WhatsApp e não faz mais sentido. Encerrar como `erro` abriria alerta para uma
+ * consequência esperada, e alerta que não pede ação ensina a ignorar alerta.
+ */
+export const STATUS_DE_ACAO = [
+  'pendente',
+  'executando',
+  'feito',
+  'cancelado',
+  'erro',
+  'sem_proposito',
+] as const;
+export type StatusAcao = (typeof STATUS_DE_ACAO)[number];
+
+/**
+ * Quem manda mensagem para o paciente, e quem não manda.
+ *
+ * As duas listas existem para que tipo de ação NOVO não entre sem alguém decidir:
+ * o teste em packages/db/tests exige que a união delas seja exatamente os valores
+ * de `app.action_kind` no pg_enum, e pergunta o veredito de cada valor à função
+ * `app.action_kind_envia` em vez de confiar nesta lista.
+ *
+ * `expirar_oferta` está entre os que enviam porque o NOME engana: expirar não
+ * depende do WhatsApp, mas passar a vaga adiante manda mensagem.
+ */
+export const ACOES_QUE_ENVIAM = ['confirmacao', 'lembrete_final', 'expirar_oferta'] as const;
+export const ACOES_QUE_NAO_ENVIAM = ['marcar_risco'] as const;
 export type ModoFila = 'sequencial' | 'lote';
 export type ModoConversa = 'ia' | 'humano';
 export type DirecaoMensagem = 'entrada' | 'saida';
@@ -291,6 +318,8 @@ export interface TabelaEventosConexao {
 }
 
 export type TipoAlerta =
+  /** O WhatsApp da clínica está fora. UM alerta por causa, não um por ação. */
+  | 'whatsapp_fora'
   | 'consulta_em_risco'
   | 'sem_consentimento'
   | 'acao_falhou'
