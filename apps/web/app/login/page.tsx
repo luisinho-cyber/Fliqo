@@ -20,7 +20,7 @@ export default async function Login({
     <main className="mx-auto flex min-h-screen max-w-[420px] flex-col justify-center px-5 py-12">
       <Marca />
       <h1 className="mt-5 text-2xl">Entrar no painel</h1>
-      <p className="text-ink-suave mt-1 text-sm">
+      <p className="text-ink-2 mt-1 text-sm">
         Use o e-mail que a sua clínica cadastrou. Se ninguém cadastrou ainda, fale com quem cuida do
         sistema por aí.
       </p>
@@ -28,7 +28,7 @@ export default async function Login({
       {erro !== undefined && (
         <p
           role="alert"
-          className="text-risk border-risk mt-5 rounded-[10px] border px-3 py-2 text-sm"
+          className="text-risco border-risco mt-5 rounded-md border px-3 py-2 text-sm"
         >
           {erro}
         </p>
@@ -36,28 +36,28 @@ export default async function Login({
 
       <form action={entrar} className="mt-5">
         <label className="mb-3 block">
-          <span className="text-ink-suave mb-1 block text-[13px]">E-mail</span>
+          <span className="text-ink-2 mb-1 block text-[13px]">E-mail</span>
           <input
             name="email"
             type="email"
             autoComplete="username"
             required
-            className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-3 py-2"
+            className="border-fio bg-paper text-ink w-full rounded-sm border px-3 py-2"
           />
         </label>
         <label className="mb-5 block">
-          <span className="text-ink-suave mb-1 block text-[13px]">Senha</span>
+          <span className="text-ink-2 mb-1 block text-[13px]">Senha</span>
           <input
             name="senha"
             type="password"
             autoComplete="current-password"
             required
-            className="border-linha-forte bg-paper text-ink w-full rounded-[6px] border px-3 py-2"
+            className="border-fio bg-paper text-ink w-full rounded-sm border px-3 py-2"
           />
         </label>
         <button
           type="submit"
-          className="bg-ink text-paper w-full rounded-full px-4 py-2.5 font-semibold"
+          className="bg-ink text-paper w-full rounded-pill px-4 py-2.5 font-semibold"
         >
           Entrar
         </button>

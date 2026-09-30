@@ -1,52 +1,103 @@
 /*
- * Os tokens do DESIGN.md, num arquivo só. Nenhuma cor solta em componente:
- * tudo sai daqui, e trocar a paleta é trocar este arquivo.
+ * Os tokens da Fliqo. Fonte única — a referência escrita é o DESIGN.md.
  *
- * Âmbar (late) é exclusivo de atraso. Vermelho (risk) é exclusivo de risco ou
- * perda. Nenhuma cor decorativa.
+ * Nenhum componente carrega cor literal: há teste que quebra o CI se um hex ou
+ * um rgb aparecer em apps/web fora deste arquivo. Antes disto a paleta vivia
+ * metade aqui e metade dentro das telas, que é como convenção vira folclore.
+ *
+ * O tema escuro não é ajuste: todo token é definido no claro e tem o valor
+ * redefinido no bloco escuro. As utilidades do Tailwind referenciam as
+ * variáveis, então redefinir a variável troca a tela inteira.
  */
 
 @theme {
-  --color-ground: #eef1f0;
-  --color-paper: #ffffff;
-  --color-ink: #0c1917;
-  --color-petrol: #0f4c5c;
-  --color-ok: #1f9e77;
-  --color-late: #d98100;
-  --color-risk: #c8453d;
+  /* ---------- superfícies ---------- */
+  --color-ground: #eef1f0; /* fundo do produto */
+  --color-paper: #ffffff; /* cartão, ficha, painel lateral */
+  --color-neve: #f5f6f5; /* seção alternada */
 
-  /* Derivados: texto secundário e as divisórias finas que substituem os cards. */
-  --color-ink-suave: color-mix(in srgb, #0c1917 62%, transparent);
-  --color-linha: color-mix(in srgb, #0c1917 12%, transparent);
-  --color-linha-forte: color-mix(in srgb, #0c1917 22%, transparent);
+  /* ---------- texto ---------- */
+  --color-ink: #0c1917; /* texto principal */
+  --color-ink-2: #4a5f5b; /* texto secundário, e TODO texto de apoio */
+  /*
+   * ink-3 NÃO é token de texto.
+   *
+   * Com 4,5:1 como piso, não cabe um terceiro tom de texto que ainda se
+   * distinga do segundo: corrigido para passar, ele encostaria no ink-2. Então
+   * ele é marca não textual — eixo de régua, tick de escala, traço de ícone —,
+   * onde o piso é 3:1 e ele passa.
+   *
+   * Texto de apoio vai para ink-2, inclusive etiqueta em caixa alta de 11px:
+   * caixa alta com letter-spacing já lê como secundária, e não precisa de
+   * contraste menor também. Hierarquia por forma, não por contraste — contraste
+   * é o canal frágil.
+   */
+  --color-ink-3: #7d908b;
 
+  /* ---------- fios e ausência ---------- */
+  --color-fio: #d5ddda; /* hairline entre linhas de lista */
+  --color-fio-2: #e6ecea; /* divisão interna */
+  --color-hachura: #cbd7d4; /* traço da hachura de ausência */
+
+  /* ---------- marca ---------- */
+  --color-marca: #0f4c5c; /* ação primária */
+  --color-marca-viva: #14657a; /* link e estado pressionado */
+  --color-marca-tinta: #e3eef1; /* preenchimento de consulta marcada */
+
+  /* ---------- agora: este minuto e atraso, nada mais ---------- */
+  --color-agora: #d98100;
+  --color-agora-tinta: #fcf2e2; /* bloco deslocado por atraso */
+
+  /* ---------- desfecho ---------- */
+  --color-ok: #1f9e77; /* confirmado, realizado */
+  --color-ok-tinta: #e7f4ee;
+  --color-risco: #c8453d; /* o que pode não acontecer */
+  --color-risco-tinta: #fbecea;
+
+  /* ---------- foco: sempre visível ---------- */
+  --color-foco: #14657a;
+
+  /* ---------- tipografia ---------- */
   --font-titulo: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-texto: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Spline Sans Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* A escala do DESIGN.md: 4, 8, 12, 20, 32, 48 = p-1, p-2, p-3, p-5, p-8, p-12. */
+  /* Base 4: a escala do DESIGN.md é 4 · 8 · 12 · 16 · 24 · 32 · 48 · 72 · 104 · 132. */
   --spacing: 4px;
 
-  --radius-1: 6px;
-  --radius-2: 10px;
-  --radius-3: 16px;
+  --radius-none: 0px;
+  --radius-sm: 5px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 980px;
 }
 
-/*
- * Escuro. As utilidades do Tailwind referenciam as variáveis, então redefinir
- * as variáveis troca a tela inteira sem uma segunda folha de estilo.
- */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-ground: #0b1211;
+    --color-ground: #0b1210;
     --color-paper: #121c1a;
-    --color-ink: #e7eeec;
-    --color-petrol: #5bb3c6;
-    --color-ok: #3fc79c;
-    --color-late: #f0a531;
-    --color-risk: #ee756c;
-    --color-ink-suave: color-mix(in srgb, #e7eeec 62%, transparent);
-    --color-linha: color-mix(in srgb, #e7eeec 14%, transparent);
-    --color-linha-forte: color-mix(in srgb, #e7eeec 26%, transparent);
+    --color-neve: #0f1715;
+
+    --color-ink: #eaf0ee;
+    --color-ink-2: #9bada9;
+    --color-ink-3: #6e807c;
+
+    --color-fio: #22302d;
+    --color-fio-2: #1a2623;
+    --color-hachura: #24322f;
+
+    --color-marca: #2e7f94;
+    --color-marca-viva: #46a0b5;
+    --color-marca-tinta: #15333c;
+
+    --color-agora: #e8a33f;
+    --color-agora-tinta: #33250f;
+
+    --color-ok: #35b98d;
+    --color-ok-tinta: #102e25;
+    --color-risco: #e0635a;
+    --color-risco-tinta: #331615;
+
+    --color-foco: #6fc3d6;
   }
 }

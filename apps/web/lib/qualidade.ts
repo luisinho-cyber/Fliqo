@@ -17,7 +17,15 @@
 export type Qualidade = 'verde' | 'amarelo' | 'vermelho' | 'desconhecida';
 
 /** Os tons são os do tokens.css. Nenhuma cor literal sai daqui. */
-export type TomDaQualidade = 'ok' | 'late' | 'risk' | 'neutro';
+/**
+ * Os tons da nota do número.
+ *
+ * `atencao` NÃO é âmbar: âmbar significa este minuto ou atraso, e mais nada
+ * (DESIGN.md). Nota amarela é alarme, não tempo. Então amarelo e vermelho
+ * dividem o matiz `risco` e se separam pela FORMA — anel vazado contra ponto
+ * cheio —, que é a mesma regra de em-risco contra faltou na Linha do Dia.
+ */
+export type TomDaQualidade = 'ok' | 'atencao' | 'risco' | 'neutro';
 
 /** Sete dias: uma semana de operação. Dentro disso, a leitura ainda descreve hoje. */
 export const CORTE_DE_FRESCOR_DIAS = 7;
@@ -29,8 +37,8 @@ export type LeituraDaQualidade =
 
 const ROTULOS: Record<Qualidade, { rotulo: string; tom: TomDaQualidade }> = {
   verde: { rotulo: 'Verde', tom: 'ok' },
-  amarelo: { rotulo: 'Amarelo', tom: 'late' },
-  vermelho: { rotulo: 'Vermelho', tom: 'risk' },
+  amarelo: { rotulo: 'Amarelo', tom: 'atencao' },
+  vermelho: { rotulo: 'Vermelho', tom: 'risco' },
   // A Meta manda isto em número novo. Não é problema, é ausência de nota.
   desconhecida: { rotulo: 'Ainda sem nota', tom: 'neutro' },
 };
