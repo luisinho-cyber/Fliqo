@@ -432,27 +432,39 @@ Então a regra é de API, e é curta:
 > dois lugares só: a ficha do paciente, e um endpoint de **revelação por paciente** —
 > que é o que o botão "Ligar" chama.
 
-A guarda é irmã do teste que já existe para log: o teste que planta um telefone e
-confere que ele não aparece em log ganha um irmão que **varre o corpo de resposta de
-todo endpoint de listagem** procurando o padrão de número inteiro. Não depende de
-convenção de pasta, não depende de alguém lembrar, e falha alto quando um campo novo
-carrega o telefone por descuido.
+A guarda é irmã do teste que já existe para log, **e funciona do mesmo jeito: casando
+o valor plantado, não um padrão de telefone.** Planta-se um telefone de paciente
+conhecido na fixture e exige-se que **aquele valor** não apareça no corpo de nenhuma
+listagem.
 
-**Duas coisas que essa varredura encontra hoje, conferidas antes de escrever.** Elas
-importam porque o jeito de uma guarda morrer é ficar vermelha num caso legítimo e ser
-afrouxada até parar de pegar o caso real:
+A forma importa mais do que parece. Uma guarda que casa _padrão de número_ fica
+vermelha no `telefoneExibicao` de `GET /api/whatsapp/status` — que é o número **da
+clínica**, de outro dono, legitimamente inteiro. Alguém então afrouxa o padrão para
+o CI voltar ao verde, e a guarda para de pegar o caso real. Casando o valor plantado,
+esse caso nunca fica vermelho: é outro número. Sem afrouxar critério, sem exceção,
+sem a guarda perder o dente.
 
-- **`GET /api/pacientes?telefone=…` devolve o paciente inteiro, com `phone_e164`.**
-  É array (`[p]` ou `[]`), então tem forma de listagem, e viola a regra como
-  enunciada. Atenuante: quem chama já sabe o telefone, porque ele é o parâmetro da
-  busca — não é revelar um número desconhecido. Mesmo assim é decisão, não isenção:
-  ou ele devolve o número mascarado (o chamador já tem o inteiro), ou é reclassificado
-  como endpoint de revelação e passa a ser auditado como tal. **Não vale ensinar a
-  varredura a ignorá-lo.**
-- **`GET /api/whatsapp/status` devolve `telefoneExibicao`**, que é o número **da
-  clínica**, não de paciente. A varredura tem de distinguir por **de quem é o
-  número**, não relaxando o padrão — relaxar o padrão é desligar a guarda com outro
-  nome.
+Dois cuidados na implementação, do mesmo espírito:
+
+- **Plante o número e confira as formas em que ele pode sair**: E.164 (`+5511…`), só
+  dígitos, e o formato nacional com parênteses e hífen. Um vazamento reformatado
+  escapa de uma comparação literal única — é a mesma exposição que o teste de log já
+  tem, e aqui ela é barata de fechar.
+- **Compare sempre o valor completo, nunca fragmento.** O mascarado guarda os
+  primeiros dígitos e os dois últimos; procurar "os últimos quatro" acusaria a própria
+  máscara, e aí voltaríamos a afrouxar.
+
+### `GET /api/pacientes?telefone=…` mascara, e não vira revelação
+
+Ele devolve hoje o paciente inteiro, com `phone_e164`, dentro de um array — tem forma
+de listagem e viola a regra. **Passa a mascarar.** Quem chama já tem o número inteiro,
+porque ele é o parâmetro da busca: devolvê-lo não informa nada.
+
+O motivo de **não** reclassificá-lo como endpoint de revelação é mais importante que o
+motivo de mascarar. O valor da revelação é que cada linha dela no log de auditoria
+significa "uma pessoa pediu este número de propósito". Uma busca disparando essa linha
+a cada consulta transforma o log em ruído, e log de auditoria ruidoso é log que
+ninguém lê. O sinal não se dilui antes mesmo de existir.
 
 ## Pendências para quando houver log de auditoria
 
