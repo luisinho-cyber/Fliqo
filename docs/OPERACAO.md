@@ -306,16 +306,27 @@ verdadeira, mas dá para detectar **o instante em que ela pode ter deixado de se
 Não prova semântica, e não precisa. Precisa gritar quando alguém editou o texto na
 Meta, que é exatamente quando a regra escrita para de valer em silêncio.
 
-**Mas a conferência é por clínica, não global.** Cada clínica conecta a **própria**
-WABA, e os templates são aprovados por WABA — não há nada no repositório que crie ou
-aprove template, então hoje eles são pré-aprovados à mão na conta de cada clínica.
-Ou seja: trinta clínicas podem ter trinta textos diferentes sob o mesmo nome
-`confirmacao_consulta`, e um hash só não cobre isso. A conferência roda **uma vez
-por clínica conectada**, com o token daquela clínica — o que significa decifrar
-token, e portanto `WHATSAPP_TOKEN_KEY` no ambiente de quem roda a conferência. Não
-é o mesmo perfil de um passo de deploy que só lê schema: decidir onde isso roda faz
-parte da fase, e o "Conferir RLS" não serve de molde aqui porque ele não precisa de
-segredo de clínica nenhuma.
+**A conferência roda no worker, uma vez por dia, e nunca no CI.** Ela é por clínica,
+não global: cada clínica conecta a **própria** WABA, e template é aprovado por WABA,
+então trinta clínicas podem ter trinta textos sob o mesmo nome
+`confirmacao_consulta`. Comparar exige o token daquela clínica, e decifrar token
+exige `WHATSAPP_TOKEN_KEY`.
+
+A resposta não é escolher onde pôr a chave: é **não pôr em lugar novo**. O worker já
+a tem, porque já envia mensagem. O CI não tem, e não pode ter — colocar chave de
+cifragem e token de clínica num runner de CI é abrir uma superfície nova para
+conferir texto de template. Então é job periódico no worker, diário, uma clínica por
+vez; divergiu, abre alerta `template_divergente` nomeando a clínica e o template. O
+CI continua sem segredo de clínica nenhum, que é o que ele é hoje e deve continuar
+sendo.
+
+**E um buraco de implantação que a varredura expôs e ninguém tinha escrito: nada no
+repositório cria ou aprova template.** Não há chamada de criação em lugar algum —
+hoje eles são aprovados **à mão, por clínica**. Trinta clínicas, trinta aprovações
+manuais, cada uma podendo digitar o texto de um jeito diferente. É por isso que o
+hash por clínica não é zelo excessivo: é a única coisa que enxerga o texto que a
+clínica realmente aprovou. Automatizar a criação dos templates na conexão é fase
+própria, e não existe hoje.
 
 **O aviso de atraso não entra aqui.** Ele não é `scheduled_actions`: vem de
 `FILA_ATRASOS`, uma varredura periódica sobre a agenda do dia. Não há pilha para
@@ -382,10 +393,16 @@ Duas coisas que isso obriga, achadas lendo a tela:
   telefone. O corte entre as duas ações é o mesmo `lerAfirmacao` do core, aplicado
   agora em vez de na hora do envio.
 
-E uma tensão para decidir na fase, não para resolver aqui: a regra da tela Conversas
-é **telefone mascarado em lista, inteiro só na ficha**. Uma lista para ligar sem o
-número inteiro não serve para ligar. Ou a linha abre a ficha, ou esta lista é a
-exceção escrita — mas exceção à regra de telefone não se cria em silêncio.
+A lista para ligar **não é exceção à regra do telefone**. A regra foi reenunciada
+pelo propósito em `DESIGN.md`: telefone inteiro só depois de ato deliberado, e tocar
+em **Ligar** é um ato deliberado — no celular dispara `tel:` e o número vai para o
+discador, não para a tela; no computador é revelado na própria linha. A listagem
+continua mascarando de saída, e o critério passa a cobrir este caso em vez de ser
+contornado por ele.
+
+**Dois valores novos de `check` que esta fase acrescenta**, além de `sem_proposito`
+em `scheduled_actions.status`: `whatsapp_fora` e `template_divergente` em
+`alerts.kind`, cuja lista fechada está na 0003. São migrações, e a 0003 não se edita.
 
 ### Conferir, não supor
 

@@ -36,6 +36,13 @@ Regra de cor: **âmbar é exclusivo de atraso, vermelho é exclusivo de risco ou
 - **Status por forma e cor:** bloco cheio = confirmado; bloco vazado = aguardando; hachurado vermelho = falta; bloco com borda âmbar = atrasado.
 - **Decisões pendentes** são uma lista com um glifo por severidade (quadrado = risco, círculo = atraso, losango = resolvido) e uma única ação por linha. Sem barras coloridas nas bordas dos cards.
 - **Canal do paciente:** o celular sempre à direita no desktop, mostrando o que o paciente recebe no momento em que acontece.
+- **Telefone inteiro só depois de ato deliberado.** Nenhuma listagem o exibe de
+  saída. Abrir a ficha do paciente é um ato deliberado; tocar em **Ligar** também é
+  — no celular o toque dispara `tel:` e o número vai para o discador, não para a
+  tela; no computador ele é revelado na própria linha, e a revelação **é** o ato. Em
+  lista, mascarado. A regra existe para o número inteiro custar um gesto, não para
+  a lista ser inútil: quando um caso novo precisa de telefone, ele ganha o gesto,
+  nunca uma exceção.
 - **Movimento:** só onde carrega informação, como o bloco deslizando quando o atraso muda ou a faixa listrada do atendimento em andamento. Respeitar `prefers-reduced-motion`.
 
 ## Texto
