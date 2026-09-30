@@ -150,10 +150,9 @@ não a simetria.
 
 ## Quando o WhatsApp da clínica cai (fase própria)
 
-Duas coisas tiram o WhatsApp da clínica do ar: o dono desligar o número pelo
-painel, e a Meta revogar o token — o segundo acontece **sem ninguém apertar
-nada**. Hoje nada avisa que isso aconteceu, e as consequências são piores do que
-parecem.
+Duas coisas tiram o WhatsApp da clínica do ar, e **elas não são a mesma coisa**:
+o dono desligar o número pelo painel, e a Meta revogar o token. O segundo
+acontece sem ninguém apertar nada.
 
 O diagnóstico está feito; não refaça. O estado atual de cada caminho:
 
@@ -166,8 +165,8 @@ O diagnóstico está feito; não refaça. O estado atual de cada caminho:
 
 Ou seja: **não há tempestade de retentativa.** `meta.ts` classifica qualquer
 status que não seja 429 nem 5xx como `recusado`, e `#postar` desiste na hora. E o
-`last_error` que a execução escreve é o da `scheduled_actions`, sobrescrito a
-cada tentativa, não o de `whatsapp_numbers` — esse só é escrito ao conectar e ao
+`last_error` que a execução escreve é o da `scheduled_actions`, sobrescrito a cada
+tentativa, não o de `whatsapp_numbers` — esse só é escrito ao conectar e ao
 desconectar, porque `conexao.marcarErro` **não tem um único chamador**.
 
 Os dois problemas de verdade:
@@ -175,44 +174,89 @@ Os dois problemas de verdade:
 1. **Alerta por ação, não por causa.** Trinta consultas amanhã viram trinta
    alertas `acao_falhou`, e nenhum deles diz "o WhatsApp da clínica está fora".
 2. **Ação queimada.** O token é revogado às 2h; as trinta confirmações de amanhã
-   são reclamadas uma a uma e falham como definitivo. Às 9h alguém reconecta — e
-   os trinta pacientes nunca foram confirmados, porque as ações já queimaram. Uma
+   são reclamadas uma a uma e falham como definitivo. Às 9h alguém reconecta — e os
+   trinta pacientes nunca foram confirmados, porque as ações já queimaram. Uma
    queda de três horas come um dia inteiro de confirmação, em silêncio.
 
-O que a fase precisa fazer:
+### O que a fase faz
 
-- Na falha com cara de autenticação, chamar `conexao.marcarErro` **uma vez** e
-  abrir **um** alerta de tipo novo (`whatsapp_fora`), em vez de N alertas de
-  `acao_falhou`.
-- **`claim_due_actions` deixa de reclamar as ações de ENVIO de clínica cujo
-  número está em `erro`.** Elas ficam `pendente` e retomam quando o número volta.
-  O alerta é o que avisa; as ações esperam. Isso é migração nova com
-  `create or replace` — a 0001 não se edita (CLAUDE.md, regra 8).
-- Escopo: só `confirmacao` e `lembrete_final`. `marcar_risco` não envia nada, e
-  `expirar_oferta` fica de fora por decisão — as duas continuam rodando.
+**Um alerta, não N.** Na falha com cara de autenticação, chamar
+`conexao.marcarErro` uma vez e abrir **um** alerta de tipo novo (`whatsapp_fora`),
+em vez de um `acao_falhou` por ação.
 
-Teste: número em `erro`, três ações vencidas → nenhuma reclamada, nenhuma
-tentativa de envio, um alerta; o número volta a ativo → as três são reclamadas e
-enviadas. Por mutação, se a exclusão no claim virar no-op, o teste vê as três
-consumidas e quebra.
+**`erro` segura, `desconectado` cancela.** São intenções opostas e recebem
+tratamentos opostos:
 
-Três coisas para a fase decidir, que este registro não decide:
+| Situação                                    | O que acontece com as ações de envio pendentes |
+| ------------------------------------------- | ---------------------------------------------- |
+| `status = 'erro'` (token revogado)          | ficam `pendente` e **esperam** o número voltar |
+| `status = 'desconectado'` (o dono desligou) | são **canceladas em bloco**, na hora           |
 
-- **`expirar_oferta` envia, apesar de ficar de fora do escopo.** Expirar em si não
-  depende do WhatsApp, mas passar a vaga adiante manda mensagem — e hoje isso
-  degrada calado (`ofertas.ts` oferece a ninguém e devolve `sem_numero`). Com o
-  número em `erro`, a rodada da fila queima do mesmo jeito que a confirmação
-  queimaria. É o mesmo bug, na porta ao lado.
-- **`desconectado` não é `erro`.** A exclusão no claim é pelo status `erro`. Quem
-  desliga o número de propósito não pretende voltar amanhã, então segurar as ações
-  dele para sempre só acumula fila. Desligar pelo painel provavelmente deve
-  cancelar as ações de envio pendentes, não pausá-las — mas isso é decisão, não
-  detalhe.
-- **`claim_due_actions` passará a ler `whatsapp_numbers`.** Ela é `security
-definer` e cruza clínicas, então a conferência de `conferir-rls.yml` olha para
-  essa referência nova. `whatsapp_numbers` está na lista `SEM_FORCE`
-  (`packages/db/tests/rls-cobertura.test.ts`): o dono do schema a lê sem precisar
-  de política, então a conferência deve continuar verde. Confirmar, não supor.
+Quem teve o token revogado quer as confirmações de amanhã esperando. Quem desligou
+de propósito não pretende voltar amanhã, e segurar as ações dele só acumula fila
+para um envio que ninguém mais quer.
+
+**A exclusão no claim é por propriedade, não por nome.** `claim_due_actions` deixa
+de reclamar as ações **que enviam mensagem** de clínica com número em `erro` — e
+decide isso por uma classificação declarada num lugar só, não por lista de
+exceção caso a caso. Migração nova com `create or replace`; a 0001 não se edita
+(CLAUDE.md, regra 8).
+
+Classificação de hoje, para `app.action_kind`:
+
+| Tipo             | Envia? | Por quê                                                 |
+| ---------------- | ------ | ------------------------------------------------------- |
+| `confirmacao`    | sim    | manda o template de confirmação                         |
+| `lembrete_final` | sim    | manda o template de lembrete                            |
+| `expirar_oferta` | sim    | `expirarEPassarAdiante` oferece a vaga à próxima rodada |
+| `marcar_risco`   | não    | só muda o status da consulta                            |
+
+`expirar_oferta` está aqui porque **o nome enganou o critério na primeira vez**:
+expirar não depende do WhatsApp, mas passar a vaga adiante manda mensagem. Segurá-la
+durante a queda estica o prazo da oferta, e é o comportamento certo: hoje a rodada
+queima calada, porque `ofertas.ts` não acha número ativo, devolve `sem_numero` e
+oferece a ninguém.
+
+### As duas invariantes que impedem a próxima "porta ao lado"
+
+O ponto de classificar por propriedade é que tipo de ação novo não entra sem
+alguém decidir. Duas guardas, no padrão da lista `SEM_FORCE` e da lista das cinco
+funções `security definer` — invariante enumerada em vez de acordo tácito:
+
+1. **Nada fica sem classificação.** Duas listas em `packages/db/src/schema.ts`,
+   `ACOES_QUE_ENVIAM` e `ACOES_QUE_NAO_ENVIAM`, e um teste que exige que a união
+   delas seja **exatamente** os valores de `app.action_kind` no `pg_enum`. Tipo novo
+   na enum quebra o CI até aparecer numa das duas.
+2. **O banco e o código não discordam de quem envia.** A propriedade mora no banco
+   (uma função `immutable` que o claim usa), e o teste pergunta o veredito dela para
+   cada valor da enum e compara com `ACOES_QUE_ENVIAM`. Divergir não quebraria no
+   start: quebraria numa queda, com uma ação sendo consumida quando devia esperar.
+
+E o **padrão inseguro é o seguro**: a função do banco trata valor que não conhece
+como "envia", ou seja, segura a ação. Segurar é recuperável, queimar não é. Assim o
+CI falha alto antes de o tipo novo chegar à produção, e se chegar, ele erra para o
+lado que não perde confirmação.
+
+Teste do comportamento: número em `erro`, três ações vencidas → nenhuma reclamada,
+nenhuma tentativa de envio, um alerta; o número volta a ativo → as três são
+reclamadas e enviadas. Por mutação, se a exclusão no claim virar no-op, o teste vê
+as três consumidas e quebra. Segundo teste, para o outro lado: `marcar_risco`
+vencida com o número em `erro` continua sendo reclamada e executada.
+
+### Conferir, não supor
+
+`claim_due_actions` passará a ler `whatsapp_numbers`. Ela é `security definer` e
+cruza clínicas, então essa referência nova entra no escopo da conferência.
+`whatsapp_numbers` está na lista `SEM_FORCE`
+(`packages/db/tests/rls-cobertura.test.ts`), o que **deve** bastar: sem `force`, o
+dono do schema lê a tabela sem precisar de política.
+
+Isso é uma expectativa, não um resultado. O workflow **Conferir RLS** existe para
+essa frase não ser uma aposta: ele é só de leitura e roda de qualquer branch
+(`workflow_dispatch`). Rode-o a partir da branch da fase, antes de mesclar, e
+trate o veredito dele como a resposta. Nesta sessão o disparo por API foi negado
+(`Resource not accessible by integration`, falta `actions: write`), então quem
+dispara é o fundador, pelo painel do GitHub.
 
 ## Pendências para quando houver log de auditoria
 
