@@ -16,6 +16,24 @@ export interface ClienteWhatsApp {
   marcarDigitando(p: EnvioDeDigitando): Promise<void>;
 }
 
+/**
+ * De onde sai o token de envio de cada número.
+ *
+ * O token é POR CLÍNICA: cada clínica conecta a própria conta, e mandar mensagem
+ * em nome dela exige a credencial dela. O cliente não guarda token nenhum — ele
+ * pergunta, a cada envio, qual é o token daquele `phoneNumberId`.
+ *
+ * `esquecer` existe porque o token muda sem ninguém avisar: a clínica reconecta,
+ * a Meta revoga, a chave de cifragem é rotacionada. Quando a Meta recusa a
+ * credencial, o cliente manda esquecer e tenta UMA vez com token fresco — se o
+ * fresco também for recusado, a falha é definitiva.
+ */
+export interface CofreDeTokens {
+  /** Token daquele número, ou undefined quando não há token utilizável. */
+  doNumero(phoneNumberId: string): Promise<string | undefined>;
+  esquecer(phoneNumberId: string): void;
+}
+
 export interface EnvioDeDigitando {
   phoneNumberId: string;
   /** wamid da última mensagem do paciente. */
