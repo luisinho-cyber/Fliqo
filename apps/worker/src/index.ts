@@ -8,7 +8,7 @@ import {
   FILA_OFERTA,
   FILA_RESPOSTA,
 } from '@fliqo/db/fila';
-import { ClienteMeta } from '@fliqo/whatsapp';
+import { ClienteMeta, lerChave } from '@fliqo/whatsapp';
 import pino from 'pino';
 import { rodarUmaVez } from './acoes';
 import { varrerAtrasos, varrerClinica } from './atrasos';
@@ -16,6 +16,7 @@ import { abrirRodada } from './ofertas';
 import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
+import { criarCofre } from './cofre';
 import { criarParada, rodarLaco } from './parada';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
 import { criarBatimento, servidorDeSaude } from './saude';
@@ -37,7 +38,12 @@ recusarAdminUrl('o worker');
 const log = pino({ level: config.LOG_LEVEL });
 const db = criarDb(config.DATABASE_URL, POOL_CONSULTAS);
 const boss = criarFila(config.DATABASE_URL, POOL_DA_FILA);
-const whatsapp = new ClienteMeta({ token: config.WHATSAPP_TOKEN });
+/**
+ * O cliente não guarda token: ele pergunta ao cofre, a cada envio, qual é o
+ * token daquele número. Cada clínica manda com a credencial dela.
+ */
+const cofre = criarCofre({ db, chave: lerChave(config.WHATSAPP_TOKEN_KEY) });
+const whatsapp = new ClienteMeta({ cofre });
 const llm = new ClienteAnthropic({
   apiKey: config.ANTHROPIC_API_KEY,
   modelo: config.ANTHROPIC_MODEL,
