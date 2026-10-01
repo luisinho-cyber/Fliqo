@@ -205,13 +205,24 @@ Em **Variables**, cole:
 | Variável                | De onde vem                                                 |
 | ----------------------- | ----------------------------------------------------------- |
 | `DATABASE_URL`          | passo 4                                                     |
-| `SUPABASE_JWT_SECRET`   | Supabase > Project Settings > API > JWT Secret              |
+| `SUPABASE_JWT_SECRET`   | Supabase > API > JWT Secret — **pegue lá, não gere**        |
 | `WHATSAPP_APP_SECRET`   | Meta > seu app > Configurações básicas > Chave secreta      |
 | `WHATSAPP_VERIFY_TOKEN` | uma frase inventada por você; a mesma vai na Meta (passo 8) |
 | `META_APP_ID`           | Meta > seu app > Configurações básicas                      |
 | `META_APP_SECRET`       | Meta > seu app > Configurações básicas                      |
 | `WHATSAPP_TOKEN_KEY`    | gere como está logo abaixo da tabela                        |
 | `LOG_LEVEL`             | `info`                                                      |
+
+**A `SUPABASE_JWT_SECRET` é a única variável aqui que você NÃO gera.** Ela é o segredo
+com que o Supabase já assina os tokens do painel: copie de **Supabase > Project Settings
+
+> API > JWT Secret**. Gerar um valor novo — com `openssl rand -base64 32`, com o
+> gerenciador de senhas — produz o pior sintoma do produto: todo login falha com "senha
+> errada" usando a senha certa, e nada no log aponta para a configuração.
+
+A api se recusa a subir se o valor tiver cara de gerado (o segredo do Supabase é
+alfanumérico; os geradores produzem `+`, `/` e `=`). A mensagem diz o nome da variável e
+manda pegar no Supabase.
 
 **Como gerar a `WHATSAPP_TOKEN_KEY`:** ela não é uma senha comum — precisa ser
 exatamente 32 bytes em base64, e o gerador do gerenciador de senhas não garante
@@ -322,16 +333,29 @@ variáveis daquele serviço.
 | `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api       |
 | `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                   |
 | `WHATSAPP_TOKEN`        |  —  |   ✓    |  —  | quem envia mensagem é o worker                         |
-| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra; o worker decifra para enviar              |
+| `WHATSAPP_TOKEN_KEY`    |  ✓  |   —    |  —  | só a api cifra hoje; veja a nota abaixo da tabela      |
 | `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela           |
 | `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil |
 | `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup               |
 | `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                         |
 | `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                    |
 | `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`              |
-| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                 |
+| `LOG_LEVEL`             |  ✓  |   ✓    |  —  | `info`; o painel loga pelo Next, não pelo pino         |
 | `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão              |
 | `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel          |
+
+### `WHATSAPP_TOKEN_KEY` no worker: ainda não
+
+Hoje o worker envia com um token único de ambiente (`WHATSAPP_TOKEN`) e não decifra
+token de clínica, então a chave de cifragem é só da api. Quando o cofre por clínica
+entrar, o worker passa a precisar da `WHATSAPP_TOKEN_KEY` e deixa de precisar da
+`WHATSAPP_TOKEN` — e as duas mudanças são **na mesma alteração**: o schema do worker e
+esta tabela. O teste `tests/contrato-de-ambiente.test.ts` quebra se uma mudar sem a
+outra, nos dois sentidos.
+
+Esta tabela já estava errada nesse ponto, e é o tipo de erro que só aparece no deploy:
+quem a seguisse cadastraria no worker uma chave que ele não usa — um lugar a mais de
+onde ela vaza.
 
 ### `DATABASE_ADMIN_URL` não vai para o Railway em hipótese nenhuma
 
