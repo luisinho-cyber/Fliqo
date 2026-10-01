@@ -124,6 +124,23 @@ export async function remarcar(formulario: FormData): Promise<void> {
   if (aviso !== '') redirect(`/agenda${aviso}`);
 }
 
+/**
+ * Aceitar a duração que a medida sugere.
+ *
+ * Manda só o id do procedimento. O número NÃO vai daqui: quem recalcula a regra e
+ * decide o valor é a API, e é de propósito — um campo com a duração neste
+ * formulário seria uma porta para escrever qualquer coisa no cadastro da clínica.
+ */
+export async function aceitarDuracao(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('procedimento'));
+  const r = await naApi(`/api/procedimentos/${id}/duracao`);
+  // 409 quer dizer que a medida mudou entre a tela carregar e o clique: a
+  // sugestão saiu da lista sozinha, e recarregar já conta essa história.
+  revalidatePath('/hoje');
+  revalidatePath('/pontualidade');
+  if (!r.ok) redirect('/pontualidade?aviso=medida_mudou');
+}
+
 export async function oferecerVaga(formulario: FormData): Promise<void> {
   await naApi('/api/fila/oferecer', {
     profissionalId: texto(formulario.get('profissionalId')),

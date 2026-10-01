@@ -17,5 +17,6 @@ export * as financeiro from './repos/financeiro';
 export * as numeros from './repos/numeros';
 export * as pacientes from './repos/pacientes';
 export * as procedimentos from './repos/procedimentos';
+export * as pontualidade from './repos/pontualidade';
 export * as qualificacao from './repos/qualificacao';
 export * as profissionais from './repos/profissionais';
