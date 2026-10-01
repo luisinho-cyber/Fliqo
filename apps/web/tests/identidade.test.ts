@@ -268,6 +268,19 @@ const ESTADOS: Record<string, { exige: (string | RegExp)[]; proibe?: string[] }>
     exige: ['--color-ok-tinta', '--color-ink-3', '--color-ink-2'],
     proibe: ['opacity'],
   },
+  /*
+   * O par planejado × real da tela Pontualidade. Entra nesta tabela, e não numa
+   * lista à parte, porque é o MESMO par da faixa do dia usado fora dela: o
+   * tracejado é o que foi planejado, o sólido é o que aconteceu (DESIGN.md).
+   */
+  '.medida .planejado': {
+    exige: [/border:[^;]*dashed var\(--color-agora\)/],
+    proibe: ['background-color'],
+  },
+  '.medida .real': {
+    exige: ['--color-agora-tinta', /border:[^;]*solid var\(--color-agora\)/],
+    proibe: ['dashed'],
+  },
 };
 
 function bloco(css: string, seletor: string): string {
@@ -309,6 +322,36 @@ describe('a tabela de estados está desenhada', () => {
     expect(faltou).toMatch(/background-image:\s*linear-gradient\(/);
     expect(faltou, 'faltou com background-image: none não tem diagonal').not.toMatch(
       /background-image:\s*none/,
+    );
+  });
+
+  /**
+   * A amarra entre os dois pares.
+   *
+   * "Deve parecer a mesma coisa" é uma frase, e frase não sobrevive ao terceiro
+   * refactor. O que sobrevive é o teste: o tracejado da Pontualidade usa o mesmo
+   * token e a mesma forma do contorno fantasma da faixa, e o sólido usa o mesmo
+   * preenchimento do bloco atrasado. Trocar o âmbar da faixa por outro token sem
+   * trocar o da Pontualidade quebra aqui, que é o dia em que as duas telas
+   * começariam a contar a mesma história com desenhos diferentes.
+   */
+  it('o par planejado × real é o mesmo par da faixa do dia', () => {
+    const fantasma = bloco(css, '.fantasma');
+    const planejado = bloco(css, '.medida .planejado');
+    const atrasado = bloco(css, '.bloco.atrasado');
+    const real = bloco(css, '.medida .real');
+
+    // Tracejado = planejado, nos dois lugares, no mesmo token.
+    for (const corpo of [fantasma, planejado]) {
+      expect(corpo).toMatch(/border:[^;]*dashed var\(--color-agora\)/);
+    }
+    // Sólido = aconteceu, com o mesmo preenchimento.
+    for (const corpo of [atrasado, real]) {
+      expect(corpo).toContain('--color-agora-tinta');
+    }
+    // E o tracejado nunca é preenchido: o que ele mostra é uma ausência.
+    expect(planejado, 'o tracejado preenchido deixa de ser "o que foi planejado"').not.toContain(
+      'background-color',
     );
   });
 

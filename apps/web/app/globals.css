@@ -247,6 +247,46 @@
     z-index: 1;
   }
 
+  /*
+   * Planejado × real: o MESMO par do atraso, fora da Linha do Dia.
+   *
+   * Na faixa do dia, o contorno tracejado âmbar é onde a consulta deveria começar
+   * e o bloco sólido é onde ela começa de verdade; a distância entre os dois é o
+   * atraso. Aqui a pergunta é a mesma um nível acima: a barra tracejada é a duração
+   * que o cadastro RESERVA, a sólida é a que o procedimento LEVA, e a distância
+   * entre as duas é de onde o atraso da tarde vem.
+   *
+   * Por isso a forma e os tokens são os mesmos, e não parecidos: tracejado de 1,5px
+   * em `agora` contra preenchimento `agora-tinta` com traço `agora`. Quem aprendeu
+   * a ler a faixa já sabe ler isto sem legenda nova. Há teste que amarra os dois
+   * pares — mudar um sem o outro quebra alto.
+   */
+  .medida {
+    position: relative;
+    display: block;
+    min-width: 140px;
+  }
+  /*
+   * Cada uma com a regra inteira, sem lista compartilhada: é uma declaração que
+   * separa planejado de real, e declaração dividida entre duas regras é a que se
+   * perde num refactor sem quebrar teste nenhum. A guarda lê o corpo de cada
+   * seletor, como faz com os blocos da faixa.
+   */
+  .medida .planejado {
+    display: block;
+    height: 12px;
+    border-radius: var(--radius-sm);
+    border: 1.5px dashed var(--color-agora);
+  }
+  .medida .real {
+    display: block;
+    height: 12px;
+    border-radius: var(--radius-sm);
+    margin-top: 3px;
+    background-color: var(--color-agora-tinta);
+    border: 1.5px solid var(--color-agora);
+  }
+
   /* Glifo por severidade: quadrado = risco, círculo = atraso, losango = resolvido. */
   .glifo {
     width: 10px;

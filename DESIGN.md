@@ -27,6 +27,13 @@ um instrumento: uma linha do tempo, uma manchete, uma lista de decisões.
    cheia é o que deve entrar de verdade. A distância entre as duas é o problema que a
    Fliqo resolve, e aparece com esse nome.
 
+**O par tracejado/sólido é um só, e atravessa as telas.** Tracejado é sempre o que foi
+planejado; sólido é sempre o que aconteceu. Na faixa do dia são o horário marcado e o
+bloco deslocado; no caixa são o marcado e o esperado; na Pontualidade são a duração que o
+cadastro reserva e a que o procedimento leva. Mesma pergunta, mesma forma, mesmos tokens —
+quem aprendeu a ler uma não precisa de legenda nova na outra. Os pares da faixa e da
+Pontualidade estão amarrados por teste: mudar um sem o outro quebra.
+
 ## Tokens
 
 Valores em `apps/web/app/tokens.css`. Todo token é definido no tema claro e tem o valor
@@ -139,7 +146,12 @@ calculado, porque o valor final não está em token nenhum. Passado é quieto, n
 
 ## Regras que valem em toda tela
 
-- **`agora` só significa este minuto ou atraso.** Não usar em botão, link ou destaque.
+- **`agora` só significa este minuto, o atraso, ou a causa medida do atraso.** Não usar
+  em botão, link ou destaque. A terceira permissão é estreita e tem nome: a comparação
+  entre duração cadastrada e duração real, na tela Pontualidade e no card da Hoje. Não é
+  um alargamento de conveniência — é o mesmo assunto medido antes de acontecer, e a
+  migração 0002 já descreve a duração real como "a causa raiz do atraso". Qualquer outro
+  uso de âmbar continua proibido.
 - **Ausência se desenha com hachura**, nunca com vazio branco.
 - **Monoespaçada só para medida**: hora, dinheiro, contagem, id. Texto corrido nunca.
 - **`fio` separa linhas de uma mesma lista; não desenha caixa.** Painel é `paper` sobre
