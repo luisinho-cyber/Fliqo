@@ -252,3 +252,37 @@ export interface StatusDoWhatsapp {
   eventos: EventoDeConexao[];
   fuso: string;
 }
+
+// ---------------------------------------------------------------------------
+// Caixa
+// ---------------------------------------------------------------------------
+
+export interface LinhaNaTela {
+  id: string;
+  nome: string;
+  consultas: number;
+  marcadoCents: number;
+  esperadoCents: number;
+  realizadoCents: number;
+}
+
+export interface ProcedimentoSemPreco {
+  id: string;
+  nome: string;
+}
+
+export interface Caixa {
+  clinica: ClinicaNaTela;
+  de: string;
+  ate: string;
+  consultas: number;
+  marcadoCents: number;
+  esperadoCents: number;
+  realizadoCents: number;
+  /** A frase vem montada do servidor: é a mesma conta das tabelas, e não pode divergir. */
+  manchete: string;
+  faltas: { quantidade: number; valorCents: number };
+  semPreco: { consultas: number; procedimentos: ProcedimentoSemPreco[] };
+  porProfissional: LinhaNaTela[];
+  porProcedimento: LinhaNaTela[];
+}

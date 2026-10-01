@@ -170,3 +170,191 @@ export function projetarFluxo(
 export function custoDasFaltas(faltas: { preco: Cents }[]): { quantidade: number; valor: Cents } {
   return { quantidade: faltas.length, valor: faltas.reduce((s, f) => s + f.preco, 0) };
 }
+
+// ---------------------------------------------------------------------------
+// O caixa do período: marcado × esperado × realizado
+// ---------------------------------------------------------------------------
+
+/**
+ * A pergunta que a tela Caixa responde: quanto está marcado, quanto deve entrar de
+ * verdade, e quanto já entrou. A distância entre os dois primeiros é o que a Fliqo
+ * existe para fechar.
+ *
+ * Mora aqui, e não na rota, pelo mesmo motivo de `projetarFluxo`: é regra de negócio
+ * sobre dinheiro, e dinheiro tem de ser testável sem banco.
+ */
+
+export type StatusNoCaixa =
+  'agendado' | 'confirmado' | 'em_risco' | 'cancelado' | 'faltou' | 'realizado';
+
+export interface ConsultaNoCaixa {
+  profissionalId: string;
+  procedimentoId: string;
+  status: StatusNoCaixa;
+  /** Snapshot do preço gravado na consulta. */
+  preco: Cents;
+  /**
+   * O procedimento tem preço cadastrado?
+   *
+   * Preço zero tem dois significados que NÃO podem ser somados juntos: cortesia de
+   * verdade (vale zero) e preço que ninguém cadastrou ainda (vale desconhecido). A
+   * importação de agenda cria procedimento com zero porque o cadastro vive no outro
+   * sistema; somar isso como receita esperada de R$ 0 faz a tela mentir com cara de
+   * verde, que é a pior forma de errar um número de dinheiro.
+   *
+   * Quem não tem preço cadastrado sai das três somas e é CONTADO à parte.
+   */
+  precoCadastrado: boolean;
+}
+
+/**
+ * `cancelado` fica fora de tudo: o horário voltou a estar livre, e consulta cancelada
+ * não está marcada. `faltou` continua em `marcado` — ela ocupou a agenda, e é
+ * justamente a distância entre marcado e esperado que mostra o que a falta custou.
+ */
+const CONTAM_COMO_MARCADO: readonly StatusNoCaixa[] = [
+  'agendado',
+  'confirmado',
+  'em_risco',
+  'realizado',
+  'faltou',
+];
+
+export interface LinhaDoCaixa {
+  id: string;
+  consultas: number;
+  marcadoCents: Cents;
+  esperadoCents: Cents;
+  realizadoCents: Cents;
+}
+
+export interface SemPrecoCadastrado {
+  /** Quantas consultas ficaram fora das somas. */
+  consultas: number;
+  /** Quantos procedimentos distintos estão sem preço. É o N da frase na tela. */
+  procedimentos: number;
+  /** Os ids, para a tela poder levar ao cadastro de cada um. */
+  procedimentoIds: string[];
+}
+
+export interface ResumoDoCaixa {
+  consultas: number;
+  marcadoCents: Cents;
+  esperadoCents: Cents;
+  realizadoCents: Cents;
+  /** O que a falta custou no período: o mesmo número de `custoDasFaltas`. */
+  faltas: { quantidade: number; valor: Cents };
+  semPreco: SemPrecoCadastrado;
+  porProfissional: LinhaDoCaixa[];
+  porProcedimento: LinhaDoCaixa[];
+}
+
+/**
+ * Valor ESPERADO de uma consulta.
+ *
+ * Realizada vale o preço cheio — já aconteceu, não há chance a ponderar. Faltou vale
+ * zero, pelo mesmo motivo ao contrário. O que ainda vai acontecer vale preço × chance
+ * de comparecer, que é o que separa a Fliqo de uma planilha que conta toda consulta
+ * marcada como dinheiro no bolso.
+ */
+function esperadoDa(c: ConsultaNoCaixa, taxas: TaxasComparecimento): Cents {
+  switch (c.status) {
+    case 'realizado':
+      return c.preco;
+    case 'faltou':
+    case 'cancelado':
+      return 0;
+    case 'confirmado':
+      return applyBp(c.preco, taxas.confirmadoBp);
+    case 'agendado':
+      return applyBp(c.preco, taxas.agendadoBp);
+    case 'em_risco':
+      return applyBp(c.preco, taxas.emRiscoBp);
+  }
+}
+
+function somar(linhas: Map<string, LinhaDoCaixa>, id: string, v: Omit<LinhaDoCaixa, 'id'>): void {
+  const atual = linhas.get(id) ?? {
+    id,
+    consultas: 0,
+    marcadoCents: 0,
+    esperadoCents: 0,
+    realizadoCents: 0,
+  };
+  linhas.set(id, {
+    id,
+    consultas: atual.consultas + v.consultas,
+    marcadoCents: atual.marcadoCents + v.marcadoCents,
+    esperadoCents: atual.esperadoCents + v.esperadoCents,
+    realizadoCents: atual.realizadoCents + v.realizadoCents,
+  });
+}
+
+/**
+ * O resumo do período. Centavos inteiros do começo ao fim.
+ *
+ * O arredondamento é POR CONSULTA, e não no total: é assim que as linhas por
+ * profissional e por procedimento somam exatamente o total da manchete. Arredondar o
+ * agregado faria a tabela não fechar com a frase acima dela, e uma tabela de dinheiro
+ * que não fecha é pior do que nenhuma tabela.
+ */
+export function resumirCaixa(
+  consultas: readonly ConsultaNoCaixa[],
+  taxas: TaxasComparecimento = TAXAS_PADRAO,
+): ResumoDoCaixa {
+  const porProfissional = new Map<string, LinhaDoCaixa>();
+  const porProcedimento = new Map<string, LinhaDoCaixa>();
+  const semPreco = new Set<string>();
+  const faltas: { preco: Cents }[] = [];
+
+  let total = 0;
+  let marcado = 0;
+  let esperado = 0;
+  let realizado = 0;
+  let consultasSemPreco = 0;
+
+  for (const c of consultas) {
+    assertCents(c.preco, 'preço da consulta');
+    if (c.status === 'cancelado') continue;
+
+    if (!c.precoCadastrado) {
+      // Fora das somas e contada à parte: o valor dela é desconhecido, não zero.
+      semPreco.add(c.procedimentoId);
+      consultasSemPreco++;
+      continue;
+    }
+
+    const estaMarcada = CONTAM_COMO_MARCADO.includes(c.status);
+    const m = estaMarcada ? c.preco : 0;
+    const e = esperadoDa(c, taxas);
+    const r = c.status === 'realizado' ? c.preco : 0;
+
+    total++;
+    marcado += m;
+    esperado += e;
+    realizado += r;
+    if (c.status === 'faltou') faltas.push({ preco: c.preco });
+
+    const valores = { consultas: 1, marcadoCents: m, esperadoCents: e, realizadoCents: r };
+    somar(porProfissional, c.profissionalId, valores);
+    somar(porProcedimento, c.procedimentoId, valores);
+  }
+
+  const maiorMarcadoPrimeiro = (a: LinhaDoCaixa, b: LinhaDoCaixa) =>
+    b.marcadoCents - a.marcadoCents;
+
+  return {
+    consultas: total,
+    marcadoCents: marcado,
+    esperadoCents: esperado,
+    realizadoCents: realizado,
+    faltas: custoDasFaltas(faltas),
+    semPreco: {
+      consultas: consultasSemPreco,
+      procedimentos: semPreco.size,
+      procedimentoIds: [...semPreco].sort(),
+    },
+    porProfissional: [...porProfissional.values()].sort(maiorMarcadoPrimeiro),
+    porProcedimento: [...porProcedimento.values()].sort(maiorMarcadoPrimeiro),
+  };
+}

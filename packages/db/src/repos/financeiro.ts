@@ -1,5 +1,5 @@
 import type { Insertable, Selectable } from 'kysely';
-import type { TabelaCaixa } from '../schema';
+import type { StatusConsulta, TabelaCaixa } from '../schema';
 import type { Trx } from '../withClinic';
 
 export type Lancamento = Selectable<TabelaCaixa>;
@@ -55,4 +55,64 @@ export async function listarPorPeriodo(trx: Trx, de: Date, ate: Date): Promise<L
     .where('status', '<>', 'cancelado')
     .orderBy('due_date')
     .execute();
+}
+
+export interface ConsultaDoCaixa {
+  professional_id: string;
+  profissional: string;
+  procedure_id: string;
+  procedimento: string;
+  status: StatusConsulta;
+  precoCents: number;
+  precoCadastrado: boolean;
+}
+
+/**
+ * As consultas do período, com o que o caixa precisa saber de cada uma.
+ *
+ * `precoCadastrado` olha a origem do procedimento E o snapshot da consulta:
+ * `importado` com snapshot zero é preço que ninguém cadastrou, porque o cadastro vive
+ * no outro sistema (0012). Cortesia de verdade tem origem `cadastro` e vale zero.
+ *
+ * O critério é no SNAPSHOT e não só no procedimento de propósito: se a clínica
+ * cadastrar o preço depois, as consultas novas passam a contar, e as antigas continuam
+ * valendo desconhecido — porque é isso que elas são. Inventar o preço de hoje para uma
+ * consulta de março seria somar um número que ninguém cobrou.
+ *
+ * O preço somado é sempre o snapshot da consulta, nunca o preço atual do procedimento:
+ * mudar a tabela não altera o passado (0001).
+ */
+export async function consultasDoPeriodo(
+  trx: Trx,
+  de: Date,
+  ate: Date,
+): Promise<ConsultaDoCaixa[]> {
+  const linhas = await trx
+    .selectFrom('app.appointments as a')
+    .innerJoin('app.professionals as pr', 'pr.id', 'a.professional_id')
+    .innerJoin('app.procedures as p', 'p.id', 'a.procedure_id')
+    .select([
+      'a.professional_id',
+      'pr.name as profissional',
+      'a.procedure_id',
+      'p.name as procedimento',
+      'a.status',
+      'a.price_cents',
+      'p.source as origem_do_procedimento',
+    ])
+    .where('a.starts_at', '>=', de)
+    .where('a.starts_at', '<', ate)
+    .execute();
+
+  return linhas.map((l) => ({
+    professional_id: l.professional_id,
+    profissional: l.profissional,
+    procedure_id: l.procedure_id,
+    procedimento: l.procedimento,
+    status: l.status,
+    // bigint chega como string do driver; o Number é seguro porque centavos de uma
+    // consulta cabem muito dentro do inteiro seguro.
+    precoCents: Number(l.price_cents),
+    precoCadastrado: !(l.origem_do_procedimento === 'importado' && Number(l.price_cents) === 0),
+  }));
 }

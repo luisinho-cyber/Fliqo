@@ -45,7 +45,7 @@ export function SugerirDuracao({ sugestoes }: { sugestoes: SugestaoDeDuracaoNaTe
                 </p>
               </div>
 
-              <Medida cadastradaMin={s.cadastradaMin} realMin={s.novaDuracaoMin} maiorMin={maior} />
+              <Medida planejado={s.cadastradaMin} real={s.novaDuracaoMin} maior={maior} />
 
               <form action={aceitarDuracao}>
                 <input type="hidden" name="procedimento" value={s.procedimentoId} />

@@ -99,9 +99,9 @@ export function Pontualidade({ dados }: { dados: Dados }) {
                   <td className="py-3 text-right font-mono">{p.amostra}</td>
                   <td className="py-3">
                     <Medida
-                      cadastradaMin={p.cadastradaMin}
-                      realMin={Math.ceil(p.medianaMin)}
-                      maiorMin={maior}
+                      planejado={p.cadastradaMin}
+                      real={Math.ceil(p.medianaMin)}
+                      maior={maior}
                     />
                   </td>
                   <td className="py-3">

@@ -8,6 +8,7 @@ import { lerChave, OnboardingMeta } from '@fliqo/whatsapp';
 import { assinaturaConfere } from './assinatura';
 import type { Config } from './config';
 import { extrair, extrairEcos, PayloadWebhook } from './payload';
+import { registrarCaixa } from './rotas/caixa';
 import { registrarConexao } from './rotas/conexao';
 import { registrarConversas } from './rotas/conversas';
 import { registrarHoje } from './rotas/hoje';
@@ -113,6 +114,7 @@ export function construirApp(dep: Dependencias): FastifyInstance {
       registrarConversas(painel, { db, segredoJwt, boss });
       registrarImportacao(painel, { db, segredoJwt, boss });
       registrarPontualidade(painel, { db, segredoJwt, boss });
+      registrarCaixa(painel, { db, segredoJwt, boss });
       registrarConexao(painel, {
         db,
         segredoJwt,
