@@ -15,7 +15,7 @@ import type { PapelNaClinica } from '../lib/tipos';
  * - `soConvidado`: o contrário. Importar agenda só existe para a clínica cuja agenda
  *   vive em outro sistema.
  */
-interface Aba {
+export interface Aba {
   href: string;
   rotulo: string;
   papeis: readonly PapelNaClinica[] | null;
@@ -55,6 +55,20 @@ const ABAS: readonly Aba[] = [
   },
 ];
 
+/**
+ * Quais abas essa pessoa vê, nessa clínica. É a DECISÃO, separada do desenho.
+ *
+ * Exportada porque é ela que tem teste: papel e recurso são duas guardas diferentes, e
+ * passar numa não é passar na outra. A API negar 403 à recepção não impede a aba de
+ * aparecer — e aba que aparece e dá erro ao clicar é pior do que aba que não aparece,
+ * porque ensina que a tela está quebrada em vez de ensinar o que ela pode fazer.
+ */
+export function abasVisiveis(papel: PapelNaClinica, modoConvidado: boolean): readonly Aba[] {
+  return ABAS.filter((a) => a.papeis === null || a.papeis.includes(papel))
+    .filter((a) => a.recurso === null || recursoLiberado(a.recurso, { modoConvidado }))
+    .filter((a) => !a.soConvidado || modoConvidado);
+}
+
 export function Abas({
   atual,
   papel,
@@ -64,9 +78,7 @@ export function Abas({
   papel: PapelNaClinica;
   modoConvidado?: boolean;
 }) {
-  const visiveis = ABAS.filter((a) => a.papeis === null || a.papeis.includes(papel))
-    .filter((a) => a.recurso === null || recursoLiberado(a.recurso, { modoConvidado }))
-    .filter((a) => !a.soConvidado || modoConvidado);
+  const visiveis = abasVisiveis(papel, modoConvidado);
 
   return (
     <nav className="flex flex-wrap gap-1" aria-label="Seções do painel">

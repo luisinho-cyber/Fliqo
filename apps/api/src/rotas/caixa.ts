@@ -4,6 +4,7 @@ import {
   noFuso,
   resumirCaixa,
   somarDias,
+  type ProcedenciaDoEsperado,
   type ResumoDoCaixa,
 } from '@fliqo/core';
 import { financeiro, hoje, type PapelMembro, type Trx } from '@fliqo/db';
@@ -37,7 +38,8 @@ export interface LinhaNaTela {
   nome: string;
   consultas: number;
   marcadoCents: number;
-  esperadoCents: number;
+  /** `null` quando a clínica ainda não tem histórico para projetar. Nunca um palpite. */
+  esperadoCents: number | null;
   realizadoCents: number;
 }
 
@@ -52,8 +54,10 @@ export interface RespostaCaixa {
   ate: string;
   consultas: number;
   marcadoCents: number;
-  esperadoCents: number;
+  esperadoCents: number | null;
   realizadoCents: number;
+  /** De onde veio o esperado. A tela DIZ isso na frase: número sem procedência não se defende. */
+  procedencia: ProcedenciaDoEsperado;
   /** A frase da manchete, montada no servidor para a tela não remontar dinheiro. */
   manchete: string;
   faltas: { quantidade: number; valorCents: number };
@@ -101,10 +105,31 @@ function mancheteDoCaixa(r: ResumoDoCaixa, deIso: string, ateIso: string): strin
       ? 'Nenhuma consulta com preço neste dia.'
       : 'Nenhuma consulta com preço neste período.';
   }
+
+  /*
+   * Sem histórico, a frase NÃO inventa um esperado — e diz quanto falta para haver um.
+   * "Ainda não sei" é uma resposta que o dono aceita; um número que não bate com o
+   * extrato dele não é.
+   */
+  if (r.esperadoCents === null || !r.procedencia.ha) {
+    const quanto = r.procedencia.ha
+      ? ''
+      : ` ${String(r.procedencia.amostra)} de ${String(r.procedencia.minimo)} atendimentos.`;
+    return (
+      `${formatBRL(r.marcadoCents)} marcados. Ainda não há histórico de comparecimento ` +
+      `suficiente para projetar o que deve entrar de verdade:${quanto}`
+    );
+  }
+
   const diferenca = r.marcadoCents - r.esperadoCents;
   const frase = `${formatBRL(r.marcadoCents)} marcados, ${formatBRL(r.esperadoCents)} esperados.`;
-  if (diferenca <= 0) return frase;
-  return `${frase} ${formatBRL(diferenca)} de distância entre os dois.`;
+  const distancia = diferenca > 0 ? ` ${formatBRL(diferenca)} de distância entre os dois.` : '';
+  // A procedência entra na PRÓPRIA frase, e não num rodapé: é ela que torna o número
+  // defensável para quem vai mostrar a tela ao sócio ou ao contador.
+  const origem =
+    ` O esperado considera a sua taxa de comparecimento em ${String(r.procedencia.amostra)} ` +
+    `atendimentos dos últimos ${String(r.procedencia.janelaDias)} dias.`;
+  return `${frase}${distancia}${origem}`;
 }
 
 async function montar(
@@ -134,6 +159,9 @@ async function montar(
   const ate = noFuso(somarDias(ateIso, 1), '00:00', clinica.fuso);
 
   const consultas = await financeiro.consultasDoPeriodo(trx, de, ate);
+  // O histórico é da clínica, lido agora, dentro da mesma transação: duas leituras em
+  // momentos diferentes dariam uma taxa que não corresponde à agenda mostrada.
+  const historico = await financeiro.historicoDeComparecimento(trx, agora);
   const resumo = resumirCaixa(
     consultas.map((c) => ({
       profissionalId: c.professional_id,
@@ -142,6 +170,7 @@ async function montar(
       preco: c.precoCents,
       precoCadastrado: c.precoCadastrado,
     })),
+    historico,
   );
 
   const nomeDoProfissional = new Map(consultas.map((c) => [c.professional_id, c.profissional]));
@@ -155,6 +184,7 @@ async function montar(
     marcadoCents: resumo.marcadoCents,
     esperadoCents: resumo.esperadoCents,
     realizadoCents: resumo.realizadoCents,
+    procedencia: resumo.procedencia,
     manchete: mancheteDoCaixa(resumo, deIso, ateIso),
     faltas: { quantidade: resumo.faltas.quantidade, valorCents: resumo.faltas.valor },
     semPreco: {

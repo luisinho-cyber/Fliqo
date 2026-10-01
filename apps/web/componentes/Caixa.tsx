@@ -158,14 +158,19 @@ function Eixo({
                   {formatBRL(l.marcadoCents)}
                 </td>
                 <td className="py-3 text-right font-mono tabular-nums">
-                  {formatBRL(l.esperadoCents)}
+                  {/* Travessão, não R$ 0,00: "não sei dizer" e "nada vai entrar" são opostos. */}
+                  {l.esperadoCents === null ? '—' : formatBRL(l.esperadoCents)}
                 </td>
                 <td className="py-3 text-right font-mono tabular-nums">
                   {formatBRL(l.realizadoCents)}
                 </td>
                 <td className="py-3">
                   {/* Vazado = marcado (o planejado), cheio = esperado. A distância é o assunto. */}
-                  <Medida planejado={l.marcadoCents} real={l.esperadoCents} maior={maior} />
+                  {l.esperadoCents === null ? (
+                    <span className="text-ink-2 text-[13px]">sem histórico</span>
+                  ) : (
+                    <Medida planejado={l.marcadoCents} real={l.esperadoCents} maior={maior} />
+                  )}
                 </td>
               </tr>
             ))}

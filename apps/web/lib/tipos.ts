@@ -262,9 +262,15 @@ export interface LinhaNaTela {
   nome: string;
   consultas: number;
   marcadoCents: number;
-  esperadoCents: number;
+  /** `null` quando não há histórico de comparecimento para projetar. */
+  esperadoCents: number | null;
   realizadoCents: number;
 }
+
+/** De onde veio o esperado. A tela diz isso na frase, não num rodapé. */
+export type ProcedenciaDoEsperado =
+  | { ha: true; amostra: number; janelaDias: number; porGrupo: Record<string, number> }
+  | { ha: false; motivo: 'sem_historico'; amostra: number; minimo: number };
 
 export interface ProcedimentoSemPreco {
   id: string;
@@ -277,8 +283,9 @@ export interface Caixa {
   ate: string;
   consultas: number;
   marcadoCents: number;
-  esperadoCents: number;
+  esperadoCents: number | null;
   realizadoCents: number;
+  procedencia: ProcedenciaDoEsperado;
   /** A frase vem montada do servidor: é a mesma conta das tabelas, e não pode divergir. */
   manchete: string;
   faltas: { quantidade: number; valorCents: number };

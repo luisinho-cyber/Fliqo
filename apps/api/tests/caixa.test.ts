@@ -1,4 +1,10 @@
-import { formatBRL, resumirCaixa, TAXAS_PADRAO, type ConsultaNoCaixa } from '@fliqo/core';
+import {
+  AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+  formatBRL,
+  resumirCaixa,
+  type ConsultaNoCaixa,
+  type HistoricoDeComparecimento,
+} from '@fliqo/core';
 import { criarDb, type Db } from '@fliqo/db';
 import { criarFila } from '@fliqo/db/fila';
 import {
@@ -179,6 +185,72 @@ afterAll(async () => {
   await owner.end();
 });
 
+/**
+ * Dá à clínica A um histórico de comparecimento acima do piso.
+ *
+ * São consultas PASSADAS com desfecho: é delas que a taxa sai. Sem isto a clínica é nova e
+ * o caixa se recusa a projetar — que é o comportamento certo, e tem teste próprio.
+ */
+async function comHistorico(o: {
+  confirmadas: number;
+  compareceramConfirmadas: number;
+  semConfirmar: number;
+  compareceramSemConfirmar: number;
+}): Promise<void> {
+  const paciente = c.patients[0];
+  if (paciente === undefined) throw new Error('o cenário não tem paciente');
+
+  let hora = 0;
+  const criar = async (quantas: number, veio: number, confirmada: boolean) => {
+    for (let i = 0; i < quantas; i++) {
+      const status = i < veio ? 'realizado' : 'faltou';
+      // Espalhadas no passado, uma por hora, para não bater no no_double_booking.
+      await owner.query(
+        `insert into app.appointments
+           (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
+            price_cents, status, confirmed_at)
+         values ($1, $2, $3, $4,
+                 now() - make_interval(hours => $5::int),
+                 now() - make_interval(hours => $5::int) + interval '30 minutes',
+                 25000, $6, $7)`,
+        [
+          c.clinicA,
+          c.profA,
+          paciente,
+          c.procEletivo,
+          hora + 1,
+          status,
+          confirmada ? new Date() : null,
+        ],
+      );
+      hora++;
+    }
+  };
+  await criar(o.confirmadas, o.compareceramConfirmadas, true);
+  await criar(o.semConfirmar, o.compareceramSemConfirmar, false);
+}
+
+/** O histórico equivalente, para comparar a rota com a regra pura. */
+function historicoDe(o: {
+  confirmadas: number;
+  compareceramConfirmadas: number;
+  semConfirmar: number;
+  compareceramSemConfirmar: number;
+}): HistoricoDeComparecimento {
+  return {
+    confirmada: { total: o.confirmadas, compareceram: o.compareceramConfirmadas },
+    sem_confirmacao: { total: o.semConfirmar, compareceram: o.compareceramSemConfirmar },
+    janelaDias: 90,
+  };
+}
+
+const HISTORICO_FOLGADO = {
+  confirmadas: 40,
+  compareceramConfirmadas: 38,
+  semConfirmar: 40,
+  compareceramSemConfirmar: 32,
+};
+
 beforeEach(async () => {
   await owner.query('delete from app.appointments');
   await owner.query(`delete from app.procedures where source = 'importado'`);
@@ -191,6 +263,7 @@ describe('os números da rota são os da regra', () => {
    * começou a calcular por conta — e a regra deixou de ser a fonte do número.
    */
   it('batem centavo por centavo com resumirCaixa no mesmo cenário', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     const paraCore = await semear([
       { status: 'realizado', preco: 25_000, hora: 8 },
       { status: 'confirmado', preco: 90_000, hora: 9 },
@@ -199,7 +272,7 @@ describe('os números da rota são os da regra', () => {
       { status: 'faltou', preco: 25_000, hora: 12 },
       { status: 'cancelado', preco: 150_000, hora: 13 },
     ]);
-    const esperado = resumirCaixa(paraCore, TAXAS_PADRAO);
+    const esperado = resumirCaixa(paraCore, historicoDe(HISTORICO_FOLGADO));
 
     const r = await doCaixa();
     expect(r.statusCode).toBe(200);
@@ -216,6 +289,7 @@ describe('os números da rota são os da regra', () => {
   });
 
   it('as linhas da resposta somam o total da manchete', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     await semear([
       { status: 'confirmado', preco: 90_000, hora: 9 },
       { status: 'agendado', preco: 25_000, hora: 10, profissional: c.profA },
@@ -223,14 +297,18 @@ describe('os números da rota são os da regra', () => {
     ]);
     const corpo = (await doCaixa()).json<RespostaCaixa>();
 
+    expect(corpo.esperadoCents, 'o cenário tem histórico: nulo aqui é defeito').not.toBeNull();
     for (const eixo of [corpo.porProfissional, corpo.porProcedimento]) {
       expect(eixo.reduce((s, l) => s + l.marcadoCents, 0)).toBe(corpo.marcadoCents);
-      expect(eixo.reduce((s, l) => s + l.esperadoCents, 0)).toBe(corpo.esperadoCents);
+      expect(eixo.reduce((s, l) => s + (l.esperadoCents ?? Number.NaN), 0)).toBe(
+        corpo.esperadoCents,
+      );
       expect(eixo.reduce((s, l) => s + l.realizadoCents, 0)).toBe(corpo.realizadoCents);
     }
   });
 
   it('todo valor devolvido é inteiro em centavos', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     await semear([
       { status: 'confirmado', preco: 33_333, hora: 9 },
       { status: 'em_risco', preco: 7, hora: 10 },
@@ -238,10 +316,14 @@ describe('os números da rota são os da regra', () => {
     const corpo = (await doCaixa()).json<RespostaCaixa>();
     const todos = [
       corpo.marcadoCents,
-      corpo.esperadoCents,
+      corpo.esperadoCents ?? Number.NaN,
       corpo.realizadoCents,
       corpo.faltas.valorCents,
-      ...corpo.porProfissional.flatMap((l) => [l.marcadoCents, l.esperadoCents, l.realizadoCents]),
+      ...corpo.porProfissional.flatMap((l) => [
+        l.marcadoCents,
+        l.esperadoCents ?? Number.NaN,
+        l.realizadoCents,
+      ]),
     ];
     for (const v of todos) expect(Number.isSafeInteger(v), `${String(v)} não é inteiro`).toBe(true);
   });
@@ -251,13 +333,18 @@ describe('os números da rota são os da regra', () => {
    * `Intl` põe espaço NÃO SEPARÁVEL entre "R$" e o número, e um literal com espaço comum
    * passa a vida parecendo igual e falhando. O que o teste fixa é a FORMA da frase.
    */
-  it('a manchete é a frase, com os dois números e a distância', async () => {
+  it('a manchete diz os dois números, a distância E a procedência', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     await semear([{ status: 'confirmado', preco: 100_000, hora: 9 }]);
     const corpo = (await doCaixa()).json<RespostaCaixa>();
-    // 95% de 1.000,00 = 950,00, e a distância é 50,00.
-    expect(corpo.manchete).toBe(
-      `${formatBRL(100_000)} marcados, ${formatBRL(95_000)} esperados. ` +
-        `${formatBRL(5_000)} de distância entre os dois.`,
+    // 38/40 das confirmadas desta clínica = 95%. 95% de 1.000,00 = 950,00.
+    expect(corpo.manchete).toContain(
+      `${formatBRL(100_000)} marcados, ${formatBRL(95_000)} esperados.`,
+    );
+    expect(corpo.manchete).toContain(`${formatBRL(5_000)} de distância`);
+    // A procedência na PRÓPRIA frase: número sem origem não se defende para o sócio.
+    expect(corpo.manchete, 'a frase não diz de onde veio a taxa').toContain(
+      'sua taxa de comparecimento em 40 atendimentos dos últimos 90 dias',
     );
   });
 
@@ -270,6 +357,7 @@ describe('os números da rota são os da regra', () => {
 
 describe('o que não conta', () => {
   it('consulta cancelada não conta como esperada', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     await semear([{ status: 'cancelado', preco: 150_000, hora: 9 }]);
     const corpo = (await doCaixa()).json<RespostaCaixa>();
     expect(corpo.esperadoCents).toBe(0);
@@ -279,6 +367,7 @@ describe('o que não conta', () => {
   });
 
   it('consulta que faltou não conta como realizada', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     await semear([{ status: 'faltou', preco: 25_000, hora: 9 }]);
     const corpo = (await doCaixa()).json<RespostaCaixa>();
     expect(corpo.realizadoCents).toBe(0);
@@ -293,6 +382,7 @@ describe('o que não conta', () => {
    * isso como receita esperada de R$ 0 faria a tela mentir com cara de verde.
    */
   it('procedimento com preço zero da importação não entra na soma, e é contado', async () => {
+    await comHistorico(HISTORICO_FOLGADO);
     await semear([
       { status: 'confirmado', preco: 90_000, hora: 9 },
       { status: 'confirmado', preco: 0, hora: 10, origemDoProcedimento: 'importado' },
@@ -431,5 +521,177 @@ describe('modo convidado não tem caixa', () => {
 
     await owner.query('update app.clinics set guest_mode = false where id = $1', [c.clinicA]);
     expect((await doCaixa()).json<RespostaCaixa>().marcadoCents).toBe(90_000);
+  });
+});
+
+describe('clínica nova: o esperado não inventa', () => {
+  /**
+   * A condição que bloqueava o merge, de ponta a ponta.
+   *
+   * Antes desta fase o esperado era preço × constante escrita no código. Clínica nova com
+   * doze consultas recebia "R$ 11.200 esperados" com a mesma cara de número medido da
+   * clínica com dois anos de histórico — e o dono só descobria conferindo contra o extrato.
+   */
+  it('sem nenhum atendimento passado, o esperado vem nulo e o marcado continua', async () => {
+    // Nenhum `comHistorico`: a clínica é nova.
+    await semear([
+      { status: 'confirmado', preco: 90_000, hora: 9 },
+      { status: 'agendado', preco: 25_000, hora: 10 },
+    ]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+
+    expect(corpo.marcadoCents).toBe(115_000);
+    expect(corpo.esperadoCents, 'a clínica nova recebeu esperado chutado').toBeNull();
+    expect(corpo.procedencia).toEqual({
+      ha: false,
+      motivo: 'sem_historico',
+      amostra: 0,
+      minimo: AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+    });
+  });
+
+  it('a manchete diz que falta histórico, e quanto falta', async () => {
+    await semear([{ status: 'confirmado', preco: 90_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    expect(corpo.manchete).toContain(`${formatBRL(90_000)} marcados`);
+    expect(corpo.manchete).toContain('não há histórico');
+    expect(corpo.manchete).toContain(String(AMOSTRA_MINIMA_DE_COMPARECIMENTO));
+    // E NÃO afirma um esperado.
+    expect(corpo.manchete).not.toContain('esperados');
+  });
+
+  it('as linhas também vêm sem esperado, não com zero', async () => {
+    await semear([{ status: 'confirmado', preco: 90_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    expect(corpo.porProfissional).toHaveLength(1);
+    for (const l of [...corpo.porProfissional, ...corpo.porProcedimento]) {
+      expect(l.esperadoCents).toBeNull();
+      expect(l.marcadoCents).toBe(90_000);
+    }
+  });
+
+  /** Um a menos que o piso ainda é ruído. O limite é fechado e vale conferir nos dois lados. */
+  it(`com ${String(AMOSTRA_MINIMA_DE_COMPARECIMENTO - 1)} atendimentos ainda não projeta`, async () => {
+    await comHistorico({
+      confirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO - 1,
+      compareceramConfirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO - 1,
+      semConfirmar: 0,
+      compareceramSemConfirmar: 0,
+    });
+    await semear([{ status: 'confirmado', preco: 90_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    expect(corpo.esperadoCents).toBeNull();
+  });
+
+  it(`com ${String(AMOSTRA_MINIMA_DE_COMPARECIMENTO)} já projeta, com a taxa medida`, async () => {
+    await comHistorico({
+      confirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+      // 27 de 30 = 90%, que é a taxa DESTA clínica e de nenhuma outra.
+      compareceramConfirmadas: 27,
+      semConfirmar: 0,
+      compareceramSemConfirmar: 0,
+    });
+    await semear([{ status: 'confirmado', preco: 90_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    expect(corpo.esperadoCents).toBe(81_000);
+    expect(corpo.procedencia).toMatchObject({ ha: true, amostra: 30, janelaDias: 90 });
+  });
+
+  /**
+   * Consulta passada que a recepção nunca marcou não é falta: é registro que não aconteceu.
+   * Contá-la como não comparecimento rebaixaria a taxa por desleixo em vez de por
+   * comportamento de paciente — e a taxa é o número que o dono vai defender.
+   */
+  it('consulta passada sem desfecho não entra no histórico', async () => {
+    await comHistorico({
+      confirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+      compareceramConfirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+      semConfirmar: 0,
+      compareceramSemConfirmar: 0,
+    });
+    // Dez consultas de ontem ainda em `agendado`: ninguém tocou nelas.
+    const paciente = c.patients[1];
+    if (paciente === undefined) throw new Error('o cenário precisa de dois pacientes');
+    for (let i = 0; i < 10; i++) {
+      await owner.query(
+        `insert into app.appointments
+           (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
+         values ($1,$2,$3,$4,
+                 now() - make_interval(hours => $5::int),
+                 now() - make_interval(hours => $5::int) + interval '30 minutes', 25000)`,
+        [c.clinicA, c.profA, paciente, c.procEletivo, 200 + i],
+      );
+    }
+
+    await semear([{ status: 'confirmado', preco: 100_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    // A taxa continua 100% das trinta confirmadas, não 30/40.
+    expect(corpo.esperadoCents).toBe(100_000);
+    expect(corpo.procedencia).toMatchObject({ amostra: 30 });
+  });
+
+  /** Cancelada CONTA no denominador: a pergunta é "vira dinheiro?", e cancelar também é não virar. */
+  it('cancelada passada entra no denominador do histórico', async () => {
+    const paciente = c.patients[2];
+    if (paciente === undefined) throw new Error('o cenário precisa de três pacientes');
+    await comHistorico({
+      confirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+      compareceramConfirmadas: AMOSTRA_MINIMA_DE_COMPARECIMENTO,
+      semConfirmar: 0,
+      compareceramSemConfirmar: 0,
+    });
+    // Dez confirmadas e canceladas depois: a clínica perdeu essas dez.
+    for (let i = 0; i < 10; i++) {
+      await owner.query(
+        `insert into app.appointments
+           (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
+            price_cents, status, confirmed_at, cancelled_at)
+         values ($1,$2,$3,$4,
+                 now() - make_interval(hours => $5::int),
+                 now() - make_interval(hours => $5::int) + interval '30 minutes',
+                 25000, 'cancelado', now(), now())`,
+        [c.clinicA, c.profA, paciente, c.procEletivo, 300 + i],
+      );
+    }
+
+    await semear([{ status: 'confirmado', preco: 100_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    // 30 de 40 = 75%, não 100%: tirar as canceladas inflaria o esperado exatamente nas
+    // clínicas que mais cancelam.
+    expect(corpo.esperadoCents).toBe(75_000);
+    expect(corpo.procedencia).toMatchObject({ amostra: 40 });
+  });
+
+  it('o histórico é da clínica, não do vizinho', async () => {
+    // A clínica B ganha histórico; a A continua nova.
+    const pacienteB = c.patientB;
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.professionals (clinic_id, name) values ($1, 'Dr. B') returning id`,
+      [c.clinicB],
+    );
+    const { rows: proc } = await owner.query<{ id: string }>(
+      `insert into app.procedures (clinic_id, name, duration_minutes, price_cents)
+       values ($1, 'Limpeza B', 30, 20000) returning id`,
+      [c.clinicB],
+    );
+    for (let i = 0; i < 50; i++) {
+      await owner.query(
+        `insert into app.appointments
+           (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
+            price_cents, status, confirmed_at)
+         values ($1,$2,$3,$4,
+                 now() - make_interval(hours => $5::int),
+                 now() - make_interval(hours => $5::int) + interval '30 minutes',
+                 20000, 'realizado', now())`,
+        [c.clinicB, rows[0]?.id, pacienteB, proc[0]?.id, 400 + i],
+      );
+    }
+
+    await semear([{ status: 'confirmado', preco: 90_000, hora: 9 }]);
+    const corpo = (await doCaixa()).json<RespostaCaixa>();
+    expect(
+      corpo.esperadoCents,
+      'a clínica A projetou com o histórico da B: a RLS não está isolando o histórico',
+    ).toBeNull();
   });
 });
