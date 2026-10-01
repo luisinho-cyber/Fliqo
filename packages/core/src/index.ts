@@ -8,3 +8,4 @@ export * from './humanizacao';
 export * from './atrasos';
 export * from './hoje';
 export * from './telefone';
+export * from './importacao';
