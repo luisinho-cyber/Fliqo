@@ -6,5 +6,6 @@ export * from './expediente';
 export * from './fila';
 export * from './humanizacao';
 export * from './atrasos';
+export * from './pontualidade';
 export * from './hoje';
 export * from './telefone';

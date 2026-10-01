@@ -7,6 +7,7 @@ const ABAS = [
   { href: '/agenda', rotulo: 'Agenda', soDono: false },
   // A API nega com 403 quem não é dono. A aba não aparece para não oferecer
   // uma porta que bate na cara de quem abre.
+  { href: '/pontualidade', rotulo: 'Pontualidade', soDono: true },
   { href: '/configuracoes/whatsapp', rotulo: 'WhatsApp', soDono: true },
 ] as const;
 

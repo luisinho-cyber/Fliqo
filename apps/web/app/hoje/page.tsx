@@ -5,6 +5,7 @@ import { Decisoes } from '../../componentes/Decisoes';
 import { LinhaDoDia } from '../../componentes/LinhaDoDia';
 import { Manchete } from '../../componentes/Manchete';
 import { Marca } from '../../componentes/Marca';
+import { SugerirDuracao } from '../../componentes/SugerirDuracao';
 import { Toques } from '../../componentes/Toques';
 import { chamarApi } from '../../lib/api';
 import { clinicaEscolhida, tokenDaSessao } from '../../lib/servidor';
@@ -113,6 +114,15 @@ export default async function TelaHoje() {
           <h2 className="mb-3 text-base">Decisões de hoje</h2>
           <Decisoes decisoes={hoje.decisoes} />
         </section>
+
+        {/*
+          A causa do atraso vai embaixo da faixa, e não na coluna das decisões:
+          decisão de hoje some quando o dia acaba, e esta é uma decisão de cadastro
+          que vale para todos os dias seguintes.
+        */}
+        <div className="min-w-0 lg:col-span-2">
+          <SugerirDuracao sugestoes={hoje.sugestoesDeDuracao} />
+        </div>
       </main>
     </div>
   );
