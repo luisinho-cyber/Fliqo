@@ -41,6 +41,12 @@ export interface ClinicaNaTela {
 
 export interface ClinicaDaPessoa extends ClinicaNaTela {
   /**
+   * Modo convidado: a agenda vive em outro sistema. O painel usa isto para não
+   * oferecer aba de prontuário nem de financeiro — a API nega as duas com 403, e
+   * aba que leva a 403 é promessa quebrada.
+   */
+  modoConvidado: boolean;
+  /**
    * O papel da pessoa NAQUELA clínica. Vem de clinic_members, dentro da RLS —
    * o painel usa isto para não oferecer o que a API vai negar com 403.
    *
@@ -168,7 +174,12 @@ export function registrarHoje(app: FastifyInstance, ctx: ContextoPainel): void {
       // dela; papel indefinido aqui seria a RLS e a função discordando. Fica de
       // fora em vez de virar um papel inventado.
       if (c.papel === undefined) continue;
-      lista.push({ id: c.dados.id, nome: c.dados.nome, papel: c.papel });
+      lista.push({
+        id: c.dados.id,
+        nome: c.dados.nome,
+        papel: c.papel,
+        modoConvidado: c.dados.modoConvidado,
+      });
     }
     return reply.send(lista);
   });

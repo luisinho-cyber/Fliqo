@@ -54,7 +54,11 @@ export default async function TelaHoje() {
       <Atualiza />
       <header className="bg-paper border-fio flex flex-wrap items-center gap-5 border-b px-5 py-3">
         <Marca />
-        <Abas atual="/hoje" ehDono={clinica.papel === 'dono'} />
+        <Abas
+          atual="/hoje"
+          ehDono={clinica.papel === 'dono'}
+          modoConvidado={clinica.modoConvidado}
+        />
         <div className="ml-auto flex items-center gap-3">
           {clinicas.dados.length > 1 ? (
             <form action={escolherClinica} className="flex items-center gap-2">

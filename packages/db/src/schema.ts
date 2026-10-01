@@ -41,6 +41,11 @@ export interface TabelaClinicas {
   offer_timeout_minutes: ComDefault<number>;
   min_offer_lead_minutes: ComDefault<number>;
   is_demo: ComDefault<boolean>;
+  /**
+   * A agenda vive em outro sistema e a Fliqo opera sobre ela (0012). Desliga
+   * prontuário e financeiro — a lista está em core/importacao.ts.
+   */
+  guest_mode: ComDefault<boolean>;
   /** Clínica suspensa sai da varredura de atrasos sem perder dado. */
   active: ComDefault<boolean>;
   created_at: Automatico<Date>;
@@ -74,6 +79,29 @@ export interface TabelaProcedimentos {
   active: ComDefault<boolean>;
 }
 
+/** Uma importação de agenda do modo convidado, com as contas que têm de fechar (0012). */
+export interface TabelaImportacoes {
+  id: ComDefault<string>;
+  clinic_id: string;
+  actor_user_id: string;
+  file_name: string;
+  rows_total: number;
+  rows_imported: number;
+  rows_repeated: number;
+  rows_rejected: number;
+  created_at: ComDefault<Date>;
+}
+
+/** Linha recusada, com o motivo. Sem telefone e sem a linha crua — veja a 0012. */
+export interface TabelaLinhasRecusadas {
+  id: ComDefault<string>;
+  clinic_id: string;
+  import_id: string;
+  line_number: number;
+  reason: string;
+  label: ComDefault<string>;
+}
+
 export interface TabelaPacientes {
   id: ComDefault<string>;
   clinic_id: string;
@@ -94,7 +122,8 @@ export interface TabelaConsultas {
   ends_at: Date;
   status: ComDefault<StatusConsulta>;
   price_cents: Centavos;
-  source: ComDefault<'recepcao' | 'ia' | 'lista_espera' | 'online'>;
+  /** `importado` entrou na 0012: consulta que veio da planilha do outro sistema. */
+  source: ComDefault<'recepcao' | 'ia' | 'lista_espera' | 'online' | 'importado'>;
   confirmed_at: ColumnType<Date | null, Date | null, Date | null>;
   cancelled_at: ColumnType<Date | null, Date | null, Date | null>;
   cancel_reason: ColumnType<string | null, string | null, string | null>;
@@ -333,6 +362,8 @@ export interface Banco {
   'app.clinic_members': TabelaMembros;
   'app.professionals': TabelaProfissionais;
   'app.procedures': TabelaProcedimentos;
+  'app.schedule_imports': TabelaImportacoes;
+  'app.schedule_import_rows': TabelaLinhasRecusadas;
   'app.patients': TabelaPacientes;
   'app.appointments': TabelaConsultas;
   'app.scheduled_actions': TabelaAcoes;
@@ -370,6 +401,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     offer_timeout_minutes: true,
     min_offer_lead_minutes: true,
     is_demo: true,
+    guest_mode: true,
     active: true,
     created_at: true,
     delay_notice_threshold_minutes: true,
@@ -388,6 +420,25 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     commission_bp: true,
     priority_level: true,
     active: true,
+  },
+  'app.schedule_imports': {
+    id: true,
+    clinic_id: true,
+    actor_user_id: true,
+    file_name: true,
+    rows_total: true,
+    rows_imported: true,
+    rows_repeated: true,
+    rows_rejected: true,
+    created_at: true,
+  },
+  'app.schedule_import_rows': {
+    id: true,
+    clinic_id: true,
+    import_id: true,
+    line_number: true,
+    reason: true,
+    label: true,
   },
   'app.patients': {
     id: true,

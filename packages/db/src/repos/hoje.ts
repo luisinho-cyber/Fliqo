@@ -30,16 +30,18 @@ export interface DadosDaClinica {
   id: string;
   nome: string;
   fuso: string;
+  /** Modo convidado (0012): a agenda vive em outro sistema e a Fliqo opera sobre ela. */
+  modoConvidado: boolean;
 }
 
 /** Nome e fuso vêm de dentro da RLS: a função de fora devolve só o id. */
 export async function dadosDaClinica(trx: Trx, clinicId: string): Promise<DadosDaClinica> {
   const c = await trx
     .selectFrom('app.clinics')
-    .select(['id', 'name', 'timezone'])
+    .select(['id', 'name', 'timezone', 'guest_mode'])
     .where('id', '=', clinicId)
     .executeTakeFirstOrThrow();
-  return { id: c.id, nome: c.name, fuso: c.timezone };
+  return { id: c.id, nome: c.name, fuso: c.timezone, modoConvidado: c.guest_mode };
 }
 
 export interface ConsultaDaTela {

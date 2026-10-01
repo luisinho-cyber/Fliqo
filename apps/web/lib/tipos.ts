@@ -13,6 +13,43 @@ export interface ClinicaNaTela {
 export interface ClinicaDaPessoa extends ClinicaNaTela {
   /** Papel na clínica. Serve para não oferecer o que a API vai negar com 403. */
   papel: 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+  /** Modo convidado: a agenda vive em outro sistema e a Fliqo opera sobre ela. */
+  modoConvidado: boolean;
+}
+
+/** O mapeamento de colunas que a clínica escolhe na tela de importação. */
+export interface MapaDeColunas {
+  paciente: number;
+  telefone: number;
+  profissional: number;
+  inicio: number;
+  procedimento: number;
+}
+
+export interface RecusaNaTela {
+  linha: number;
+  motivo: string;
+  rotulo: string;
+}
+
+export interface RelatorioDaImportacao {
+  id: string;
+  arquivo: string;
+  em: string;
+  total: number;
+  entraram: number;
+  repetidas: number;
+  recusadas: number;
+  recusas: RecusaNaTela[];
+}
+
+export type SaidaDaImportacao =
+  | { ok: true; relatorio: RelatorioDaImportacao }
+  | { ok: false; motivo: 'planilha_sem_linhas' | 'planilha_grande_demais'; maximo: number };
+
+export interface Importacoes {
+  fuso: string;
+  importacoes: Omit<RelatorioDaImportacao, 'recusas'>[];
 }
 
 export type SituacaoDaConsulta = 'finalizada' | 'em_atendimento' | 'aguardando';
