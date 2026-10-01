@@ -77,6 +77,11 @@ export interface TabelaProcedimentos {
   commission_bp: ComDefault<number>;
   priority_level: ComDefault<number>;
   active: ComDefault<boolean>;
+  /**
+   * `importado`: criado pela importação de agenda (0012), com preço zero que ninguém
+   * cadastrou. O Caixa conta esses, não soma.
+   */
+  source: ComDefault<'cadastro' | 'importado'>;
 }
 
 /** Uma importação de agenda do modo convidado, com as contas que têm de fechar (0012). */
@@ -420,6 +425,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     commission_bp: true,
     priority_level: true,
     active: true,
+    source: true,
   },
   'app.schedule_imports': {
     id: true,

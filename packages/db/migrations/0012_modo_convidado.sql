@@ -44,18 +44,55 @@ alter table app.appointments add constraint appointments_source_check
 -- forma canônica do telefone. Guardar o telefone aqui criaria uma segunda verdade
 -- sobre quem é a pessoa.
 --
--- Índice ÚNICO, e não parcial por status: consulta cancelada na Fliqo continua
--- ocupando a chave. Reimportar o arquivo de ontem não ressuscita o que a recepção
--- cancelou hoje — a reimportação conta aquela linha como "já existia", que é a
--- verdade.
+-- PARCIAL em `source = 'importado'`, e é aqui que mora a decisão.
 --
--- Isto é mais estreito do que o `no_double_booking`, que já proíbe dois pacientes
--- no mesmo intervalo do mesmo profissional nos status ativos. Os dois convivem de
--- propósito, e a importação os distingue: conflito de CHAVE é linha repetida
--- (ignorada em silêncio é correto, porque nada mudou); conflito de INTERVALO é
--- horário ocupado por outra pessoa, que é recusa com motivo.
+-- A `no_double_booking` da 0001 só vale para os status ativos — ela exclui
+-- `cancelado` e `faltou`, e tem de excluir: sem isso ninguém nunca remarcaria um
+-- horário cancelado, e remarcar é a operação mais comum de uma clínica e o caminho
+-- que a lista de espera usa.
+--
+-- Um índice único sobre TODA consulta discordaria dela: paciente cancela as 9h com
+-- a Dra. X e remarca as 9h com a Dra. X, a EXCLUDE libera e o índice recusa.
+-- Bloqueio, no caminho mais usado do sistema.
+--
+-- Copiar a cláusula de status da EXCLUDE para cá trocaria um bug por outro: aí a
+-- reimportação do arquivo de ontem não acharia a cancelada, a EXCLUDE também não
+-- barraria, e a consulta RESSUSCITARIA — desfazendo o que a recepção decidiu.
+--
+-- As duas operações são "inserir linha cuja chave casa com uma cancelada". O que as
+-- separa não é o status: é a ORIGEM. Remarcação entra como `recepcao` ou
+-- `lista_espera` e fica fora deste índice. Reimportação entra como `importado`,
+-- acha a chave mesmo cancelada, e conta como repetida. Cada uma com a regra que lhe
+-- cabe, e a imposição continua no banco — sem SELECT antes de INSERT.
+--
+-- Por isso o índice é mais ESTREITO que a EXCLUDE em vez de competir com ela, e a
+-- importação distingue as duas recusas: conflito de CHAVE é linha repetida (nada
+-- mudou); conflito de INTERVALO é horário ocupado por outra pessoa, com motivo.
 create unique index appointment_natural_key
-  on app.appointments (clinic_id, professional_id, starts_at, patient_id);
+  on app.appointments (clinic_id, professional_id, starts_at, patient_id)
+  where (source = 'importado');
+
+-- ---------------------------------------------------------------------
+-- Procedimento criado pela importação se reconhece
+-- ---------------------------------------------------------------------
+-- A importação cria o procedimento que não existe no nosso cadastro, com preço
+-- ZERO: recusar toda linha cujo nome de procedimento não bate faria a primeira
+-- importação de qualquer clínica falhar inteira.
+--
+-- Hoje esse zero não aparece em lugar nenhum, porque o modo convidado desliga o
+-- financeiro. O problema é o dia em que uma clínica DESLIGAR a flag: os zeros
+-- entrariam no Caixa como esperado = R$ 0, e a tela mentiria com cara de verde —
+-- que é a pior forma de errar um número de dinheiro.
+--
+-- A origem marcada é o que permite ao Caixa dizer "N procedimentos sem preço
+-- cadastrado" em vez de somar zero. Está anotado como condição da fase do
+-- financeiro em docs/ARQUITETURA.md.
+alter table app.procedures
+  add column source text not null default 'cadastro'
+    check (source in ('cadastro', 'importado'));
+
+comment on column app.procedures.source is
+  'importado: criado pela importação de agenda, com preço zero que ninguém cadastrou. O Caixa conta, não soma.';
 
 -- ---------------------------------------------------------------------
 -- O relatório da importação

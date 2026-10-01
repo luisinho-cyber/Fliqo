@@ -42,7 +42,9 @@ export interface ResultadoDaLinha {
  *
  * O preço nasce zero e a duração no padrão — e isso NÃO é um dado financeiro
  * inventado: é exatamente por causa disso que o modo convidado desliga o financeiro.
- * A duração real quem mede é a view da 0011, depois dos primeiros atendimentos.
+ * O procedimento criado assim guarda `source = 'importado'`, para que o Caixa possa
+ * dizer "N procedimentos sem preço cadastrado" em vez de somar zero no dia em que a
+ * clínica desligar a flag.
  */
 const DURACAO_PADRAO_MIN = 30;
 
@@ -87,6 +89,10 @@ async function procedimentoPorNome(
       name: nome,
       duration_minutes: DURACAO_PADRAO_MIN,
       price_cents: 0,
+      // A origem marcada: o preço zero não foi cadastrado por ninguém, e o Caixa
+      // precisa poder contar esses procedimentos em vez de somá-los. Sem isto, no dia
+      // em que a clínica desligar o modo convidado, a tela de dinheiro mente verde.
+      source: 'importado',
     })
     .returning(['id', 'duration_minutes', 'price_cents'])
     .executeTakeFirstOrThrow();
@@ -134,7 +140,12 @@ export async function gravarLinha(
         (${linha.inicioLocal}::timestamp at time zone ${fuso}),
         (${linha.inicioLocal}::timestamp at time zone ${fuso}) + make_interval(mins => ${proc.duracaoMin}),
         ${proc.precoCents}, 'importado')
-      on conflict (clinic_id, professional_id, starts_at, patient_id) do nothing
+      -- O predicado do índice vai no alvo porque ele é PARCIAL: sem ele o Postgres
+      -- não infere qual índice usar. E o alvo é explícito porque "do nothing" sem
+      -- alvo engole violação de EXCLUDE junto, misturando "já estava aqui" com
+      -- "este horário é de outro paciente".
+      on conflict (clinic_id, professional_id, starts_at, patient_id)
+        where (source = 'importado') do nothing
       returning id
     `.execute(trx);
 
