@@ -269,17 +269,17 @@ const ESTADOS: Record<string, { exige: (string | RegExp)[]; proibe?: string[] }>
     proibe: ['opacity'],
   },
   /*
-   * O par planejado × real da tela Pontualidade. Entra nesta tabela, e não numa
-   * lista à parte, porque é o MESMO par da faixa do dia usado fora dela: o
-   * tracejado é o que foi planejado, o sólido é o que aconteceu (DESIGN.md).
+   * O par planejado × real fora da faixa do dia. Entra nesta tabela porque é o mesmo
+   * par — pela FORMA. A cor não atravessa: `agora` quer dizer este minuto ou o atraso
+   * em curso, e passado medido não é nenhum dos dois (DESIGN.md).
    */
   '.medida .planejado': {
-    exige: [/border:[^;]*dashed var\(--color-agora\)/],
-    proibe: ['background-color'],
+    exige: [/border:[^;]*dashed var\(--color-ink-3\)/],
+    proibe: ['background-color', '--color-agora'],
   },
   '.medida .real': {
-    exige: ['--color-agora-tinta', /border:[^;]*solid var\(--color-agora\)/],
-    proibe: ['dashed'],
+    exige: ['background-color: var(--color-ink-3)'],
+    proibe: ['dashed', '--color-agora'],
   },
 };
 
@@ -326,33 +326,45 @@ describe('a tabela de estados está desenhada', () => {
   });
 
   /**
-   * A amarra entre os dois pares.
+   * A amarra entre os dois pares, e o limite do âmbar.
    *
-   * "Deve parecer a mesma coisa" é uma frase, e frase não sobrevive ao terceiro
-   * refactor. O que sobrevive é o teste: o tracejado da Pontualidade usa o mesmo
-   * token e a mesma forma do contorno fantasma da faixa, e o sólido usa o mesmo
-   * preenchimento do bloco atrasado. Trocar o âmbar da faixa por outro token sem
-   * trocar o da Pontualidade quebra aqui, que é o dia em que as duas telas
-   * começariam a contar a mesma história com desenhos diferentes.
+   * O que atravessa as telas é a FORMA: vazado tracejado para o que foi planejado,
+   * cheio para o que aconteceu. Isso vale na faixa do dia e na Pontualidade, e o teste
+   * exige nos dois.
+   *
+   * A COR não atravessa, e este teste é a guarda disso. `agora` significa este minuto
+   * ou o atraso em curso; a causa medida do atraso é passado, e um terceiro significado
+   * no âmbar o faria deixar de ser legível de relance. Âmbar na Pontualidade quebra
+   * aqui — foi exatamente o erro que esta linha existe para não deixar voltar.
    */
-  it('o par planejado × real é o mesmo par da faixa do dia', () => {
+  it('o par planejado × real é o mesmo da faixa pela forma, e o âmbar fica na faixa', () => {
     const fantasma = bloco(css, '.fantasma');
     const planejado = bloco(css, '.medida .planejado');
     const atrasado = bloco(css, '.bloco.atrasado');
     const real = bloco(css, '.medida .real');
 
-    // Tracejado = planejado, nos dois lugares, no mesmo token.
+    // A forma: vazado tracejado nos dois lugares que mostram o planejado.
     for (const corpo of [fantasma, planejado]) {
-      expect(corpo).toMatch(/border:[^;]*dashed var\(--color-agora\)/);
+      expect(corpo, 'o planejado é vazado e tracejado em toda tela').toMatch(/dashed/);
+      expect(corpo, 'o tracejado preenchido deixa de ser "o que foi planejado"').not.toContain(
+        'background-color',
+      );
     }
-    // Sólido = aconteceu, com o mesmo preenchimento.
+    // E cheio nos dois que mostram o que aconteceu.
     for (const corpo of [atrasado, real]) {
-      expect(corpo).toContain('--color-agora-tinta');
+      expect(corpo, 'o que aconteceu é cheio').toContain('background-color');
+      expect(corpo).not.toMatch(/dashed/);
     }
-    // E o tracejado nunca é preenchido: o que ele mostra é uma ausência.
-    expect(planejado, 'o tracejado preenchido deixa de ser "o que foi planejado"').not.toContain(
-      'background-color',
-    );
+
+    // A cor: âmbar é da faixa, onde a distância É o atraso de agora.
+    expect(fantasma).toContain('--color-agora');
+    expect(atrasado).toContain('--color-agora');
+    for (const corpo of [planejado, real]) {
+      expect(
+        corpo,
+        'âmbar quer dizer este minuto ou atraso em curso; passado medido não é nenhum dos dois',
+      ).not.toContain('--color-agora');
+    }
   });
 
   it('livre e cancelado são a mesma hachura, sem raio e sem borda', () => {

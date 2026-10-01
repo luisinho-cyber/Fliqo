@@ -248,18 +248,23 @@
   }
 
   /*
-   * Planejado × real: o MESMO par do atraso, fora da Linha do Dia.
+   * Planejado × real fora da Linha do Dia: o mesmo par, pela FORMA.
    *
-   * Na faixa do dia, o contorno tracejado âmbar é onde a consulta deveria começar
-   * e o bloco sólido é onde ela começa de verdade; a distância entre os dois é o
-   * atraso. Aqui a pergunta é a mesma um nível acima: a barra tracejada é a duração
-   * que o cadastro RESERVA, a sólida é a que o procedimento LEVA, e a distância
-   * entre as duas é de onde o atraso da tarde vem.
+   * Na faixa do dia, o contorno tracejado é onde a consulta deveria começar e o
+   * bloco sólido é onde ela começa de verdade; lá o par é âmbar porque a distância
+   * entre os dois É o atraso acontecendo agora.
    *
-   * Por isso a forma e os tokens são os mesmos, e não parecidos: tracejado de 1,5px
-   * em `agora` contra preenchimento `agora-tinta` com traço `agora`. Quem aprendeu
-   * a ler a faixa já sabe ler isto sem legenda nova. Há teste que amarra os dois
-   * pares — mudar um sem o outro quebra alto.
+   * Aqui a pergunta é a mesma — o que foi planejado contra o que aconteceu — mas o
+   * assunto é passado MEDIDO, não este minuto: a barra vazada é a duração que o
+   * cadastro reserva, a cheia é a que o procedimento leva. Então a forma é a mesma e
+   * a cor NÃO é: âmbar quer dizer este minuto ou o atraso em curso, e um terceiro
+   * significado o deixaria de ser legível de relance, que é a única coisa que ele
+   * existe para fazer.
+   *
+   * `ink-3` é marca não textual com piso de 3:1, que é exatamente este trabalho.
+   * Vazado contra cheio carrega a leitura sozinho — é a regra "nunca só matiz" levada
+   * até o fim, onde não há matiz nenhum. Há teste que amarra a forma nos dois lugares
+   * e exige que só a faixa use âmbar.
    */
   .medida {
     position: relative;
@@ -276,15 +281,14 @@
     display: block;
     height: 12px;
     border-radius: var(--radius-sm);
-    border: 1.5px dashed var(--color-agora);
+    border: 1.5px dashed var(--color-ink-3);
   }
   .medida .real {
     display: block;
     height: 12px;
     border-radius: var(--radius-sm);
     margin-top: 3px;
-    background-color: var(--color-agora-tinta);
-    border: 1.5px solid var(--color-agora);
+    background-color: var(--color-ink-3);
   }
 
   /* Glifo por severidade: quadrado = risco, círculo = atraso, losango = resolvido. */
