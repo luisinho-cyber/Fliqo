@@ -10,9 +10,12 @@ export interface ClinicaNaTela {
   nome: string;
 }
 
+/** Mesma lista do `check` de clinic_members. App não importa app, então ela se repete aqui. */
+export type PapelNaClinica = 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+
 export interface ClinicaDaPessoa extends ClinicaNaTela {
   /** Papel na clínica. Serve para não oferecer o que a API vai negar com 403. */
-  papel: 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+  papel: PapelNaClinica;
   /** Modo convidado: a agenda vive em outro sistema e a Fliqo opera sobre ela. */
   modoConvidado: boolean;
 }
@@ -102,6 +105,59 @@ export interface Hoje {
   consultas: ConsultaDaTela[];
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
+  /** Vazio para quem não é dono: só ele pode aplicar o ajuste. */
+  sugestoesDeDuracao: SugestaoDeDuracaoNaTela[];
+}
+
+export interface SugestaoDeDuracaoNaTela {
+  procedimentoId: string;
+  nome: string;
+  cadastradaMin: number;
+  novaDuracaoMin: number;
+  medianaMin: number;
+  amostra: number;
+}
+
+/**
+ * A sugestão como a API a entrega. O `motivo` da recusa chega junto porque a tela
+ * escreve coisas diferentes para "ainda não medimos o bastante" e "o cadastro está
+ * certo" — são notícias diferentes para o dono.
+ */
+export type SugestaoDaApi =
+  | { sugerir: false; motivo: 'amostra_pequena' | 'divergencia_pequena' }
+  | {
+      sugerir: true;
+      cadastradaMin: number;
+      novaDuracaoMin: number;
+      medianaMin: number;
+      amostra: number;
+    };
+
+export interface ProfissionalNaPontualidade {
+  id: string;
+  nome: string;
+  atendimentos: number;
+  noHorario: number;
+  noHorarioPct: number | null;
+  atrasoMedioMin: number;
+}
+
+export interface ProcedimentoNaPontualidade {
+  id: string;
+  nome: string;
+  cadastradaMin: number;
+  medianaMin: number;
+  amostra: number;
+  ajustadaEm: string | null;
+  sugestao: SugestaoDaApi;
+}
+
+export interface Pontualidade {
+  clinica: ClinicaNaTela;
+  de: string;
+  ate: string;
+  profissionais: ProfissionalNaPontualidade[];
+  procedimentos: ProcedimentoNaPontualidade[];
 }
 
 /** Mesma lista do `check` da 0008. App não importa app, então ela se repete aqui. */

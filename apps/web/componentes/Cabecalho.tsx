@@ -15,7 +15,7 @@ export function Cabecalho({
   return (
     <header className="bg-paper border-fio flex flex-wrap items-center gap-5 border-b px-5 py-3">
       <Marca />
-      <Abas atual={atual} ehDono={clinica.papel === 'dono'} modoConvidado={clinica.modoConvidado} />
+      <Abas atual={atual} papel={clinica.papel} modoConvidado={clinica.modoConvidado} />
       <div className="ml-auto flex items-center gap-3">
         {clinicas.length > 1 ? (
           <form action={escolherClinica} className="flex items-center gap-2">

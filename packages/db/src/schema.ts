@@ -82,6 +82,13 @@ export interface TabelaProcedimentos {
    * cadastrou. O Caixa conta esses, não soma.
    */
   source: ComDefault<'cadastro' | 'importado'>;
+  /**
+   * Quem ajustou a duração, e quando. Inseparáveis pelo check `duracao_carimbada`
+   * (0011): duração cadastrada decide quantos pacientes cabem no dia, e mudança
+   * dessas sem autor é a discussão de segunda-feira que não tem resposta.
+   */
+  duration_updated_at: ColumnType<Date | null, Date | null, Date | null>;
+  duration_updated_by: ColumnType<string | null, string | null, string | null>;
 }
 
 /** Uma importação de agenda do modo convidado, com as contas que têm de fechar (0012). */
@@ -426,6 +433,8 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     priority_level: true,
     active: true,
     source: true,
+    duration_updated_at: true,
+    duration_updated_by: true,
   },
   'app.schedule_imports': {
     id: true,

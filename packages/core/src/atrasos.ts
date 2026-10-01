@@ -9,6 +9,15 @@
  *   3. MOSTRA a causa: quanto cada procedimento dura de verdade com cada profissional.
  */
 
+import {
+  AMOSTRA_MINIMA,
+  medianaDe,
+  sugerirDuracaoPelaMediana,
+  SUGESTAO_PADRAO,
+  type OpcoesDeSugestao,
+  type SugestaoDeDuracao,
+} from './pontualidade';
+
 const MIN = 60_000;
 
 export interface ConsultaDoDia {
@@ -187,24 +196,24 @@ export function esperandoDemais(
 
 /**
  * A causa raiz: duração real vs. duração na agenda, por profissional e procedimento.
- * Usa a mediana (um atendimento que travou não distorce) e exige amostra mínima.
+ * A porta para quem tem a amostra CRUA em mão: calcula a mediana e entrega a
+ * regra a `sugerirDuracaoPelaMediana`, em pontualidade.ts. O painel não passa por
+ * aqui — ele recebe a mediana já calculada pela view e chama a regra direto.
  */
 export function sugerirDuracao(
-  duracoesReaisMin: number[],
+  duracoesReaisMin: readonly number[],
   duracaoNaAgendaMin: number,
-  opcoes = { amostraMinima: 8, diferencaMinimaMin: 10, arredondarPara: 5 },
-):
-  | { sugerir: false }
-  | { sugerir: true; novaDuracaoMin: number; medianaMin: number; amostra: number } {
-  if (duracoesReaisMin.length < opcoes.amostraMinima) return { sugerir: false };
-  const ord = [...duracoesReaisMin].sort((a, b) => a - b);
-  const meio = Math.floor(ord.length / 2);
-  // amostraMinima >= 1 garante que meio e meio-1 estão dentro do array.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const mediana = ord.length % 2 ? ord[meio]! : (ord[meio - 1]! + ord[meio]!) / 2;
-  if (Math.abs(mediana - duracaoNaAgendaMin) < opcoes.diferencaMinimaMin) return { sugerir: false };
-  const nova = Math.ceil(mediana / opcoes.arredondarPara) * opcoes.arredondarPara;
-  return { sugerir: true, novaDuracaoMin: nova, medianaMin: mediana, amostra: ord.length };
+  opcoes: OpcoesDeSugestao = SUGESTAO_PADRAO,
+): SugestaoDeDuracao {
+  const mediana = medianaDe(duracoesReaisMin);
+  // Sem nenhuma medida não há o que comparar, e "amostra pequena" é a resposta
+  // honesta: é o mesmo motivo por que três atendimentos não bastam.
+  if (mediana === undefined) return { sugerir: false, motivo: 'amostra_pequena' };
+  return sugerirDuracaoPelaMediana(
+    { medianaMin: mediana, amostra: duracoesReaisMin.length },
+    duracaoNaAgendaMin,
+    opcoes,
+  );
 }
 
 /** Indicadores de pontualidade do dia/mês para o painel do dono. */
@@ -230,7 +239,7 @@ export function pontualidade(previsoesFinalizadas: PrevisaoConsulta[], toleranci
 export function duracaoParaProjecao(
   medida: { medianaMin: number; amostra: number } | undefined,
   duracaoNaAgendaMin: number,
-  amostraMinima = 8,
+  amostraMinima = AMOSTRA_MINIMA,
 ): number {
   if (!medida || medida.amostra < amostraMinima) return duracaoNaAgendaMin;
   return Math.round(medida.medianaMin);

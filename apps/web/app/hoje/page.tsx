@@ -5,6 +5,7 @@ import { Decisoes } from '../../componentes/Decisoes';
 import { LinhaDoDia } from '../../componentes/LinhaDoDia';
 import { Manchete } from '../../componentes/Manchete';
 import { Marca } from '../../componentes/Marca';
+import { SugerirDuracao } from '../../componentes/SugerirDuracao';
 import { Toques } from '../../componentes/Toques';
 import { chamarApi } from '../../lib/api';
 import { clinicaEscolhida, tokenDaSessao } from '../../lib/servidor';
@@ -54,11 +55,7 @@ export default async function TelaHoje() {
       <Atualiza />
       <header className="bg-paper border-fio flex flex-wrap items-center gap-5 border-b px-5 py-3">
         <Marca />
-        <Abas
-          atual="/hoje"
-          ehDono={clinica.papel === 'dono'}
-          modoConvidado={clinica.modoConvidado}
-        />
+        <Abas atual="/hoje" papel={clinica.papel} modoConvidado={clinica.modoConvidado} />
         <div className="ml-auto flex items-center gap-3">
           {clinicas.dados.length > 1 ? (
             <form action={escolherClinica} className="flex items-center gap-2">
@@ -117,6 +114,15 @@ export default async function TelaHoje() {
           <h2 className="mb-3 text-base">Decisões de hoje</h2>
           <Decisoes decisoes={hoje.decisoes} />
         </section>
+
+        {/*
+          A causa do atraso vai embaixo da faixa, e não na coluna das decisões:
+          decisão de hoje some quando o dia acaba, e esta é uma decisão de cadastro
+          que vale para todos os dias seguintes.
+        */}
+        <div className="min-w-0 lg:col-span-2">
+          <SugerirDuracao sugestoes={hoje.sugestoesDeDuracao} />
+        </div>
       </main>
     </div>
   );

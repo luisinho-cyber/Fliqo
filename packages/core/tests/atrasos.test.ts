@@ -106,6 +106,7 @@ describe('sala de espera e causa raiz', () => {
   it('sugere corrigir a duração do procedimento na agenda', () => {
     expect(sugerirDuracao([50, 55, 52, 60, 48, 55, 58, 53], 40)).toEqual({
       sugerir: true,
+      cadastradaMin: 40,
       novaDuracaoMin: 55,
       medianaMin: 54,
       amostra: 8,
@@ -113,8 +114,19 @@ describe('sala de espera e causa raiz', () => {
   });
 
   it('não sugere com pouca amostra nem por diferença pequena', () => {
-    expect(sugerirDuracao([60, 60, 60], 40)).toEqual({ sugerir: false });
-    expect(sugerirDuracao([44, 45, 46, 45, 44, 46, 45, 45], 40)).toEqual({ sugerir: false });
+    // O motivo separa as duas recusas, e elas não são a mesma coisa: amostra
+    // pequena volta a ser sugestão quando o procedimento for feito mais vezes;
+    // divergência pequena quer dizer que o cadastro está certo.
+    expect(sugerirDuracao([60, 60, 60], 40)).toEqual({
+      sugerir: false,
+      motivo: 'amostra_pequena',
+    });
+    expect(sugerirDuracao([44, 45, 46, 45, 44, 46, 45, 45], 40)).toEqual({
+      sugerir: false,
+      motivo: 'divergencia_pequena',
+    });
+    // Nenhuma medida é o mesmo problema que medida de menos.
+    expect(sugerirDuracao([], 40)).toEqual({ sugerir: false, motivo: 'amostra_pequena' });
   });
 
   it('pontualidade do profissional', () => {
