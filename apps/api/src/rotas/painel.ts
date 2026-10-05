@@ -1,12 +1,4 @@
-import {
-  agenda,
-  alertas,
-  atrasos,
-  comoConexaoDoBoss,
-  fila,
-  pacientes,
-  procedimentos,
-} from '@fliqo/db';
+import { agenda, alertas, atrasos, comoConexaoDoBoss, fila, pacientes } from '@fliqo/db';
 import { FILA_ATRASOS, FILA_OFERTA } from '@fliqo/db/fila';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -185,11 +177,6 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
     return r.valor
       ? reply.send(r.valor)
       : reply.code(409).send({ erro: 'consentimento_ja_registrado' });
-  });
-
-  app.get('/api/procedimentos', async (req, reply) => {
-    const r = await comUsuario(ctx, req, reply, (trx) => procedimentos.listarAtivos(trx));
-    return r.respondido ? reply : reply.send(r.valor);
   });
 
   app.get('/api/fila', async (req, reply) => {

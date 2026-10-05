@@ -15,6 +15,7 @@ import { registrarHoje } from './rotas/hoje';
 import { registrarImportacao } from './rotas/importacao';
 import { registrarPainel } from './rotas/painel';
 import { registrarPontualidade } from './rotas/pontualidade';
+import { registrarProcedimentos } from './rotas/procedimentos';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -115,6 +116,7 @@ export function construirApp(dep: Dependencias): FastifyInstance {
       registrarImportacao(painel, { db, segredoJwt, boss });
       registrarPontualidade(painel, { db, segredoJwt, boss });
       registrarCaixa(painel, { db, segredoJwt, boss });
+      registrarProcedimentos(painel, { db, segredoJwt, boss });
       registrarConexao(painel, {
         db,
         segredoJwt,

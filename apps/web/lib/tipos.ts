@@ -293,3 +293,26 @@ export interface Caixa {
   porProfissional: LinhaNaTela[];
   porProcedimento: LinhaNaTela[];
 }
+
+// ---------------------------------------------------------------------------
+// Cadastro de procedimentos
+// ---------------------------------------------------------------------------
+
+export interface ProcedimentoNaTela {
+  id: string;
+  nome: string;
+  duracaoMinutos: number;
+  precoCents: number;
+  ativo: boolean;
+  /** Veio da importação de agenda do outro sistema. */
+  daImportacao: boolean;
+  /** Preço que ninguém cadastrou. Não é cortesia — é a mesma pergunta do Caixa. */
+  semPreco: boolean;
+  consultas: number;
+}
+
+export interface Procedimentos {
+  podeEditar: boolean;
+  procedimentos: ProcedimentoNaTela[];
+  semPreco: number;
+}

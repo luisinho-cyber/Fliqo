@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { chamarApi } from '../lib/api';
+import { centavosDoCampo } from '../lib/formato';
 import type { RelatorioDaImportacao, SaidaDaImportacao } from '../lib/tipos';
 import { criarClienteSupabase, emProducao, opcoesDoCookie } from '../lib/sessao';
 import { clinicaEscolhida, COOKIE_DA_CLINICA, tokenDaSessao } from '../lib/servidor';
@@ -186,6 +187,38 @@ export async function importarAgenda(pedido: {
   return r.dados.ok
     ? { ok: true, relatorio: r.dados.relatorio }
     : { ok: false, erro: r.dados.motivo };
+}
+
+/**
+ * Cadastrar, editar e (in)ativar procedimento.
+ *
+ * Preço chega da tela em CENTAVOS inteiros: o campo é de reais com vírgula, e quem
+ * converte é `centavosDoCampo`, uma vez, em lib/formato.ts. Mandar reais daqui faria a
+ * API receber float e a regra 1 do CLAUDE.md morrer na borda.
+ */
+export async function salvarProcedimento(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('procedimento'));
+  const corpo = {
+    nome: texto(formulario.get('nome')).trim(),
+    duracaoMinutos: Number(texto(formulario.get('duracao'))),
+    precoCents: centavosDoCampo(texto(formulario.get('preco'))),
+  };
+
+  const r = await naApi(id === '' ? '/api/procedimentos' : `/api/procedimentos/${id}`, corpo);
+  revalidatePath('/procedimentos');
+  // O preço mudou: o Caixa e a lista de pendências dele mudam junto.
+  revalidatePath('/caixa');
+  revalidatePath('/hoje');
+  if (!r.ok) redirect('/procedimentos?aviso=nome_repetido');
+  redirect('/procedimentos?aviso=salvo');
+}
+
+export async function ativarProcedimento(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('procedimento'));
+  const ativo = texto(formulario.get('ativo')) === 'sim';
+  await naApi(`/api/procedimentos/${id}/ativo`, { ativo });
+  revalidatePath('/procedimentos');
+  revalidatePath('/hoje');
 }
 
 /** Um POST na nossa API, já com o portador e a clínica da sessão. */
