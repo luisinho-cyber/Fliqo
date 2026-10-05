@@ -49,14 +49,27 @@ export type ResultadoEnvio =
  */
 export type MotivoDeFalha = 'recusado' | 'temporario';
 
-/** Templates da régua de confirmação. Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido na volta. */
+/**
+ * Templates da régua de confirmação.
+ *
+ * Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido
+ * na volta. A ORDEM dos botões é parte do contrato — o envio manda o payload por índice
+ * (veja `enviarTemplate` em meta.ts), então botão fora de ordem na Meta entrega o payload
+ * errado ao botão certo, sem erro nenhum.
+ *
+ * `variaveis` é quantos `{{n}}` o corpo aprovado na Meta tem de ter. Template aprovado com
+ * uma variável que o código não manda faz TODO envio falhar por número de parâmetros — o
+ * mesmo sintoma do nome errado, e na mesma hora ruim. O cliente falso dos testes confere
+ * esta contagem em cada envio, e docs/TEMPLATES.md é conferido contra ela.
+ */
 export const TEMPLATES = {
   confirmacao: {
     nome: 'confirmacao_consulta',
+    variaveis: 0,
     botoes: [PAYLOAD_BOTOES.CONFIRMAR, PAYLOAD_BOTOES.REMARCAR, PAYLOAD_BOTOES.CANCELAR],
   },
-  lembreteFinal: { nome: 'lembrete_final', botoes: [] as string[] },
-  ofertaDeVaga: { nome: 'oferta_de_vaga', botoes: [PAYLOAD_BOTOES.QUERO_VAGA] },
+  lembreteFinal: { nome: 'lembrete_final', variaveis: 0, botoes: [] as string[] },
+  ofertaDeVaga: { nome: 'oferta_de_vaga', variaveis: 0, botoes: [PAYLOAD_BOTOES.QUERO_VAGA] },
   /**
    * Aviso de atraso. "Prefiro remarcar" reusa o payload de remarcação: o atraso
    * é da clínica, e o fluxo de remarcação não cobra taxa de cancelamento —
@@ -64,8 +77,10 @@ export const TEMPLATES = {
    */
   atraso: {
     nome: 'aviso_de_atraso',
+    /** {{1}} minutos de atraso, {{2}} novo horário previsto. Nesta ordem. */
+    variaveis: 2,
     botoes: [PAYLOAD_BOTOES.CIENTE_DO_ATRASO, PAYLOAD_BOTOES.REMARCAR],
   },
-  /** O atraso passou: o horário marcado volta a valer. */
-  normalizou: { nome: 'atraso_normalizou', botoes: [] as string[] },
+  /** O atraso passou: o horário marcado volta a valer. {{1}} é o horário original. */
+  normalizou: { nome: 'atraso_normalizou', variaveis: 1, botoes: [] as string[] },
 } as const;

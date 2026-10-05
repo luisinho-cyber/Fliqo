@@ -1,10 +1,11 @@
 import type { BlocoResposta, ClienteLlm, PedidoLlm, RespostaLlm } from '@fliqo/ai';
-import type {
-  ClienteWhatsApp,
-  EnvioDeDigitando,
-  EnvioDeTemplate,
-  EnvioDeTexto,
-  ResultadoEnvio,
+import {
+  TEMPLATES,
+  type ClienteWhatsApp,
+  type EnvioDeDigitando,
+  type EnvioDeTemplate,
+  type EnvioDeTexto,
+  type ResultadoEnvio,
 } from '@fliqo/whatsapp';
 
 /**
@@ -29,7 +30,16 @@ export class WhatsappFalso implements ClienteWhatsApp {
     this.roteiro.push({ ok: false, motivo: 'recusado', detalhe: 'template inexistente' });
   }
 
+  /**
+   * Além de guardar o envio, CONFERE o contrato do template.
+   *
+   * Fica aqui, e não num teste próprio, porque assim todo teste do worker que manda
+   * mensagem cobra a contagem de graça, em cada envio, inclusive os que ainda não
+   * existem. Variável a mais ou a menos do que o template aprovado tem faz a Meta recusar
+   * o envio inteiro — e esse erro só apareceria com a clínica esperando.
+   */
   enviarTemplate(p: EnvioDeTemplate): Promise<ResultadoEnvio> {
+    conferirContrato(p);
     const roteirizado = this.roteiro.shift();
     if (roteirizado && !roteirizado.ok) return Promise.resolve(roteirizado);
     this.enviados.push(p);
@@ -46,6 +56,48 @@ export class WhatsappFalso implements ClienteWhatsApp {
   marcarDigitando(p: EnvioDeDigitando): Promise<void> {
     this.digitando.push(p);
     return Promise.resolve();
+  }
+}
+
+/** Todo template declarado, por nome, para o cliente falso achar o contrato de cada envio. */
+interface ContratoDoTemplate {
+  nome: string;
+  variaveis: number;
+  botoes: readonly string[];
+}
+
+// A chave é `string` e não a união dos nomes: o que chega em `enviarTemplate` é string, e
+// é justamente o nome DESCONHECIDO que esta tabela precisa poder não achar.
+const PORTIPO = new Map<string, ContratoDoTemplate>(
+  Object.values(TEMPLATES).map((t) => [t.nome, t]),
+);
+
+function conferirContrato(p: EnvioDeTemplate): void {
+  const declarado = PORTIPO.get(p.template);
+  if (declarado === undefined) {
+    throw new Error(
+      `envio para o template "${p.template}", que não está em TEMPLATES. ` +
+        'Nome de template só existe lá, e é por nome que a Meta encontra.',
+    );
+  }
+
+  const quantas = p.variaveis?.length ?? 0;
+  if (quantas !== declarado.variaveis) {
+    throw new Error(
+      `o template "${p.template}" manda ${String(quantas)} variável(is) e o contrato ` +
+        `declara ${String(declarado.variaveis)}. O corpo aprovado na Meta tem ` +
+        `${String(declarado.variaveis)} {{n}}: número diferente faz a Meta recusar o envio. ` +
+        'Se a mudança é intencional, mude TEMPLATES e docs/TEMPLATES.md juntos.',
+    );
+  }
+
+  const botoes = p.botoes ?? [];
+  if (botoes.join('|') !== declarado.botoes.join('|')) {
+    throw new Error(
+      `os botões do template "${p.template}" saíram em ordem diferente da declarada. ` +
+        'O payload vai por ÍNDICE: fora de ordem, o paciente toca num botão e o sistema ' +
+        'entende outro, sem erro nenhum.',
+    );
   }
 }
 
