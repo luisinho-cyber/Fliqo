@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { chamarApi } from '../lib/api';
-import { centavosDoCampo } from '../lib/formato';
+import { centavosDoCampo, retornoDoCampo } from '../lib/formato';
 import type { RelatorioDaImportacao, SaidaDaImportacao } from '../lib/tipos';
 import { criarClienteSupabase, emProducao, opcoesDoCookie } from '../lib/sessao';
 import { clinicaEscolhida, COOKIE_DA_CLINICA, tokenDaSessao } from '../lib/servidor';
@@ -202,6 +202,7 @@ export async function salvarProcedimento(formulario: FormData): Promise<void> {
     nome: texto(formulario.get('nome')).trim(),
     duracaoMinutos: Number(texto(formulario.get('duracao'))),
     precoCents: centavosDoCampo(texto(formulario.get('preco'))),
+    retorno: retornoDoCampo(texto(formulario.get('retorno'))),
   };
 
   const r = await naApi(id === '' ? '/api/procedimentos' : `/api/procedimentos/${id}`, corpo);

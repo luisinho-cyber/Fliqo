@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { centavosDoCampo } from '../lib/formato';
+import { centavosDoCampo, retornoDoCampo } from '../lib/formato';
 
 /**
  * Reais digitados no campo para centavos inteiros.
@@ -63,5 +63,29 @@ describe('centavos do campo', () => {
   it('texto que não é número não vira preço aleatório', () => {
     expect(centavosDoCampo('abc')).toBe(0);
     expect(centavosDoCampo('-50')).toBe(0);
+  });
+});
+
+describe('o campo de retorno', () => {
+  it('vazio significa não pede retorno', () => {
+    expect(retornoDoCampo('')).toEqual({ exige: false });
+    expect(retornoDoCampo('   ')).toEqual({ exige: false });
+  });
+
+  it('número significa pede retorno naquele prazo', () => {
+    expect(retornoDoCampo('15')).toEqual({ exige: true, emDias: 15 });
+    expect(retornoDoCampo(' 180 ')).toEqual({ exige: true, emDias: 180 });
+  });
+
+  it('zero não é "não pede": é um prazo que a API vai recusar', () => {
+    // Apagar o campo é como se diz "não pede". Digitar 0 é erro de digitação, e esconder
+    // isso aqui faria o procedimento salvar sem o retorno que a pessoa quis cadastrar.
+    expect(retornoDoCampo('0')).toEqual({ exige: true, emDias: 0 });
+  });
+
+  it('valor que não é número vai para a API como NaN, e é ela que nomeia o campo', () => {
+    const r = retornoDoCampo('amanhã');
+    expect(r.exige).toBe(true);
+    expect(r.exige && Number.isNaN(r.emDias)).toBe(true);
   });
 });

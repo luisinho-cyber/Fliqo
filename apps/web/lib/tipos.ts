@@ -304,6 +304,11 @@ export interface ProcedimentoNaTela {
   duracaoMinutos: number;
   precoCents: number;
   ativo: boolean;
+  /**
+   * Pede retorno, e em quantos dias. União e não par de campos: "pede retorno em nada" é um
+   * estado que a tela não teria como mostrar, e aqui ele não se escreve.
+   */
+  retorno: { exige: false } | { exige: true; emDias: number };
   /** Veio da importação de agenda do outro sistema. */
   daImportacao: boolean;
   /** Preço que ninguém cadastrou. Não é cortesia — é a mesma pergunta do Caixa. */

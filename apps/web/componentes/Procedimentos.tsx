@@ -40,6 +40,7 @@ export function Procedimentos({ dados }: { dados: Dados }) {
                 <th className="py-2 font-semibold">Procedimento</th>
                 <th className="py-2 text-right font-semibold">Duração</th>
                 <th className="py-2 text-right font-semibold">Preço</th>
+                <th className="py-2 text-right font-semibold">Retorno</th>
                 <th className="py-2 text-right font-semibold">Consultas</th>
                 {dados.podeEditar ? <th className="py-2 font-semibold">Situação</th> : null}
               </tr>
@@ -102,6 +103,9 @@ function Linha({ p, podeEditar }: { p: ProcedimentoNaTela; podeEditar: boolean }
         <td className="py-3 text-right font-mono tabular-nums">
           {p.semPreco ? '—' : formatBRL(p.precoCents)}
         </td>
+        <td className="py-3 text-right font-mono tabular-nums">
+          {p.retorno.exige ? `${String(p.retorno.emDias)} dias` : '—'}
+        </td>
         <td className="py-3 text-right font-mono tabular-nums">{p.consultas}</td>
       </tr>
     );
@@ -155,6 +159,22 @@ function Linha({ p, podeEditar }: { p: ProcedimentoNaTela; podeEditar: boolean }
           className="border-fio bg-paper text-ink w-28 rounded-sm border px-2 py-1 text-right font-mono text-sm tabular-nums"
         />
       </td>
+      <td className="py-3 text-right">
+        <label className="sr-only" htmlFor={`retorno-${p.id}`}>
+          Retorno em quantos dias
+        </label>
+        <input
+          id={`retorno-${p.id}`}
+          name="retorno"
+          type="number"
+          min={1}
+          max={365}
+          placeholder="—"
+          defaultValue={p.retorno.exige ? p.retorno.emDias : ''}
+          form={`f-${p.id}`}
+          className="border-fio bg-paper text-ink w-20 rounded-sm border px-2 py-1 text-right font-mono text-sm tabular-nums"
+        />
+      </td>
       <td className="py-3 text-right font-mono tabular-nums">{p.consultas}</td>
       <td className="py-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -180,18 +200,14 @@ function Linha({ p, podeEditar }: { p: ProcedimentoNaTela; podeEditar: boolean }
 
 /** As marcas da linha: de onde veio, e se está fora da agenda. */
 function Marcas({ p }: { p: ProcedimentoNaTela }) {
-  if (!p.daImportacao && p.ativo) return null;
-  return (
-    <span className="text-ink-2 mt-0.5 block text-[12px]">
-      {p.daImportacao
-        ? p.semPreco
-          ? 'veio da importação, sem preço'
-          : 'veio da importação'
-        : null}
-      {p.daImportacao && !p.ativo ? ' · ' : null}
-      {p.ativo ? null : 'inativo: não aparece para marcar, e o histórico continua inteiro'}
-    </span>
-  );
+  const partes: string[] = [];
+  if (p.daImportacao)
+    partes.push(p.semPreco ? 'veio da importação, sem preço' : 'veio da importação');
+  if (!p.ativo) partes.push('inativo: não aparece para marcar, e o histórico continua inteiro');
+  // O retorno é característica de uso, não exceção: aparece na linha de todo mundo que pede.
+  if (p.retorno.exige) partes.push(`pede retorno em ${String(p.retorno.emDias)} dias`);
+  if (partes.length === 0) return null;
+  return <span className="text-ink-2 mt-0.5 block text-[12px]">{partes.join(' · ')}</span>;
 }
 
 function Formulario() {
@@ -238,6 +254,20 @@ function Formulario() {
             inputMode="decimal"
             placeholder="0,00"
             className="border-fio bg-paper text-ink mt-1 w-28 rounded-sm border px-2 py-1.5 text-right font-mono text-sm tabular-nums"
+          />
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold" htmlFor="novo-retorno">
+            Retorno (dias)
+          </label>
+          <input
+            id="novo-retorno"
+            name="retorno"
+            type="number"
+            min={1}
+            max={365}
+            placeholder="—"
+            className="border-fio bg-paper text-ink mt-1 w-24 rounded-sm border px-2 py-1.5 text-right font-mono text-sm tabular-nums"
           />
         </div>
         <button

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { Selectable } from 'kysely';
 import { ehViolacaoDeUnicidade } from '../erros';
 import type { TabelaProcedimentos } from '../schema';
@@ -40,6 +41,7 @@ export async function ajustarDuracao(
       duration_minutes: duracaoMinutos,
       duration_updated_by: autorUserId,
       duration_updated_at: em,
+      updated_at: em,
     })
     .where('id', '=', id)
     .returningAll()
@@ -65,10 +67,38 @@ export async function listarTodos(trx: Trx): Promise<Procedimento[]> {
   );
 }
 
+/**
+ * Pede retorno, e em quantos dias — num valor só.
+ *
+ * Dois campos independentes (`exigeRetorno` e `diasAteRetorno`) permitiriam "pede retorno
+ * em nada" e "não pede retorno, em 30 dias", que são dois estados que a tela teria de
+ * decidir como mostrar e que um relatório futuro contaria errado. Aqui o estado inválido
+ * não se escreve, e o check `procedures_followup_check` (0014) diz o mesmo no banco.
+ */
+export type Retorno = { exige: false } | { exige: true; emDias: number };
+
+/** As duas colunas, a partir do valor único. O único lugar que faz essa tradução. */
+function colunasDoRetorno(r: Retorno): {
+  requires_followup: boolean;
+  followup_days: number | null;
+} {
+  return r.exige
+    ? { requires_followup: true, followup_days: r.emDias }
+    : { requires_followup: false, followup_days: null };
+}
+
+/** O caminho de volta, para a tela e para a API. */
+export function retornoDe(p: Procedimento): Retorno {
+  return p.requires_followup && p.followup_days !== null
+    ? { exige: true, emDias: p.followup_days }
+    : { exige: false };
+}
+
 export interface ProcedimentoNovo {
   nome: string;
   duracaoMinutos: number;
   precoCents: number;
+  retorno: Retorno;
 }
 
 export type ResultadoDeCadastro =
@@ -100,6 +130,7 @@ export async function criar(
           name: p.nome,
           duration_minutes: p.duracaoMinutos,
           price_cents: p.precoCents,
+          ...colunasDoRetorno(p.retorno),
         })
         .returningAll()
         .executeTakeFirstOrThrow(),
@@ -122,6 +153,7 @@ export interface MudancaNoProcedimento {
   nome?: string | undefined;
   duracaoMinutos?: number | undefined;
   precoCents?: number | undefined;
+  retorno?: Retorno | undefined;
 }
 
 /**
@@ -161,7 +193,9 @@ export async function atualizar(
             ? {}
             : { duration_minutes: mudanca.duracaoMinutos }),
           ...(mudanca.precoCents === undefined ? {} : { price_cents: mudanca.precoCents }),
+          ...(mudanca.retorno === undefined ? {} : colunasDoRetorno(mudanca.retorno)),
           ...(mudouDuracao ? { duration_updated_by: autorUserId, duration_updated_at: em } : {}),
+          updated_at: em,
         })
         .where('id', '=', id)
         .returningAll()
@@ -185,10 +219,11 @@ export async function definirAtivo(
   trx: Trx,
   id: string,
   ativo: boolean,
+  em: Date,
 ): Promise<Procedimento | undefined> {
   return trx
     .updateTable('app.procedures')
-    .set({ active: ativo })
+    .set({ active: ativo, updated_at: em })
     .where('id', '=', id)
     .returningAll()
     .executeTakeFirst();
@@ -202,4 +237,54 @@ export async function consultasQueApontam(trx: Trx, id: string): Promise<number>
     .where('procedure_id', '=', id)
     .executeTakeFirstOrThrow();
   return Number(r.quantas);
+}
+
+/**
+ * O catálogo inicial, lido de packages/db/seeds/procedimentos.json.
+ *
+ * Existe porque clínica nova abre a tela de cadastro vazia e tem de digitar quatorze
+ * procedimentos antes de marcar a primeira consulta — e é nesse ponto que ela desiste e
+ * volta para a agenda de papel. Preço e duração são ponto de partida, e a tela existe
+ * justamente para corrigi-los.
+ */
+export interface CatalogoInicial {
+  odontologia: ProcedimentoNovo[];
+  estetica: ProcedimentoNovo[];
+}
+
+export function lerCatalogoInicial(): CatalogoInicial {
+  const caminho = new URL('../../seeds/procedimentos.json', import.meta.url);
+  const bruto = JSON.parse(readFileSync(caminho, 'utf8')) as CatalogoInicial;
+  return { odontologia: bruto.odontologia, estetica: bruto.estetica };
+}
+
+export interface ResultadoDaSemeadura {
+  criados: string[];
+  /** Os que já existiam, por nome. Semear duas vezes não duplica nem estoura. */
+  pulados: string[];
+}
+
+/**
+ * Semeia o catálogo numa clínica, pulando o que já existe.
+ *
+ * Idempotente de propósito, e não por conveniência: a semeadura acontece na criação da
+ * clínica, e criação de clínica é o tipo de fluxo que alguém repete depois de um erro de
+ * rede. Sem o `nome_repetido` tratado, a segunda tentativa estouraria no índice da 0013 e
+ * deixaria a clínica com metade do catálogo.
+ *
+ * Roda dentro de `withClinic`, como todo o resto: a RLS é quem garante que o catálogo
+ * entra na clínica certa, e não um `clinic_id` que quem chamou escolheu.
+ */
+export async function semear(
+  trx: Trx,
+  clinicId: string,
+  lista: readonly ProcedimentoNovo[],
+): Promise<ResultadoDaSemeadura> {
+  const saida: ResultadoDaSemeadura = { criados: [], pulados: [] };
+  for (const p of lista) {
+    const r = await criar(trx, clinicId, p);
+    if (r.ok) saida.criados.push(p.nome);
+    else saida.pulados.push(p.nome);
+  }
+  return saida;
 }

@@ -598,3 +598,242 @@ describe('quem pode o quê', () => {
     expect(procedimentos.map((p) => p.id)).not.toContain(c.procEletivo);
   });
 });
+
+describe('o retorno é característica do procedimento', () => {
+  it('cadastra pedindo retorno e devolve o prazo na lista', async () => {
+    const r = await chamar('POST', '/api/procedimentos', {
+      corpo: {
+        nome: 'Harmonização de mandíbula',
+        duracaoMinutos: 75,
+        precoCents: 280000,
+        retorno: { exige: true, emDias: 30 },
+      },
+    });
+    expect(r.statusCode).toBe(201);
+
+    const lista = await listar();
+    const p = lista.procedimentos.find((x) => x.nome === 'Harmonização de mandíbula');
+    expect(p?.retorno).toEqual({ exige: true, emDias: 30 });
+  });
+
+  it('quem não manda retorno fica sem pedir, e não com prazo zero', async () => {
+    // O padrão é explícito nos dois lados: `.default({ exige: false })` no Zod e
+    // `default false` na 0014. Prazo zero seria "retorno hoje", que é outra coisa.
+    await chamar('POST', '/api/procedimentos', {
+      corpo: { nome: 'Clareamento caseiro', duracaoMinutos: 30, precoCents: 40000 },
+    });
+    const lista = await listar();
+    expect(lista.procedimentos.find((x) => x.nome === 'Clareamento caseiro')?.retorno).toEqual({
+      exige: false,
+    });
+  });
+
+  it('pedir retorno sem dizer em quantos dias é 400, não erro de banco', async () => {
+    // Sem a união discriminada isto chegaria ao check da 0014 e voltaria como violação de
+    // constraint, que não é frase que se mostre a ninguém.
+    const r = await chamar('POST', '/api/procedimentos', {
+      corpo: {
+        nome: 'Sem prazo',
+        duracaoMinutos: 30,
+        precoCents: 1000,
+        retorno: { exige: true },
+      },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('prazo fora da faixa da migração é 400', async () => {
+    for (const emDias of [0, 366, -5]) {
+      const r = await chamar('POST', '/api/procedimentos', {
+        corpo: {
+          nome: `Fora da faixa ${String(emDias)}`,
+          duracaoMinutos: 30,
+          precoCents: 1000,
+          retorno: { exige: true, emDias },
+        },
+      });
+      expect(r.statusCode, `emDias=${String(emDias)}`).toBe(400);
+    }
+  });
+
+  it('prazo quebrado é 400: dia e meio não é prazo de retorno', async () => {
+    const r = await chamar('POST', '/api/procedimentos', {
+      corpo: {
+        nome: 'Prazo quebrado',
+        duracaoMinutos: 30,
+        precoCents: 1000,
+        retorno: { exige: true, emDias: 1.5 },
+      },
+    });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it('editar troca o prazo, e editar para não pedir apaga o prazo', async () => {
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: {
+        nome: 'Peeling químico',
+        duracaoMinutos: 45,
+        precoCents: 45000,
+        retorno: { exige: true, emDias: 15 },
+      },
+    });
+    const { id } = criado.json<{ id: string }>();
+
+    await chamar('POST', `/api/procedimentos/${id}`, {
+      corpo: { retorno: { exige: true, emDias: 21 } },
+    });
+    let p = (await listar()).procedimentos.find((x) => x.id === id);
+    expect(p?.retorno).toEqual({ exige: true, emDias: 21 });
+
+    await chamar('POST', `/api/procedimentos/${id}`, { corpo: { retorno: { exige: false } } });
+    p = (await listar()).procedimentos.find((x) => x.id === id);
+    // Não basta `exige: false`: o prazo tem de sair do banco, ou o check da 0014 recusaria.
+    expect(p?.retorno).toEqual({ exige: false });
+  });
+
+  it('a recepção não muda o retorno de ninguém', async () => {
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: { nome: 'Só a dona muda', duracaoMinutos: 30, precoCents: 1000 },
+    });
+    const { id } = criado.json<{ id: string }>();
+    const r = await chamar('POST', `/api/procedimentos/${id}`, {
+      userId: RECEPCAO_DA_A,
+      corpo: { retorno: { exige: true, emDias: 10 } },
+    });
+    expect(r.statusCode).toBe(403);
+  });
+
+  it('o retorno de outra clínica não é editável nem visível', async () => {
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: {
+        nome: 'Da clínica A só',
+        duracaoMinutos: 30,
+        precoCents: 1000,
+        retorno: { exige: true, emDias: 9 },
+      },
+    });
+    const { id } = criado.json<{ id: string }>();
+
+    const r = await chamar('POST', `/api/procedimentos/${id}`, {
+      userId: DONA_DA_B,
+      clinica: c.clinicB,
+      corpo: { retorno: { exige: false } },
+    });
+    // 404 e não 403: para a clínica B este procedimento não existe, e dizer "sem permissão"
+    // confirmaria que ele existe em algum lugar.
+    expect(r.statusCode).toBe(404);
+
+    const daB = await listar({ userId: DONA_DA_B, clinica: c.clinicB });
+    expect(daB.procedimentos.map((p) => p.nome)).not.toContain('Da clínica A só');
+  });
+});
+
+describe('o carimbo de quando o cadastro mudou', () => {
+  async function carimbos(id: string): Promise<{ criado: Date; mudado: Date }> {
+    const { rows } = await owner.query<{ created_at: Date; updated_at: Date }>(
+      'select created_at, updated_at from app.procedures where id = $1',
+      [id],
+    );
+    const linha = rows[0];
+    expect(linha).toBeDefined();
+    return { criado: linha?.created_at ?? new Date(0), mudado: linha?.updated_at ?? new Date(0) };
+  }
+
+  it('editar move o updated_at e deixa o created_at onde estava', async () => {
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: { nome: 'Carimbo na edição', duracaoMinutos: 30, precoCents: 10000 },
+    });
+    const { id } = criado.json<{ id: string }>();
+    const antes = await carimbos(id);
+
+    await chamar('POST', `/api/procedimentos/${id}`, { corpo: { precoCents: 12000 } });
+    const depois = await carimbos(id);
+
+    expect(depois.mudado.getTime()).toBeGreaterThan(antes.mudado.getTime());
+    expect(depois.criado.getTime()).toBe(antes.criado.getTime());
+  });
+
+  it('inativar também é mudança de cadastro, e move o carimbo', async () => {
+    // Sem isto, "o que mudou no cadastro desde ontem?" perderia justamente a mudança que
+    // tira um procedimento da agenda.
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: { nome: 'Carimbo ao inativar', duracaoMinutos: 30, precoCents: 10000 },
+    });
+    const { id } = criado.json<{ id: string }>();
+    const antes = await carimbos(id);
+
+    await chamar('POST', `/api/procedimentos/${id}/ativo`, { corpo: { ativo: false } });
+    const depois = await carimbos(id);
+    expect(depois.mudado.getTime()).toBeGreaterThan(antes.mudado.getTime());
+  });
+});
+
+describe('a duração cadastrada é a que a agenda reserva', () => {
+  it('encurtar o procedimento encurta a consulta MARCADA DEPOIS', async () => {
+    // O requisito "ends_at = starts_at + duração" não é uma função nova: é `agenda.criar`
+    // lendo `duration_minutes` do cadastro. O que este teste prova é que a tela de
+    // procedimentos alimenta esse caminho de verdade — editar aqui muda o que a agenda
+    // reserva amanhã, que é o motivo de a recepção ter acesso de leitura a esta tela.
+    const paciente = c.patients[3];
+    if (paciente === undefined) throw new Error('o cenário precisa de quatro pacientes');
+
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: { nome: 'Avaliação rápida', duracaoMinutos: 60, precoCents: 15000 },
+    });
+    const { id: procedimentoId } = criado.json<{ id: string }>();
+
+    await chamar('POST', `/api/procedimentos/${procedimentoId}`, {
+      corpo: { duracaoMinutos: 25 },
+    });
+
+    const inicio = new Date(Date.now() + 86_400_000 * 9);
+    const marcada = await chamar('POST', '/api/agenda', {
+      corpo: {
+        profissionalId: c.profA,
+        pacienteId: paciente,
+        procedimentoId,
+        inicio: inicio.toISOString(),
+      },
+    });
+    expect(marcada.statusCode).toBe(201);
+
+    const { rows } = await owner.query<{ minutos: number }>(
+      `select extract(epoch from (ends_at - starts_at)) / 60 as minutos
+         from app.appointments where id = $1`,
+      [marcada.json<{ id: string }>().id],
+    );
+    expect(Number(rows[0]?.minutos)).toBe(25);
+  });
+
+  it('a consulta JÁ MARCADA não muda de duração quando o cadastro muda', async () => {
+    // O espelho do teste do preço: a consulta guarda a própria janela em starts_at/ends_at,
+    // e mexer no cadastro não reescreve o passado nem a agenda de amanhã já combinada.
+    const paciente = c.patients[0];
+    if (paciente === undefined) throw new Error('o cenário precisa de um paciente');
+
+    const criado = await chamar('POST', '/api/procedimentos', {
+      corpo: { nome: 'Sessão longa', duracaoMinutos: 90, precoCents: 30000 },
+    });
+    const { id: procedimentoId } = criado.json<{ id: string }>();
+
+    const inicio = new Date(Date.now() + 86_400_000 * 10);
+    const marcada = await chamar('POST', '/api/agenda', {
+      corpo: {
+        profissionalId: c.profA,
+        pacienteId: paciente,
+        procedimentoId,
+        inicio: inicio.toISOString(),
+      },
+    });
+    const consultaId = marcada.json<{ id: string }>().id;
+
+    await chamar('POST', `/api/procedimentos/${procedimentoId}`, { corpo: { duracaoMinutos: 30 } });
+
+    const { rows } = await owner.query<{ minutos: number }>(
+      `select extract(epoch from (ends_at - starts_at)) / 60 as minutos
+         from app.appointments where id = $1`,
+      [consultaId],
+    );
+    expect(Number(rows[0]?.minutos)).toBe(90);
+  });
+});

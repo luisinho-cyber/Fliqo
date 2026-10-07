@@ -34,3 +34,23 @@ export function centavosDoCampo(valor: string): number {
   const centavos = Number(`${inteiros === '' ? '0' : inteiros}${decimais}`);
   return Number.isSafeInteger(centavos) && centavos >= 0 ? centavos : 0;
 }
+
+/** Pede retorno, e em quantos dias. O mesmo formato que a API espera. */
+export type RetornoDoCampo = { exige: false } | { exige: true; emDias: number };
+
+/**
+ * O campo "Retorno (dias)" vira o valor que a API espera.
+ *
+ * Um campo só, e não uma caixa "pede retorno" mais um número: com dois controles, marcar a
+ * caixa e deixar o número vazio é um estado que alguém vai produzir, e aí a tela tem de
+ * decidir o que mostrar para "pede retorno em (nada)". Vazio significa não pede, e é a única
+ * forma de dizer isso.
+ *
+ * Valor que não é inteiro positivo vai para a API como está, e é ela que recusa com o campo
+ * nomeado — adivinhar aqui esconderia o erro de digitação em vez de mostrá-lo.
+ */
+export function retornoDoCampo(valor: string): RetornoDoCampo {
+  const limpo = valor.trim();
+  if (limpo === '') return { exige: false };
+  return { exige: true, emDias: Number(limpo) };
+}

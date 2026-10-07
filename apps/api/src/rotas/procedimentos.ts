@@ -28,10 +28,27 @@ const PAPEIS_QUE_EDITAM: readonly PapelMembro[] = ['dono', 'financeiro'];
  */
 const TETO_DE_PRECO_CENTS = 10_000_000;
 
+/**
+ * O retorno chega como união discriminada, e não como par de campos.
+ *
+ * Com `exigeRetorno` e `diasAteRetorno` soltos, o corpo `{ exigeRetorno: true }` sem prazo
+ * passaria pelo Zod e morreria no check do banco com erro de constraint, que não é frase que
+ * se mostre a ninguém. Aqui a recusa é 400 com o campo nomeado.
+ *
+ * A faixa é a mesma da 0014 — 1 a 365 — porque limite repetido em dois lugares com valores
+ * diferentes é o jeito mais rápido de a tela aceitar o que o banco recusa.
+ */
+const RetornoPedido = z.discriminatedUnion('exige', [
+  z.object({ exige: z.literal(false) }),
+  z.object({ exige: z.literal(true), emDias: z.number().int().min(1).max(365) }),
+]);
+
 const Cadastro = z.object({
   nome: z.string().trim().min(2).max(120),
   duracaoMinutos: z.number().int().min(5).max(600),
   precoCents: z.number().int().min(0).max(TETO_DE_PRECO_CENTS),
+  // Padrão explícito: a maioria dos procedimentos não pede retorno, e o banco concorda.
+  retorno: RetornoPedido.default({ exige: false }),
 });
 
 /** Na edição todo campo é opcional, mas pelo menos um tem de vir. */
@@ -47,6 +64,8 @@ export interface ProcedimentoNaTela {
   duracaoMinutos: number;
   precoCents: number;
   ativo: boolean;
+  /** Pede retorno, e em quantos dias. Característica do procedimento, não da consulta. */
+  retorno: procedimentos.Retorno;
   /** Veio da importação de agenda do outro sistema (0012). */
   daImportacao: boolean;
   /**
@@ -133,7 +152,7 @@ export function registrarProcedimentos(app: FastifyInstance, ctx: ContextoPainel
       if (!PAPEIS_QUE_EDITAM.includes(u.papel)) return { negado: true as const };
       return {
         negado: false as const,
-        valor: await procedimentos.definirAtivo(trx, id, pedido.data.ativo),
+        valor: await procedimentos.definirAtivo(trx, id, pedido.data.ativo, new Date()),
       };
     });
 
@@ -156,6 +175,7 @@ async function montar(trx: Trx, papel: PapelMembro): Promise<RespostaProcediment
       duracaoMinutos: p.duration_minutes,
       precoCents,
       ativo: p.active,
+      retorno: procedimentos.retornoDe(p),
       daImportacao: p.source === 'importado',
       semPreco: p.source === 'importado' && precoCents === 0,
       consultas: await procedimentos.consultasQueApontam(trx, p.id),
