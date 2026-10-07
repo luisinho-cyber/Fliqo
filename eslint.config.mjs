@@ -44,9 +44,11 @@ export default tseslint.config(
     extends: [js.configs.recommended, ...tseslint.configs.strictTypeChecked],
     languageOptions: {
       parserOptions: {
-        // vitest.config.ts está fora do tsconfig (que cobre só src/ e tests/),
-        // mas ainda queremos lintá-lo.
-        projectService: { allowDefaultProject: ['vitest.config.ts'] },
+        // vitest.config.ts e playwright.config.ts estão fora do tsconfig (que cobre só
+        // src/ e tests/), mas ainda queremos lintá-los.
+        projectService: {
+          allowDefaultProject: ['vitest.config.ts', 'playwright.config.ts'],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
