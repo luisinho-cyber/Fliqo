@@ -630,8 +630,18 @@ describe('clínica nova: o esperado não inventa', () => {
     expect(corpo.procedencia).toMatchObject({ amostra: 30 });
   });
 
-  /** Cancelada CONTA no denominador: a pergunta é "vira dinheiro?", e cancelar também é não virar. */
-  it('cancelada passada entra no denominador do histórico', async () => {
+  /**
+   * Cancelada NÃO conta no denominador.
+   *
+   * O horário cancelado com aviso volta para a agenda, e a consulta que o reencaixa já está
+   * na amostra — contar a cancelada é contar o mesmo horário duas vezes, e a segunda vez é
+   * sempre contra a clínica. O erro cresce com a qualidade: arrancar aviso antecipado é o
+   * que a régua de confirmação faz, e cada aviso conquistado derrubaria a taxa medida.
+   *
+   * A conta em packages/db/tests/comparecimento.test.ts; aqui o que se prova é que a rota
+   * entrega esse número, e não um recalculado no caminho.
+   */
+  it('cancelada passada não entra no denominador do histórico', async () => {
     const paciente = c.patients[2];
     if (paciente === undefined) throw new Error('o cenário precisa de três pacientes');
     await comHistorico({
@@ -640,7 +650,7 @@ describe('clínica nova: o esperado não inventa', () => {
       semConfirmar: 0,
       compareceramSemConfirmar: 0,
     });
-    // Dez confirmadas e canceladas depois: a clínica perdeu essas dez.
+    // Dez confirmadas e canceladas depois. A clínica não perdeu nada: avisaram.
     for (let i = 0; i < 10; i++) {
       await owner.query(
         `insert into app.appointments
@@ -656,10 +666,10 @@ describe('clínica nova: o esperado não inventa', () => {
 
     await semear([{ status: 'confirmado', preco: 100_000, hora: 9 }]);
     const corpo = (await doCaixa()).json<RespostaCaixa>();
-    // 30 de 40 = 75%, não 100%: tirar as canceladas inflaria o esperado exatamente nas
-    // clínicas que mais cancelam.
-    expect(corpo.esperadoCents).toBe(75_000);
-    expect(corpo.procedencia).toMatchObject({ amostra: 40 });
+    // 30 de 30 = 100%. As dez canceladas não entram, e por isso a amostra continua 30: a
+    // versão que as contava devolvia 75% e uma amostra de 40.
+    expect(corpo.esperadoCents).toBe(100_000);
+    expect(corpo.procedencia).toMatchObject({ amostra: 30 });
   });
 
   it('o histórico é da clínica, não do vizinho', async () => {

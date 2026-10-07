@@ -229,9 +229,13 @@ export function grupoDa(status: StatusNoCaixa): GrupoDeComparecimento | undefine
 
 export interface AmostraDeComparecimento {
   /**
-   * Consultas PASSADAS do grupo. Inclui as canceladas de propósito: a pergunta é "esta
-   * consulta vira dinheiro?", e cancelar também é não virar. Tirar as canceladas do
-   * denominador inflaria o esperado exatamente nas clínicas que mais cancelam.
+   * Consultas PASSADAS do grupo com desfecho de comparecimento: realizada ou falta.
+   *
+   * Cancelada fica FORA, e não por otimismo. O horário cancelado volta para a agenda, e a
+   * consulta que o reencaixa já está nesta amostra — contar a cancelada é contar o mesmo
+   * horário duas vezes, sempre contra a clínica. O erro cresce com a qualidade: converter
+   * falta silenciosa em aviso antecipado é o que o produto faz, e cada aviso conquistado
+   * derrubaria a taxa medida.
    */
   total: number;
   /** Quantas viraram atendimento realizado. */
