@@ -22,12 +22,22 @@ export class WhatsappFalso implements ClienteWhatsApp {
 
   falharComTemporario(vezes: number): void {
     for (let i = 0; i < vezes; i++) {
-      this.roteiro.push({ ok: false, motivo: 'temporario', detalhe: 'instabilidade simulada' });
+      this.roteiro.push({
+        ok: false,
+        motivo: 'temporario',
+        falha: 'instabilidade_da_meta',
+        detalhe: 'instabilidade simulada',
+      });
     }
   }
 
   falharComRecusa(): void {
-    this.roteiro.push({ ok: false, motivo: 'recusado', detalhe: 'template inexistente' });
+    this.roteiro.push({
+      ok: false,
+      motivo: 'recusado',
+      falha: 'template_inexistente',
+      detalhe: 'template inexistente',
+    });
   }
 
   /**

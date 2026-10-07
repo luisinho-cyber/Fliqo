@@ -1,4 +1,5 @@
-import { PAYLOAD_BOTOES } from '@fliqo/core';
+import type { FalhaDaMeta } from './erros-meta';
+import { parametrosDoCorpo, TEMPLATES_META, type ChaveDeTemplate } from './templates';
 
 /**
  * O que o worker precisa do WhatsApp. É uma interface e não uma classe porque o
@@ -41,7 +42,8 @@ export interface EnvioDeTexto {
 }
 
 export type ResultadoEnvio =
-  { ok: true; wamid: string } | { ok: false; motivo: MotivoDeFalha; detalhe: string };
+  | { ok: true; wamid: string }
+  | { ok: false; motivo: MotivoDeFalha; falha: FalhaDaMeta; detalhe: string };
 
 /**
  * `recusado` é definitivo (template errado, número inválido): repetir não adianta.
@@ -50,37 +52,37 @@ export type ResultadoEnvio =
 export type MotivoDeFalha = 'recusado' | 'temporario';
 
 /**
- * Templates da régua de confirmação.
+ * Os templates que o worker envia, na forma que o envio precisa: nome, quantas variáveis e os
+ * payloads dos botões, em ordem.
  *
- * Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido
- * na volta. A ORDEM dos botões é parte do contrato — o envio manda o payload por índice
- * (veja `enviarTemplate` em meta.ts), então botão fora de ordem na Meta entrega o payload
- * errado ao botão certo, sem erro nenhum.
+ * DERIVADO de `TEMPLATES_META`, não escrito à mão. Antes havia duas listas — esta e o catálogo
+ * — e duas listas da mesma coisa divergem: bastava acrescentar uma variável no corpo e esquecer
+ * de mudar a contagem aqui para todo envio daquele template falhar com erro 132000. Agora a
+ * contagem é CONTADA do corpo e a ordem dos botões é a mesma do registro.
  *
- * `variaveis` é quantos `{{n}}` o corpo aprovado na Meta tem de ter. Template aprovado com
- * uma variável que o código não manda faz TODO envio falhar por número de parâmetros — o
- * mesmo sintoma do nome errado, e na mesma hora ruim. O cliente falso dos testes confere
- * esta contagem em cada envio, e docs/TEMPLATES.md é conferido contra ela.
+ * As chaves são as que o worker já usa. `confirmacao` e `ofertaDeVaga` apontam para os
+ * templates que estão no ar hoje; a virada para os `fliqo_*` troca o apontamento num lugar só.
  */
 export const TEMPLATES = {
-  confirmacao: {
-    nome: 'confirmacao_consulta',
-    variaveis: 0,
-    botoes: [PAYLOAD_BOTOES.CONFIRMAR, PAYLOAD_BOTOES.REMARCAR, PAYLOAD_BOTOES.CANCELAR],
-  },
-  lembreteFinal: { nome: 'lembrete_final', variaveis: 0, botoes: [] as string[] },
-  ofertaDeVaga: { nome: 'oferta_de_vaga', variaveis: 0, botoes: [PAYLOAD_BOTOES.QUERO_VAGA] },
-  /**
-   * Aviso de atraso. "Prefiro remarcar" reusa o payload de remarcação: o atraso
-   * é da clínica, e o fluxo de remarcação não cobra taxa de cancelamento —
-   * quem remarca não cancelou.
-   */
-  atraso: {
-    nome: 'aviso_de_atraso',
-    /** {{1}} minutos de atraso, {{2}} novo horário previsto. Nesta ordem. */
-    variaveis: 2,
-    botoes: [PAYLOAD_BOTOES.CIENTE_DO_ATRASO, PAYLOAD_BOTOES.REMARCAR],
-  },
-  /** O atraso passou: o horário marcado volta a valer. {{1}} é o horário original. */
-  normalizou: { nome: 'atraso_normalizou', variaveis: 1, botoes: [] as string[] },
+  confirmacao: paraEnvio('confirmacaoAtual'),
+  lembreteFinal: paraEnvio('lembreteFinal'),
+  ofertaDeVaga: paraEnvio('ofertaDeVagaAtual'),
+  atraso: paraEnvio('avisoDeAtraso'),
+  normalizou: paraEnvio('atrasoNormalizou'),
 } as const;
+
+export interface TemplateDeEnvio {
+  readonly nome: string;
+  /** Quantos `{{n}}` o corpo aprovado tem. Contado do corpo, nunca declarado. */
+  readonly variaveis: number;
+  readonly botoes: readonly string[];
+}
+
+function paraEnvio(chave: ChaveDeTemplate): TemplateDeEnvio {
+  const def = TEMPLATES_META[chave];
+  return {
+    nome: def.nome,
+    variaveis: parametrosDoCorpo(def.corpo).length,
+    botoes: def.botoes.map((b) => b.payload),
+  };
+}
