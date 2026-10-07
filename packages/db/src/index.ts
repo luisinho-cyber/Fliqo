@@ -18,3 +18,4 @@ export * as pacientes from './repos/pacientes';
 export * as procedimentos from './repos/procedimentos';
 export * as qualificacao from './repos/qualificacao';
 export * as profissionais from './repos/profissionais';
+export * as acoes from './repos/acoes';

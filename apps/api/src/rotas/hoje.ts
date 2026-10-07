@@ -1,5 +1,6 @@
 import {
   diaNoFuso,
+  lerAfirmacao,
   semanaNoFuso,
   duracaoParaProjecao,
   mancheteDoDia,
@@ -9,6 +10,7 @@ import {
   type Intervalo,
 } from '@fliqo/core';
 import {
+  acoes,
   alertas,
   atrasos,
   hoje,
@@ -88,6 +90,27 @@ export interface DecisaoDaTela {
   consultaId: string | null;
 }
 
+/**
+ * O que foi descartado por causa de uma queda de WhatsApp.
+ *
+ * Vira DECISÃO na tela Hoje, não linha de relatório: um número não é acionável
+ * ("30 descartadas" conta que algo ruim aconteceu e não diz o que fazer), a lista
+ * é. Para cada linha há uma ação, e o corte entre as duas sai do mesmo
+ * `lerAfirmacao` que decidiu o descarte — agora aplicado ao instante de AGORA.
+ *
+ * Telefone mascarado: nenhum endpoint de listagem devolve o inteiro.
+ */
+export interface DescarteDaTela {
+  acaoId: string;
+  consultaId: string | null;
+  pacienteId: string | null;
+  paciente: string | null;
+  telefoneMascarado: string | null;
+  inicio: string | null;
+  /** `reenviar` enquanto a afirmação do template ainda vale; depois só resta ligar. */
+  acao: 'reenviar' | 'ligar';
+}
+
 export interface RespostaHoje {
   clinica: ClinicaNaTela;
   fuso: string;
@@ -98,6 +121,7 @@ export interface RespostaHoje {
   consultas: ConsultaDaTela[];
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
+  descartes: DescarteDaTela[];
 }
 
 /** Buraco menor que isto não é vaga: ninguém sai de casa e chega em quinze minutos. */
@@ -185,6 +209,7 @@ async function montar(trx: Trx, clinicId: string, agora: Date): Promise<Resposta
   const { dataIso, inicio, fim } = diaNoFuso(agora, clinica.fuso);
 
   const doDia = await hoje.agendaDoDia(trx, inicio, fim);
+  const descartadas = await acoes.descartadasNoDia(trx, inicio, fim);
   const equipe = await profissionais.listarAtivos(trx);
   const medidas = await atrasos.duracoesMedidas(trx);
   const porChave = new Map(
@@ -273,6 +298,30 @@ async function montar(trx: Trx, clinicId: string, agora: Date): Promise<Resposta
       .map((p) => ({ id: p.id, nome: p.name, atrasoMin: atrasoPorProfissional.get(p.id) ?? 0 })),
     consultas: consultas.sort((a, b) => a.inicioPrevisto.localeCompare(b.inicioPrevisto)),
     vagas,
+    /*
+     * O corte entre "Enviar confirmação agora" e "ligar" é a MESMA regra que
+     * descartou a ação, aplicada agora: se a afirmação do template ainda vale, a
+     * mensagem resolve sozinha e não gasta ninguém da recepção; se venceu, não há
+     * mensagem possível e só resta o telefone.
+     */
+    descartes: descartadas.map((d) => ({
+      acaoId: d.acaoId,
+      consultaId: d.consultaId,
+      pacienteId: d.pacienteId,
+      paciente: d.paciente,
+      telefoneMascarado: d.telefoneMascarado,
+      inicio: d.inicioDaConsulta === null ? null : d.inicioDaConsulta.toISOString(),
+      acao:
+        d.inicioDaConsulta !== null &&
+        lerAfirmacao(
+          d.kind === 'lembrete_final' ? 'consulta_hoje_ainda_por_vir' : 'consulta_amanha_ou_depois',
+          d.inicioDaConsulta,
+          agora,
+          clinica.fuso,
+        ).vale
+          ? ('reenviar' as const)
+          : ('ligar' as const),
+    })),
     decisoes: abertos.map((a) => ({
       id: a.id,
       tipo: a.kind,
