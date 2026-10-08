@@ -47,9 +47,9 @@ export interface Dependencias {
   /**
    * Batida de vida, chamada a CADA ação concluída — não ao fim da rodada.
    *
-   * O health check precisa distinguir "está trabalhando devagar" de "travou". Uma
+   * O `/estado` precisa distinguir "está trabalhando devagar" de "travou". Uma
    * rodada de cinquenta ações com envio lento demora minutos legitimamente; se o
-   * sinal só viesse no fim, o Railway reiniciaria o worker no meio do trabalho.
+   * sinal só viesse no fim, ela seria declarada travada no meio do trabalho.
    */
   aoProgredir?: () => void;
 }

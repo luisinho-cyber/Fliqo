@@ -68,7 +68,7 @@ export interface SaudeDaClinica {
    * Ações de envio ainda `pendente` com prazo no passado, NESTE instante: a fila represada.
    *
    * Diferente de `vencidasNaJanela`, que olha para trás e conta o que venceu tendo saído ou
-   * não. Esta olha para agora, e é o que o /health do worker usa.
+   * não. Esta olha para agora, e é o que o /estado do worker usa.
    */
   vencidasPendentes: number;
   /** `verde`, `amarelo`, `vermelho`, `desconhecida`, ou `null` se nunca foi medida. */

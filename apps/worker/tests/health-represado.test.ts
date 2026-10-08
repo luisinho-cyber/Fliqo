@@ -114,9 +114,9 @@ describe('número em erro com trinta ações pendentes', () => {
     expect(v.codigo).not.toBe(200);
   });
 
-  it('mas também não responde 503: reiniciar não cria credencial', async () => {
-    // Token expirado represa envio por HORAS. 503 faria a plataforma reiniciar o worker em
-    // laço, e aí nenhuma clínica receberia mensagem para "consertar" a de uma.
+  it('mas também não responde 503: o worker está de pé, o que falta é credencial', async () => {
+    // Token expirado represa envio por HORAS, com o laço batendo. 503 diria que o processo
+    // parou, e ele não parou.
     await numero('erro');
     await acoesVencidas(QUANTAS);
     await rodarUmaVez({ db, whatsapp: new WhatsappFalso() });

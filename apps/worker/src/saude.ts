@@ -1,15 +1,23 @@
 import { createServer, type Server } from 'node:http';
 
 /**
- * O health check do worker.
+ * As duas rotas HTTP do worker, e o que cada uma faz de fato.
  *
- * O worker não atendia HTTP, e por isso o Railway não tinha como saber se ele
- * estava vivo. Worker morto em silêncio é o pior caso deste produto: ninguém é
- * confirmado, nenhuma vaga é oferecida, e nada avisa.
+ * O que o Railway faz com elas, conferido na documentação dele: o healthcheck roda SÓ no
+ * início do deploy, aceita qualquer 2xx, e serve para decidir se o deploy novo entra no ar.
+ * Ele não roda de forma contínua e não reinicia nada. Quem reinicia é a política
+ * `ON_FAILURE` do `railway.json`, e ela só age quando o processo SAI com erro.
  *
- * O que importa é o que ele RESPONDE. Um `/health` que devolve 200 porque o
- * processo existe é pior do que não ter health check: ele afirma saúde enquanto o
- * laço está travado. Aqui o veredito vem das batidas de vida dos laços.
+ * Daí a divisão:
+ *
+ *   * `/health` é o que o healthcheck pergunta — "o processo subiu?" — e responde 200 enquanto
+ *     o processo vive;
+ *   * `/estado` é o veredito de trabalho: laços batendo, envio saindo, a causa quando não.
+ *
+ * O que isto NÃO faz: um laço travado não reinicia o worker. O processo continua vivo, nada
+ * sai, e o `/estado` diz `travado` para quem perguntar. Reinício de verdade com laço travado
+ * exige que o worker saia com erro sozinho; isso não existe hoje. Quem avisa o operador é o
+ * e-mail do vigia (vigia-de-operador.ts).
  */
 
 export interface Batimento {
@@ -33,10 +41,13 @@ export function criarBatimento(agora: () => number = Date.now): Batimento {
  *
  * O número é DERIVADO DA PIOR VOLTA PLAUSÍVEL, não do intervalo nominal — e é
  * generoso de propósito, porque o custo de errar para cada lado é assimétrico:
- * declarar travado o que está apenas lento faz o Railway reiniciar o worker no
- * meio do trabalho, e aí uma resposta de paciente se perde. Esperar alguns
- * minutos a mais para reiniciar um worker de fato travado não perde nada além
- * desses minutos.
+ * declarar travado o que está apenas lento é alarme falso, e alarme falso ensina
+ * quem lê o `/estado` a ignorá-lo. Declarar travado alguns minutos depois não
+ * perde nada além desses minutos.
+ *
+ * A assimetria fica mais séria no dia em que o worker passar a sair com erro
+ * quando um laço travar (não existe hoje): aí esta janela vira o gatilho de
+ * reinício, e travado falso passa a matar o worker no meio de um envio.
  *
  * A conta, para quem vier apertar este número depois:
  *
@@ -56,7 +67,7 @@ export function criarBatimento(agora: () => number = Date.now): Batimento {
  * — e só nesse dia.
  *
  * O que NÃO entra na conta: a conversa da assistente. Ela roda como job da fila,
- * fora destes laços, e por isso uma resposta demorada não derruba o serviço.
+ * fora destes laços, e por isso uma resposta demorada não vira `travado`.
  */
 export const JANELA_DE_SAUDE_MS = 10 * 60_000;
 
@@ -70,8 +81,9 @@ export const JANELA_DE_SAUDE_MS = 10 * 60_000;
  *
  * `vencidasRepresadas` é o contrapeso: ação de envio com prazo no passado que ainda está
  * `pendente`. Ela é medida pelo próprio laço que suprime, a cada volta, e guardada em
- * memória — o /health não abre conexão, porque um health check que depende do banco transforma
- * uma oscilação de rede em reinício de worker.
+ * memória. O `/estado` não abre conexão: ele lê o que o laço mediu, e a idade da medida diz
+ * se o laço parou de medir. Uma rota que consultasse o banco responderia sobre o banco, não
+ * sobre o laço.
  */
 export interface MedidaDeEntrega {
   vencidasRepresadas: number;
@@ -97,15 +109,13 @@ export function criarEntrega(): Entrega {
 /**
  * Os três estados, e por que não são dois.
  *
- * `travado` é "me reinicie": o laço parou de bater e o processo não está fazendo o trabalho.
- * `degradado` é "o trabalho não está saindo, e reiniciar NÃO resolve" — número de clínica com
- * token expirado é o caso típico, e ele persiste por horas.
+ * `travado`: o laço parou de bater, e o processo não está fazendo o trabalho.
+ * `degradado`: o laço bate, mas o trabalho não sai — número de clínica com token expirado é o
+ * caso típico, persiste por horas, e reiniciar o worker não o resolveria.
  *
- * Misturar os dois em 503 seria pior do que o problema: a plataforma reiniciaria o worker em
- * laço enquanto uma clínica estivesse com a credencial vencida, e aí NENHUMA clínica receberia
- * mensagem para "consertar" a de uma. Por isso `degradado` responde 207, que é 2xx — o
- * processo continua vivo — e não 200, que é a afirmação de saúde que este arquivo existe para
- * deixar de fazer de graça.
+ * São problemas com condutas diferentes (olhar o processo × olhar a credencial da clínica), e
+ * por isso o veredito os separa. Nenhuma plataforma age sobre eles: o `/estado` é lido por
+ * quem pergunta.
  */
 export type EstadoDeSaude = 'verde' | 'degradado' | 'travado';
 
@@ -188,7 +198,13 @@ function causaDoEstado(
   return null;
 }
 
-/** O código HTTP de cada estado. 207 é 2xx: o processo não é reiniciado por estar degradado. */
+/**
+ * O código HTTP de cada estado do `/estado`, para quem olhar só o código.
+ *
+ * `degradado` é 207 e não 503 porque o worker ESTÁ atendendo e trabalhando — o que falta é a
+ * credencial de uma clínica —, e não 200 porque 200 é a afirmação de saúde que esta rota
+ * existe para não fazer de graça. Nenhum dos três reinicia nada.
+ */
 export const CODIGO_POR_ESTADO: Record<EstadoDeSaude, number> = {
   verde: 200,
   degradado: 207,

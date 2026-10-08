@@ -240,14 +240,21 @@ ele é o webhook do passo 8.
 - **Root Directory**: vazio
 - **Config-as-code file path**: `apps/worker/railway.json`
 
-O worker atende HTTP numa rota só, `/health`, e o `railway.json` dele já aponta o
-health check para lá. **Não gere domínio**: o health check do Railway bate na porta
+O worker atende HTTP em duas rotas, e o `railway.json` dele aponta o health check
+para `/health`. **Não gere domínio**: o health check do Railway bate na porta
 interna do serviço, e o worker não tem nada para servir ao público.
 
-Um worker sem health check morre em silêncio, e silêncio aqui significa nenhuma
-confirmação enviada, nenhuma vaga oferecida e ninguém sabendo. O `/health` responde
-**503** quando um dos laços para de dar sinal — e é esse 503 que faz o Railway
-reiniciar o serviço.
+- `/health` responde 200 enquanto o processo está de pé. O health check do Railway
+  roda só no início do deploy, aceita qualquer 2xx e serve para o deploy novo entrar
+  no ar; ele não roda depois disso e não reinicia nada.
+- `/estado` diz se o trabalho está saindo: `verde`, `degradado` (laço batendo, envio
+  represado) ou `travado` (laço sem sinal), com a causa e os números. Fica fora do
+  health check.
+
+O que reinicia o worker é a política `ON_FAILURE`, e ela só age quando o processo
+sai com erro. Um laço travado não faz o processo sair: o worker fica de pé, nada é
+enviado, e o `/estado` diz `travado`. O aviso que chega a alguém é o e-mail do vigia
+de operador.
 
 Em **Variables**:
 
@@ -437,8 +444,10 @@ Abra no navegador:
 https://<o domínio do passo 5>/health
 ```
 
-Tem de aparecer `{"ok":true}`. Se aparecer, a API subiu e o Railway vai mantê-la
-no ar — é esse mesmo endereço que ele consulta para saber se precisa reiniciar.
+Tem de aparecer `{"ok":true}`. Se aparecer, a API subiu. O Railway consulta esse
+mesmo endereço só no início de cada deploy, para decidir se o deploy novo entra no
+ar; depois disso ele não o consulta mais, e quem reinicia a API quando ela cai é a
+política `ON_FAILURE`.
 
 Se o deploy ficar reiniciando sem parar, abra os logs do serviço no Railway: a
 API morre no start de propósito quando falta uma variável, e o log diz o nome da

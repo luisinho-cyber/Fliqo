@@ -127,9 +127,9 @@ export async function esquecerCausas(
 /**
  * A fila de envio represada agora, somada em todas as clínicas.
  *
- * É o número que o /health do worker precisa, e ele vem da MESMA função de operador — não de
+ * É o número que o /estado do worker precisa, e ele vem da MESMA função de operador — não de
  * uma sétima função definer. Ler `scheduled_actions` direto fora de `withClinic` devolveria
- * zero pela RLS, que é o jeito mais silencioso de um health check mentir.
+ * zero pela RLS, que é o jeito mais silencioso de um veredito mentir.
  */
 export async function vencidasRepresadas(db: Db): Promise<number> {
   const saudes = await saudeDasClinicas(db);

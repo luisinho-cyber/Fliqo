@@ -186,9 +186,9 @@ const lacoDeAtrasos = rodarLaco({
  * de laço, uma queda de vinte e um minutos poderia esperar outros vinte e nove para virar
  * e-mail, e aí a carência passaria a ser de cinquenta sem ninguém ter escolhido isso.
  *
- * Fora do batimento de vida de propósito: o /health do worker fala dos laços que entregam
+ * Fora do batimento de vida de propósito: o /estado do worker fala dos laços que entregam
  * mensagem de paciente. Um vigia travado é ruim, mas não é a mesma urgência de a régua parar,
- * e misturá-los faria o Railway reiniciar o worker por causa do vigia.
+ * e misturá-los faria o /estado dizer `travado` com a régua funcionando.
  */
 const lacoDoVigia = rodarLaco({
   parada,

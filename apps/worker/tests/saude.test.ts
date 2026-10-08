@@ -46,7 +46,7 @@ describe('vereditoDeSaude', () => {
   });
 
   it('dentro da janela, por pouco, ainda é saudável', () => {
-    // Trabalhar devagar não é estar travado. Reiniciar aqui perderia trabalho bom.
+    // Trabalhar devagar não é estar travado. Travado falso aqui é alarme falso.
     const agora = JANELA_DE_SAUDE_MS;
     const v = vereditoDeSaude({ batimentos: { acoes: batimentoEm(0) } }, agora);
     expect(v.ok).toBe(true);
@@ -105,7 +105,9 @@ describe('o servidor', () => {
     expect(await r.json()).toMatchObject({ ok: true });
   });
 
-  it('devolve 503 com laço travado — é o código que faz o Railway reiniciar', async () => {
+  it('/estado devolve 503 com laço travado — veredito para quem lê, não reinício', async () => {
+    // O healthcheck do Railway pergunta o /health, só no deploy, e não reinicia nada. Este 503
+    // não aciona plataforma nenhuma: reiniciar com laço travado exigiria o worker sair com erro.
     const agora = 30 * 60_000;
     const base = await subir({ acoes: batimentoEm(0) }, agora);
     const r = await fetch(`${base}/estado`);
@@ -249,7 +251,7 @@ describe('o veredito mede entrega, não só batimento', () => {
     expect(v.estado).toBe('degradado');
   });
 
-  it('laço travado vence o degradado: reiniciar é a conduta mais urgente', () => {
+  it('laço travado vence o degradado: processo parado é o problema maior', () => {
     const agora = 30 * 60_000;
     const v = vereditoDeSaude(
       { batimentos: { acoes: batimentoEm(0) }, entrega: entregaCom(30, agora) },
@@ -337,11 +339,11 @@ describe('o código HTTP de cada estado', () => {
     expect(await r.json()).toMatchObject({ ok: false, estado: 'degradado' });
   });
 
-  it('degradado é 207, e 207 é 2xx: a plataforma NÃO reinicia o worker', async () => {
+  it('degradado é 207: o worker está atendendo, o que falta é a credencial de uma clínica', async () => {
     /*
-     * A distinção que importa. Número de clínica com token expirado represa envio por HORAS,
-     * e 503 faria o Railway reiniciar o worker em laço — nenhuma clínica receberia mensagem
-     * para "consertar" a de uma. Reiniciar não cria credencial.
+     * 207 não é mecanismo de alerta e não aciona nada: ninguém lê o /estado sozinho. Quem
+     * avisa é o e-mail do vigia de operador. O código só não pode ser 200, que afirmaria
+     * saúde, nem 503, que diria que o processo não está atendendo.
      */
     const base = await subirCom(30, 1_000);
     const r = await fetch(`${base}/estado`);
