@@ -19,6 +19,10 @@ import {
  * nada avisa —, e é o `/estado` que diz isso, não o `/health`.
  */
 
+/** Valor falso, com o tamanho mínimo que a configuração exige. */
+const TOKEN = 'token-falso-do-estado-so-para-teste-0001';
+const COM_TOKEN = { headers: { authorization: `Bearer ${TOKEN}` } };
+
 /** Batimento com relógio na mão: nada aqui depende do tempo passar de verdade. */
 function batimentoEm(ms: number): Batimento {
   return { marcar: () => undefined, ultimo: () => ms };
@@ -140,6 +144,7 @@ describe('o servidor', () => {
     const servidor = servidorDeSaude({
       porta: 0,
       sinais: sinaisCom(ultimasBatidas, entrega),
+      tokenDoEstado: TOKEN,
       agora: () => agoraMs,
     });
     fechar = () => servidor.close();
@@ -150,7 +155,7 @@ describe('o servidor', () => {
 
   it('/estado devolve 200 com os laços vivos', async () => {
     const base = await subir({ acoes: 1_000 }, 1_000);
-    const r = await fetch(`${base}/estado`);
+    const r = await fetch(`${base}/estado`, COM_TOKEN);
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ ok: true });
   });
@@ -160,7 +165,7 @@ describe('o servidor', () => {
     // não aciona plataforma nenhuma: reiniciar com laço travado exigiria o worker sair com erro.
     const agora = 30 * 60_000;
     const base = await subir({ acoes: 0 }, agora);
-    const r = await fetch(`${base}/estado`);
+    const r = await fetch(`${base}/estado`, COM_TOKEN);
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ ok: false });
   });
@@ -182,7 +187,7 @@ describe('o servidor', () => {
      * contagens agregadas: nenhum diz de QUAL clínica se trata.
      */
     const base = await subir({ acoes: 1_000 }, 1_000);
-    const corpo = await (await fetch(`${base}/estado`)).text();
+    const corpo = await (await fetch(`${base}/estado`, COM_TOKEN)).text();
     expect(Object.keys(JSON.parse(corpo) as object).sort()).toEqual([
       'causa',
       'entrega',
@@ -195,10 +200,12 @@ describe('o servidor', () => {
   it('e nenhuma das duas rotas conta id, versão ou variável de ambiente', async () => {
     const base = await subir({ acoes: 1_000 }, 1_000);
     for (const rota of ['/health', '/estado']) {
-      const corpo = (await (await fetch(`${base}${rota}`)).text()).toLowerCase();
+      const corpo = (await (await fetch(`${base}${rota}`, COM_TOKEN)).text()).toLowerCase();
       for (const agulha of ['version', 'versao', 'node', 'database', 'token', 'key', 'clinic']) {
         expect(corpo, `${rota} conta "${agulha}"`).not.toContain(agulha);
       }
+      // O token chega no cabeçalho e não volta em corpo nenhum.
+      expect(corpo).not.toContain(TOKEN.toLowerCase());
     }
   });
 });
@@ -225,6 +232,7 @@ describe('o /health é liveness e não sabe nada de entrega', () => {
     const servidor = servidorDeSaude({
       porta: 0,
       sinais: sinaisCom({ acoes: 0 }, entrega),
+      tokenDoEstado: TOKEN,
       agora: () => agora,
     });
     fechar = () => servidor.close();
@@ -247,7 +255,7 @@ describe('o /health é liveness e não sabe nada de entrega', () => {
     // Sem esta linha, os dois testes acima passariam com um servidor que nem soubesse do
     // veredito. É ela que prova que a informação existe — só não está no /health.
     const base = await subirNoPiorEstado();
-    const r = await fetch(`${base}/estado`);
+    const r = await fetch(`${base}/estado`, COM_TOKEN);
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({
       estado: 'travado',
@@ -383,6 +391,7 @@ describe('o código HTTP de cada estado', () => {
     const servidor = servidorDeSaude({
       porta: 0,
       sinais: sinaisCom({ acoes: agoraMs }, entrega),
+      tokenDoEstado: TOKEN,
       agora: () => agoraMs,
     });
     fechar = () => servidor.close();
@@ -393,7 +402,7 @@ describe('o código HTTP de cada estado', () => {
 
   it('com 30 ações represadas, /estado NÃO responde verde', async () => {
     const base = await subirCom(30, 1_000);
-    const r = await fetch(`${base}/estado`);
+    const r = await fetch(`${base}/estado`, COM_TOKEN);
     expect(r.status).not.toBe(200);
     expect(await r.json()).toMatchObject({ ok: false, estado: 'degradado' });
   });
@@ -405,22 +414,116 @@ describe('o código HTTP de cada estado', () => {
      * saúde, nem 503, que diria que o processo não está atendendo.
      */
     const base = await subirCom(30, 1_000);
-    const r = await fetch(`${base}/estado`);
+    const r = await fetch(`${base}/estado`, COM_TOKEN);
     expect(r.status).toBe(207);
     expect(r.status).toBeLessThan(300);
   });
 
   it('nada represado é 200', async () => {
     const base = await subirCom(0, 1_000);
-    expect((await fetch(`${base}/estado`)).status).toBe(200);
+    expect((await fetch(`${base}/estado`, COM_TOKEN)).status).toBe(200);
   });
 
   it('o corpo do degradado não conta de QUAL clínica é o represamento', async () => {
     // Health check é público. A contagem é agregada; quem precisa saber de qual clínica
     // recebe o e-mail do vigia de operador, que é autenticado por ser e-mail.
     const base = await subirCom(30, 1_000);
-    const corpo = await (await fetch(`${base}/estado`)).text();
+    const corpo = await (await fetch(`${base}/estado`, COM_TOKEN)).text();
     expect(corpo).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
     expect(corpo.toLowerCase()).not.toContain('clinic');
+  });
+});
+
+/**
+ * O `/estado` é painel de operação: diz a quem pergunta exatamente quando o sistema está
+ * fraco. Só responde com o `ESTADO_TOKEN`; sem ele, é indistinguível de rota inexistente.
+ * O `/health` continua público, porque não diz nada além de "estou de pé".
+ */
+describe('o /estado exige ESTADO_TOKEN, o /health não', () => {
+  let fechar: (() => void) | undefined;
+  afterEach(() => {
+    fechar?.();
+    fechar = undefined;
+  });
+
+  async function subirComToken(token: string | undefined): Promise<string> {
+    const sinais = criarSinaisDeSaude();
+    registrarLaco(sinais, 'acoes', () => 1_000);
+    const servidor = servidorDeSaude({
+      porta: 0,
+      sinais,
+      tokenDoEstado: token,
+      agora: () => 1_000,
+    });
+    fechar = () => servidor.close();
+    await new Promise((resolve) => servidor.once('listening', resolve));
+    const { port } = servidor.address() as AddressInfo;
+    return `http://127.0.0.1:${String(port)}`;
+  }
+
+  /** O 404 de uma rota que não existe: é com ele que o /estado sem token tem de se parecer. */
+  async function rotaInexistente(base: string): Promise<{ status: number; corpo: string }> {
+    const r = await fetch(`${base}/nada-aqui`);
+    return { status: r.status, corpo: await r.text() };
+  }
+
+  it('com o token certo, responde o veredito', async () => {
+    const base = await subirComToken(TOKEN);
+    const r = await fetch(`${base}/estado`, COM_TOKEN);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ estado: 'verde', lacos: { acoes: { travado: false } } });
+  });
+
+  it('sem token nenhum, 404 igual ao de rota inexistente', async () => {
+    const base = await subirComToken(TOKEN);
+    const r = await fetch(`${base}/estado`);
+    expect({ status: r.status, corpo: await r.text() }).toEqual(await rotaInexistente(base));
+    expect(r.status).toBe(404);
+  });
+
+  it('com token errado do MESMO tamanho, 404', async () => {
+    const errado = TOKEN.slice(0, -1) + (TOKEN.endsWith('1') ? '2' : '1');
+    const base = await subirComToken(TOKEN);
+    const r = await fetch(`${base}/estado`, { headers: { authorization: `Bearer ${errado}` } });
+    expect({ status: r.status, corpo: await r.text() }).toEqual(await rotaInexistente(base));
+  });
+
+  it('com token de tamanho diferente, 404 e não 500', async () => {
+    // `timingSafeEqual` lança com buffers de tamanhos diferentes. Sem o resumo, isto seria um
+    // 500 — e um 500 diz que a rota existe.
+    const base = await subirComToken(TOKEN);
+    for (const errado of ['x', `${TOKEN}-e-mais-um-pedaco`]) {
+      const r = await fetch(`${base}/estado`, { headers: { authorization: `Bearer ${errado}` } });
+      expect(r.status, `token "${errado.slice(0, 4)}…"`).toBe(404);
+    }
+  });
+
+  it('o token certo fora do formato Bearer não passa', async () => {
+    const base = await subirComToken(TOKEN);
+    for (const cabecalho of [TOKEN, `Basic ${TOKEN}`, `bearer${TOKEN}`]) {
+      const r = await fetch(`${base}/estado`, { headers: { authorization: cabecalho } });
+      expect(r.status).toBe(404);
+    }
+  });
+
+  it('sem ESTADO_TOKEN configurado, o /estado fica fechado para todos', async () => {
+    // Fechado, não aberto: esquecer a variável não pode virar painel público.
+    const base = await subirComToken(undefined);
+    expect((await fetch(`${base}/estado`)).status).toBe(404);
+    expect((await fetch(`${base}/estado`, COM_TOKEN)).status).toBe(404);
+    expect(
+      (await fetch(`${base}/estado`, { headers: { authorization: 'Bearer undefined' } })).status,
+    ).toBe(404);
+  });
+
+  it('e o /health continua 200 sem token nenhum, com ou sem ESTADO_TOKEN configurado', async () => {
+    for (const token of [TOKEN, undefined]) {
+      const base = await subirComToken(token);
+      const r = await fetch(`${base}/health`);
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ ok: true });
+      fechar?.();
+      fechar = undefined;
+    }
   });
 });

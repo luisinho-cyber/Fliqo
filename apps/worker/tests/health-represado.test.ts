@@ -36,6 +36,8 @@ import { WhatsappFalso } from './fake';
 
 const PN = '555000999888';
 const QUANTAS = 30;
+/** Valor falso. O que o token fecha é testado em saude.test.ts; aqui ele só abre a porta. */
+const TOKEN = 'token-falso-do-estado-so-para-teste-0001';
 
 let db: Db;
 let owner: pg.Pool;
@@ -110,11 +112,13 @@ async function perguntar(
   rota: '/estado' | '/health',
   agora: () => number = Date.now,
 ): Promise<{ status: number; corpo: Record<string, unknown> }> {
-  const servidor = servidorDeSaude({ porta: 0, sinais, agora });
+  const servidor = servidorDeSaude({ porta: 0, sinais, tokenDoEstado: TOKEN, agora });
   try {
     await new Promise((resolve) => servidor.once('listening', resolve));
     const { port } = servidor.address() as AddressInfo;
-    const r = await fetch(`http://127.0.0.1:${String(port)}${rota}`);
+    const r = await fetch(`http://127.0.0.1:${String(port)}${rota}`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
     return { status: r.status, corpo: (await r.json()) as Record<string, unknown> };
   } finally {
     servidor.close();

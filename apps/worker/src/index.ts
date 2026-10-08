@@ -186,6 +186,7 @@ const lacos = Promise.all([lacoDeAcoes, lacoDeAtrasos, lacoDoVigia]);
 const saude = servidorDeSaude({
   porta: config.PORT,
   sinais,
+  tokenDoEstado: config.ESTADO_TOKEN,
 });
 
 /**

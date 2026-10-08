@@ -35,7 +35,16 @@ const Ambiente = z.object({
    * não da clínica: é a caixa de entrada dela que toca.
    */
   OPERADOR_FUSO: z.string().min(1).default('America/Sao_Paulo'),
-  // O worker atende HTTP numa rota só, /health. O Railway injeta a porta.
+  /**
+   * O token do `/estado`. SEGREDO, só no serviço worker do Railway, gerado com
+   * `openssl rand -base64 32` no terminal de quem configura — nunca em arquivo.
+   *
+   * Opcional de propósito: ausente, o `/estado` responde 404 a todos (fechado, não aberto), e
+   * o deploy que chega antes de a variável ser criada não cai. Presente e curto, o worker não
+   * sobe: token fraco num painel de operação é pior do que painel nenhum.
+   */
+  ESTADO_TOKEN: z.string().min(32).optional(),
+  // O worker atende HTTP em /health (público) e /estado (com token). O Railway injeta a porta.
   PORT: z.coerce.number().int().positive().default(3100),
   LOG_LEVEL: z.string().default('info'),
 });

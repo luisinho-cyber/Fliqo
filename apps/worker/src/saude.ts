@@ -1,4 +1,5 @@
-import { createServer, type Server } from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { createServer, type Server, type ServerResponse } from 'node:http';
 
 /**
  * As duas rotas HTTP do worker, e o que cada uma faz de fato.
@@ -259,8 +260,35 @@ export interface ConfigSaude {
    * `/estado` responderia verde sem olhar laço nenhum. Assim, não compila.
    */
   sinais: SinaisDeSaude;
+  /**
+   * O `ESTADO_TOKEN`. Chave obrigatória com valor que pode ser `undefined`: quem monta o
+   * servidor tem de dizer o que fazer com ela, e `undefined` fecha o `/estado` para todos.
+   */
+  tokenDoEstado: string | undefined;
   janelaMs?: number;
   agora?: () => number;
+}
+
+/** Resumo de tamanho fixo: `timingSafeEqual` exige buffers iguais e lança com os diferentes. */
+function resumo(texto: string): Buffer {
+  return createHash('sha256').update(texto).digest();
+}
+
+/**
+ * `Authorization: Bearer <ESTADO_TOKEN>`, comparado em tempo constante.
+ *
+ * Comparar os resumos, e não os textos, tira o comprimento do token do que dá para medir por
+ * tempo de resposta, e um token de tamanho errado deixa de ser exceção (500) para ser só
+ * "não autorizado" (404).
+ */
+function autorizado(cabecalho: string | undefined, token: string | undefined): boolean {
+  if (token === undefined || cabecalho?.startsWith('Bearer ') !== true) return false;
+  return timingSafeEqual(resumo(cabecalho.slice('Bearer '.length)), resumo(token));
+}
+
+function naoEncontrado(res: ServerResponse): void {
+  res.writeHead(404, { 'content-type': 'application/json' });
+  res.end('{"erro":"nao_encontrado"}');
 }
 
 /**
@@ -273,7 +301,11 @@ export interface ConfigSaude {
  *     Railway pergunta no início do deploy, e por isso não consulta batimento nem entrega:
  *     liveness que sabe de entrega passa a responder outra coisa com o mesmo nome.
  *   * `/estado` — "o trabalho está saindo?". O veredito inteiro: estado, causa e números.
- *     Fica fora do healthcheck do Railway.
+ *     Fica fora do healthcheck do Railway, e exige o `ESTADO_TOKEN`: ele diz exatamente
+ *     quando o sistema está fraco, e isso não é para quem sonda a porta.
+ *
+ * Sem token válido o `/estado` responde 404, idêntico ao de uma rota que não existe. 401
+ * confirmaria que há algo ali para tentar.
  */
 export function servidorDeSaude(cfg: ConfigSaude): Server {
   const agora = cfg.agora ?? Date.now;
@@ -283,9 +315,8 @@ export function servidorDeSaude(cfg: ConfigSaude): Server {
       res.end('{"ok":true}');
       return;
     }
-    if (req.url !== '/estado') {
-      res.writeHead(404, { 'content-type': 'application/json' });
-      res.end('{"erro":"nao_encontrado"}');
+    if (req.url !== '/estado' || !autorizado(req.headers.authorization, cfg.tokenDoEstado)) {
+      naoEncontrado(res);
       return;
     }
     const veredito = vereditoDeSaude(
