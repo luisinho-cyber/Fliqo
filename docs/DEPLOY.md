@@ -10,12 +10,12 @@ projeto, nunca numa conversa, nunca num print.
 
 ## Quem é quem
 
-| Peça                      | Onde roda              | Conecta ao banco como | Pode mexer no schema   |
-| ------------------------- | ---------------------- | --------------------- | ---------------------- |
-| Migração (`Migrar banco`) | GitHub Actions, na mão | `postgres` (dono)     | sim, é o trabalho dela |
-| API (`apps/api`)          | Railway                | `fliqo_app`           | não                    |
-| Worker (`apps/worker`)    | Railway                | `fliqo_app`           | não                    |
-| Painel (`apps/web`)       | Railway                | não conecta ao banco  | não                    |
+| Peça                      | Onde roda                         | Conecta ao banco como | Pode mexer no schema   |
+| ------------------------- | --------------------------------- | --------------------- | ---------------------- |
+| Migração (`Migrar banco`) | GitHub Actions, no push da `main` | `postgres` (dono)     | sim, é o trabalho dela |
+| API (`apps/api`)          | Railway                           | `fliqo_app`           | não                    |
+| Worker (`apps/worker`)    | Railway                           | `fliqo_app`           | não                    |
+| Painel (`apps/web`)       | Railway                           | não conecta ao banco  | não                    |
 
 Você não precisa de nada instalado no seu computador: tudo é feito pelo navegador,
 no Supabase, no GitHub e no Railway.
@@ -74,7 +74,9 @@ no GitHub (passo 3) e no Railway (passo 4).
 
 As migrações não rodam na subida da aplicação. Se ela migrasse sozinha, dois
 contêineres subindo ao mesmo tempo tentariam mudar o banco juntos — e ela conecta
-com um papel que nem tem esse direito. Quem roda é você, apertando um botão.
+com um papel que nem tem esse direito. Quem roda é o workflow **Migrar banco**, no
+GitHub: sozinho a cada push na `main`, e também pelo botão. Esta primeira vez é
+pelo botão.
 
 ### 3.1 — Cadastrar os dois secrets
 
@@ -148,9 +150,10 @@ Deu certo quando os quatro passos estão com visto verde e:
 > papel do banco chama-se `postgres`; a mensagem vem de lá. A linha de
 > diagnóstico acima mostra o usuário que foi realmente usado.
 
-**Rode este workflow antes de cada deploy que traga migração nova.** Rodar sem
-precisar não faz mal: migração aplicada não é reaplicada, e o passo do papel
-apenas redefine a mesma senha.
+Daqui em diante você não precisa lembrar dele: o workflow roda sozinho a cada
+push na `main`, e o Railway só publica depois que ele termina (veja "Quando publicar
+de novo"). O botão continua valendo, e rodar sem precisar não faz mal: migração
+aplicada não é reaplicada, e o passo do papel apenas redefine a mesma senha.
 
 > **Sobre o papel `fliqo_app`:** ele nasce sem `superuser` e sem `bypassrls` —
 > são os padrões do Postgres. O script confere os dois toda vez e para se algum
@@ -429,16 +432,50 @@ fora do ar.
 
 ## Quando publicar de novo
 
-1. Juntar o PR na `main`. O Railway reconstrói os três serviços sozinho.
-2. Se o PR tiver migração nova, rode o workflow **Migrar banco** (passo 3.2)
-   em seguida.
+**A regra é uma só: o esquema muda antes do código ir ao ar.**
 
-A ordem é essa porque o workflow só roda na `main`: o arquivo da migração precisa
-estar lá para ser aplicado. Entre o deploy e o workflow existe uma janela de
-alguns minutos em que o código novo está no ar esperando uma coluna que ainda não
-existe — por isso rode o workflow **logo depois** de juntar, e teste só depois
-dele. Em staging essa janela não machuca ninguém; quando existir produção, o
-jeito é separar o deploy da migração.
+1. Juntar o PR na `main`.
+2. O push dispara dois workflows no GitHub: o **CI** e o **Migrar banco**. Ninguém
+   precisa apertar nada.
+3. O Railway espera os dois terminarem verdes e só então publica os três serviços.
+   Se um deles falhar, o deploy é pulado e o que está no ar continua no ar.
+
+O passo 3 depende de uma configuração que você faz **uma vez**, em cada um dos três
+serviços no Railway (api, worker e painel): **Settings**, seção **Check Suites
+Configuration**, ligar **Wait for CI**. A opção só aparece depois que a `main` tem
+um workflow que roda no push — o **Migrar banco** passou a ser um. Sem ela, o
+Railway publica no instante do merge e o código novo fica no ar, por alguns
+minutos, esperando uma coluna que o workflow ainda não criou.
+
+> **Isto não é "migrar na subida".** A razão para a migração nunca rodar dentro da
+> aplicação continua de pé: cada contêiner que sobe tentaria mudar o banco, dois
+> ao mesmo tempo, com um papel que nem tem esse direito. O workflow é UM por push,
+> numa fila de concorrência, conectando como dono — o mesmo que rodava pelo botão.
+> Quem ler "migração só na mão" numa versão antiga deste arquivo: a regra era não
+> migrar na subida, e ela continua valendo.
+
+> **Se o Wait for CI travar:** ele espera **todas** as verificações do commit, não
+> só as nossas. Um app do GitHub esquecido (um projeto antigo do Railway, um serviço
+> de cobertura) pode segurar o deploy em "waiting". Confira as verificações do
+> commit no GitHub e remova o app que não é usado.
+
+### Migração só acrescenta
+
+Entre o **Migrar banco** terminar e o Railway publicar, o código **velho** roda sobre
+o esquema **novo**, por alguns minutos. Isso só é seguro porque o esquema novo
+convive com o código velho. Então, **na mesma entrega que muda o código**:
+
+| Pode                                    | Não pode                             |
+| --------------------------------------- | ------------------------------------ |
+| coluna nova (nula, ou com valor padrão) | remover coluna ou tabela             |
+| tabela nova, índice novo                | renomear coluna ou tabela            |
+| aceitar valor novo numa validação       | trocar o tipo de uma coluna          |
+| função com corpo novo, mesma assinatura | `not null` numa coluna que já existe |
+| função devolvendo colunas a mais        | validação mais estreita do que era   |
+
+**Remover é em duas entregas:** primeiro o código para de usar e vai ao ar; depois,
+noutra entrega, a coluna sai. É a regra 12 do `CLAUDE.md`, e
+`tests/migracao-antes-do-deploy.test.ts` recusa as formas destrutivas na CI.
 
 Os três `railway.json` têm `watchPatterns`: mexer só na `apps/demo` não
 reconstrói a API, o worker nem o painel.
