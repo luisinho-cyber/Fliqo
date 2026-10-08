@@ -11,6 +11,7 @@ import { extrair, extrairEcos, PayloadWebhook } from './payload';
 import { registrarConexao } from './rotas/conexao';
 import { registrarConversas } from './rotas/conversas';
 import { registrarHoje } from './rotas/hoje';
+import { registrarImportacao } from './rotas/importacao';
 import { registrarPainel } from './rotas/painel';
 
 declare module 'fastify' {
@@ -138,6 +139,7 @@ export function construirApp(dep: Dependencias): FastifyInstance {
       registrarPainel(painel, { db, segredoJwt, boss });
       registrarHoje(painel, { db, segredoJwt, boss });
       registrarConversas(painel, { db, segredoJwt, boss });
+      registrarImportacao(painel, { db, segredoJwt, boss });
       registrarConexao(painel, {
         db,
         segredoJwt,

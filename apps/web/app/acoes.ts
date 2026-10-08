@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { chamarApi } from '../lib/api';
+import type { RelatorioDaImportacao, SaidaDaImportacao } from '../lib/tipos';
 import { criarClienteSupabase, emProducao, opcoesDoCookie } from '../lib/sessao';
 import { clinicaEscolhida, COOKIE_DA_CLINICA, tokenDaSessao } from '../lib/servidor';
 
@@ -132,12 +133,50 @@ export async function oferecerVaga(formulario: FormData): Promise<void> {
   redirect('/agenda?aviso=oferta_enviada');
 }
 
+/**
+ * Importar a agenda do outro sistema.
+ *
+ * Recebe argumentos, não FormData, porque quem chama é o componente de cliente que
+ * leu o arquivo. O texto do arquivo vai para a NOSSA API, que é quem separa os
+ * campos de verdade e grava dentro da RLS — o palpite de colunas do navegador é
+ * conveniência, não autoridade.
+ */
+export async function importarAgenda(pedido: {
+  arquivo: string;
+  texto: string;
+  mapa: {
+    paciente: number;
+    telefone: number;
+    profissional: number;
+    inicio: number;
+    procedimento: number;
+  };
+  temCabecalho: boolean;
+}): Promise<{ ok: true; relatorio: RelatorioDaImportacao } | { ok: false; erro: string }> {
+  const r = await naApi<SaidaDaImportacao>('/api/importacoes', pedido);
+  revalidatePath('/importar');
+  // A agenda mudou em lote: a Linha do Dia e a semana precisam ser relidas.
+  revalidatePath('/hoje');
+  revalidatePath('/agenda');
+  // 403 é a única recusa de autorização; planilha vazia ou grande demais chegam
+  // como falha esperada no corpo, com motivo, porque a clínica precisa saber o quê.
+  if (!r.ok) {
+    return {
+      ok: false,
+      erro: r.motivo === 'sem_acesso' ? 'apenas_dono_importa_agenda' : 'indisponivel',
+    };
+  }
+  return r.dados.ok
+    ? { ok: true, relatorio: r.dados.relatorio }
+    : { ok: false, erro: r.dados.motivo };
+}
+
 /** Um POST na nossa API, já com o portador e a clínica da sessão. */
-async function naApi(caminho: string, corpo?: unknown) {
+async function naApi<T = unknown>(caminho: string, corpo?: unknown) {
   const token = await tokenDaSessao();
   if (token === undefined) redirect('/login?erro=sessao');
   const clinicaId = await clinicaEscolhida();
-  return chamarApi(caminho, {
+  return chamarApi<T>(caminho, {
     token,
     metodo: 'POST',
     ...(clinicaId === undefined ? {} : { clinicaId }),
