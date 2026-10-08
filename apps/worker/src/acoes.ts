@@ -38,7 +38,7 @@ export interface AcaoPendente {
 const BACKOFF_MIN = [1, 5, 15];
 export const MAX_TENTATIVAS = BACKOFF_MIN.length + 1;
 
-/** Ação parada em 'executando' por mais que isto foi abandonada por um worker morto. */
+/** Reclamada há mais que isto e ainda em 'executando': o worker que a pegou morreu (0018). */
 export const LIMITE_PRESA_MIN = 5;
 
 export interface Dependencias {

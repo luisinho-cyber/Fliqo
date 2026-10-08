@@ -143,6 +143,8 @@ export interface TabelaAcoes {
   attempts: ComDefault<number>;
   last_error: ColumnType<string | null, string | null, string | null>;
   created_at: Automatico<Date>;
+  /** Carimbado por `claim_due_actions` (0018). É daqui que o requeue mede "presa". */
+  claimed_at: ColumnType<Date | null, never, Date | null>;
 }
 
 export interface TabelaEspera {
@@ -503,6 +505,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     attempts: true,
     last_error: true,
     created_at: true,
+    claimed_at: true,
   },
   'app.waitlist_entries': {
     id: true,
