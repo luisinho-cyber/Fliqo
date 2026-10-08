@@ -8,6 +8,7 @@ import {
   envios,
   hoje,
   numeros,
+  pacientes,
   withClinic,
   type Db,
   type Trx,
@@ -15,6 +16,7 @@ import {
 import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
 import { enviarAtivo, type PedidoDeEnvioAtivo, type ResultadoEnvioAtivo } from './envio';
 import { expirarEPassarAdiante } from './ofertas';
+import { tituloDeEnvioIncerto, tituloDeFalha, type ConsultaDoAlerta } from './titulos-de-alerta';
 
 /**
  * Executa as ações agendadas da régua de confirmação.
@@ -291,6 +293,44 @@ async function concluir(trx: Trx, acaoId: string): Promise<void> {
 }
 
 /**
+ * Quem e quando, para o título do alerta. Só roda no caminho de falha: são três leituras
+ * a mais por ação que desistiu, não por ação executada.
+ */
+async function consultaDoAlerta(
+  trx: Trx,
+  acao: AcaoPendente,
+): Promise<{ consulta: ConsultaDoAlerta; pacienteId: string } | undefined> {
+  if (acao.appointment_id === null) return undefined;
+  const consulta = await agenda.porId(trx, acao.appointment_id);
+  if (!consulta) return undefined;
+  const paciente = await pacientes.porId(trx, consulta.patient_id);
+  if (!paciente) return undefined;
+  const { fuso } = await hoje.dadosDaClinica(trx, acao.clinic_id);
+  return {
+    consulta: { paciente: paciente.name, inicio: consulta.starts_at, fuso },
+    pacienteId: paciente.id,
+  };
+}
+
+/** O alerta de ação aponta para a consulta e para o paciente, quando há. */
+async function alertaDeAcao(
+  trx: Trx,
+  acao: AcaoPendente,
+  titulo: (c: ConsultaDoAlerta | undefined) => string,
+  corpo: string,
+): Promise<void> {
+  const achada = await consultaDoAlerta(trx, acao);
+  await alertas.criar(trx, acao.clinic_id, {
+    tipo: 'acao_falhou',
+    gravidade: 'urgente',
+    titulo: titulo(achada?.consulta),
+    corpo,
+    ...(acao.appointment_id === null ? {} : { consultaId: acao.appointment_id }),
+    ...(achada === undefined ? {} : { pacienteId: achada.pacienteId }),
+  });
+}
+
+/**
  * Falhou: volta para 'pendente' com espera crescente. Na última tentativa vira
  * 'erro' e alguém precisa olhar — silêncio aqui significa paciente não avisado.
  */
@@ -309,13 +349,12 @@ async function falhar(
       .where('id', '=', acao.id)
       .execute();
 
-    await alertas.criar(trx, acao.clinic_id, {
-      tipo: 'acao_falhou',
-      gravidade: 'urgente',
-      titulo: `Não consegui executar "${acao.kind}"`,
-      corpo: `${motivo}. O paciente pode não ter sido avisado.`,
-      ...(acao.appointment_id === null ? {} : { consultaId: acao.appointment_id }),
-    });
+    await alertaDeAcao(
+      trx,
+      acao,
+      (c) => tituloDeFalha(acao.kind, c),
+      `${motivo}. O paciente pode não ter sido avisado.`,
+    );
     return;
   }
 
@@ -342,14 +381,12 @@ async function talvezTenhaSaido(trx: Trx, acao: AcaoPendente, motivo: string): P
     .where('id', '=', acao.id)
     .execute();
 
-  await alertas.criar(trx, acao.clinic_id, {
-    tipo: 'acao_falhou',
-    gravidade: 'urgente',
-    titulo: `Não sei se "${acao.kind}" chegou ao paciente`,
-    corpo:
-      'A conexão com o WhatsApp caiu no meio do envio: a mensagem pode ter saído ou não. Confira a conversa antes de reenviar, para o paciente não receber duas vezes.',
-    ...(acao.appointment_id === null ? {} : { consultaId: acao.appointment_id }),
-  });
+  await alertaDeAcao(
+    trx,
+    acao,
+    (c) => tituloDeEnvioIncerto(acao.kind, c),
+    'A conexão com o WhatsApp caiu no meio do envio: a mensagem pode ter saído ou não. Confira a conversa antes de reenviar, para o paciente não receber duas vezes.',
+  );
 }
 
 /**

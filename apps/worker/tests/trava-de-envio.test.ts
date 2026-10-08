@@ -1,9 +1,10 @@
-import { criarDb, type Db } from '@fliqo/db';
+import { acoes, criarDb, withClinic, type Db } from '@fliqo/db';
 import { ownerPool, resetDatabase, seed, urlDoTester, type Scenario } from '@fliqo/db/testing';
 import { TEMPLATES } from '@fliqo/whatsapp';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { rodarUmaVez } from '../src/acoes';
+import { quandoDaConsulta } from '../src/titulos-de-alerta';
 import { WhatsappFalso } from './fake';
 
 /**
@@ -69,6 +70,14 @@ async function devolverAFila(): Promise<void> {
   );
 }
 
+async function inicioDa(consulta: string): Promise<Date> {
+  const { rows } = await owner.query<{ starts_at: Date }>(
+    'select starts_at from app.appointments where id = $1',
+    [consulta],
+  );
+  return rows[0]?.starts_at ?? new Date(0);
+}
+
 async function statusDaConfirmacao(): Promise<string | undefined> {
   const { rows } = await owner.query<{ status: string }>(
     `select status from app.scheduled_actions where kind = 'confirmacao'`,
@@ -121,7 +130,8 @@ describe('o envio que NÃO saiu não trava o próximo', () => {
 
 describe('envio incerto: a mensagem pode ter saído', () => {
   it('não repete, para em erro, e a recepção é avisada para conferir', async () => {
-    await consultaComConfirmacaoVencida();
+    const consulta = await consultaComConfirmacaoVencida();
+    const inicio = await inicioDa(consulta);
     whatsapp.roteiro.push({ ok: false, motivo: 'incerto', detalhe: 'conexão caiu' });
 
     const r = await rodarUmaVez({ db, whatsapp });
@@ -131,10 +141,44 @@ describe('envio incerto: a mensagem pode ter saído', () => {
     const { rows } = await owner.query<{ title: string }>(
       `select title from app.alerts where kind = 'acao_falhou'`,
     );
-    expect(rows.map((l) => l.title)).toEqual(['Não sei se "confirmacao" chegou ao paciente']);
+    // Quem e quando, no fuso da clínica: a recepção sabe qual consulta conferir.
+    expect(rows.map((l) => l.title)).toEqual([
+      `Não sei se a confirmação chegou para Paciente 1 — consulta ${quandoDaConsulta(inicio, 'America/Sao_Paulo')}`,
+    ]);
+
+    // O botão "Reenviar" mora no bloco de descartes, e a API só reenvia ação descartada.
+    // A incerta fica FORA desse bloco: botão que aparece e responde 404 é pior que nenhum.
+    const descartes = await withClinic(
+      c.clinicA,
+      (trx) => acoes.descartadasNoDia(trx, new Date(0), new Date(Date.now() + 7 * 86_400_000)),
+      db,
+    );
+    expect(descartes).toEqual([]);
 
     // A volta seguinte não pega a ação de novo: é o "não repetir".
     await rodarUmaVez({ db, whatsapp });
     expect(whatsapp.enviados).toHaveLength(0);
+  });
+});
+
+describe('falha definitiva: o alerta também diz quem e quando', () => {
+  it('template recusado vira alerta com o paciente e o horário, e aponta para eles', async () => {
+    const consulta = await consultaComConfirmacaoVencida();
+    const inicio = await inicioDa(consulta);
+    whatsapp.falharComRecusa();
+    await rodarUmaVez({ db, whatsapp });
+
+    const { rows } = await owner.query<{
+      title: string;
+      appointment_id: string | null;
+      patient_id: string | null;
+    }>(`select title, appointment_id, patient_id from app.alerts where kind = 'acao_falhou'`);
+    expect(rows).toEqual([
+      {
+        title: `Não consegui enviar a confirmação para Paciente 1 — consulta ${quandoDaConsulta(inicio, 'America/Sao_Paulo')}`,
+        appointment_id: consulta,
+        patient_id: c.patients[0],
+      },
+    ]);
   });
 });
