@@ -14,6 +14,8 @@ import { sobSavepoint, type Trx } from '../withClinic';
 export interface PedidoDeReserva {
   clinicId: string;
   appointmentId: string;
+  /** O horário da consulta agora. Faz parte da chave: horário novo, mensagem nova. */
+  inicioDaConsulta: Date;
   template: string;
   acaoId: string;
 }
@@ -38,6 +40,7 @@ export async function reservar(trx: Trx, p: PedidoDeReserva): Promise<Reserva> {
         .values({
           clinic_id: p.clinicId,
           appointment_id: p.appointmentId,
+          appointment_starts_at: p.inicioDaConsulta,
           template_name: p.template,
           action_id: p.acaoId,
         })

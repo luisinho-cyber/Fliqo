@@ -379,6 +379,7 @@ export interface TabelaEnvios {
   id: ComDefault<string>;
   clinic_id: string;
   appointment_id: string;
+  appointment_starts_at: Date;
   template_name: string;
   action_id: string | null;
   wamid: string | null;
@@ -488,6 +489,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     id: true,
     clinic_id: true,
     appointment_id: true,
+    appointment_starts_at: true,
     template_name: true,
     action_id: true,
     wamid: true,

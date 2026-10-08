@@ -132,12 +132,13 @@ async function enviarUmaVez(
   trx: Trx,
   dep: Dependencias,
   acao: AcaoPendente,
-  consultaId: string,
+  consulta: { id: string; starts_at: Date },
   pedido: PedidoDeEnvioAtivo,
 ): Promise<ResultadoEnvioAtivo | { ok: true; jaSaiu: true }> {
   const reserva = await envios.reservar(trx, {
     clinicId: acao.clinic_id,
-    appointmentId: consultaId,
+    appointmentId: consulta.id,
+    inicioDaConsulta: consulta.starts_at,
     template: pedido.template,
     acaoId: acao.id,
   });
@@ -170,7 +171,7 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
-  const r = await enviarUmaVez(trx, dep, acao, consulta.id, {
+  const r = await enviarUmaVez(trx, dep, acao, consulta, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,
@@ -211,7 +212,7 @@ async function lembreteFinal(
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
-  const r = await enviarUmaVez(trx, dep, acao, consulta.id, {
+  const r = await enviarUmaVez(trx, dep, acao, consulta, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,

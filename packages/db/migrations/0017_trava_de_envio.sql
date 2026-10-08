@@ -34,6 +34,10 @@ create table app.envios (
   clinic_id       uuid        not null references app.clinics(id) on delete cascade,
   appointment_id  uuid        not null references app.appointments(id) on delete cascade,
   template_name   text        not null,
+  -- O horário da consulta no momento do envio. Entra na chave: se um dia algo mover
+  -- a MESMA consulta para outro horário (hoje remarcar cria outra), a confirmação do
+  -- horário novo é outra mensagem e passa, em vez de bater numa trava esquecida.
+  appointment_starts_at timestamptz not null,
   -- Rastro de qual ação mandou. A trava NÃO depende dele: uma ação duplicada para
   -- a mesma consulta também é segurada pelo índice.
   action_id       uuid        references app.scheduled_actions(id) on delete set null,
@@ -44,7 +48,7 @@ create table app.envios (
 );
 
 create unique index envio_unico_por_consulta
-  on app.envios (clinic_id, appointment_id, template_name);
+  on app.envios (clinic_id, appointment_id, template_name, appointment_starts_at);
 
 /*
  * Lê a linha de NOVO, em vez de olhar NEW: o gatilho é adiado, e o evento do

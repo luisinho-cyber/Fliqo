@@ -19,6 +19,7 @@ let owner: pg.Pool;
 let db: Db;
 let c: Scenario;
 let consulta: string;
+let inicio: Date;
 let acao: string;
 
 beforeAll(async () => {
@@ -37,14 +38,15 @@ beforeEach(async () => {
   await owner.query('delete from app.envios');
   await owner.query('delete from app.scheduled_actions');
   await owner.query('delete from app.appointments');
-  const r = await owner.query<{ id: string }>(
+  const r = await owner.query<{ id: string; starts_at: Date }>(
     `insert into app.appointments
        (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
      values ($1, $2, $3, $4, now() + interval '1 day', now() + interval '1 day 1 hour', 25000)
-     returning id`,
+     returning id, starts_at`,
     [c.clinicA, c.profA, c.patients[0], c.procEletivo],
   );
   consulta = r.rows[0]?.id ?? '';
+  inicio = r.rows[0]?.starts_at ?? new Date(0);
   const a = await owner.query<{ id: string }>(
     `insert into app.scheduled_actions (clinic_id, kind, appointment_id, due_at)
      values ($1, 'confirmacao', $2, now()) returning id`,
@@ -53,16 +55,19 @@ beforeEach(async () => {
   acao = a.rows[0]?.id ?? '';
 });
 
-function pedido(template = TEMPLATE) {
-  return { clinicId: c.clinicA, appointmentId: consulta, template, acaoId: acao };
+function pedido(template = TEMPLATE, inicioDaConsulta = inicio) {
+  return { clinicId: c.clinicA, appointmentId: consulta, inicioDaConsulta, template, acaoId: acao };
 }
 
 /** Reserva, "envia" e conclui numa transação só — o caminho feliz do worker. */
-async function enviarComTrava(template = TEMPLATE): Promise<'enviou' | 'ja_saiu'> {
+async function enviarComTrava(
+  template = TEMPLATE,
+  inicioDaConsulta = inicio,
+): Promise<'enviou' | 'ja_saiu'> {
   return withClinic(
     c.clinicA,
     async (trx) => {
-      const r = await envios.reservar(trx, pedido(template));
+      const r = await envios.reservar(trx, pedido(template, inicioDaConsulta));
       if (!r.ok) return 'ja_saiu';
       await envios.concluir(trx, r.id, `wamid.${template}`);
       return 'enviou';
@@ -124,6 +129,24 @@ describe('a segunda tentativa não envia', () => {
       [acao],
     );
     expect(rows[0]?.status).toBe('feito');
+  });
+
+  it('a MESMA consulta movida para outro horário: a confirmação do horário novo sai', async () => {
+    /*
+     * Hoje remarcar cancela e cria outra consulta, então isto não acontece. A chave inclui o
+     * horário para o dia em que algo mover a consulta no lugar: sem isso, a confirmação do
+     * horário novo bateria numa trava que ninguém lembraria que existe.
+     */
+    expect(await enviarComTrava()).toBe('enviou');
+    const novoHorario = new Date(inicio.getTime() + 2 * 60 * 60_000);
+    await owner.query(
+      `update app.appointments set starts_at = $2, ends_at = $2::timestamptz + interval '1 hour'
+        where id = $1`,
+      [consulta, novoHorario],
+    );
+    expect(await enviarComTrava(TEMPLATE, novoHorario)).toBe('enviou');
+    // E o horário antigo continua travado: quem voltar com ele não manda de novo.
+    expect(await enviarComTrava(TEMPLATE, inicio)).toBe('ja_saiu');
   });
 
   it('outro template para a mesma consulta é outra mensagem: confirmação e lembrete saem', async () => {
@@ -217,9 +240,10 @@ describe('reserva que não foi concluída nem desfeita não fica', () => {
   it('wamid sem momento, ou momento sem wamid, o banco recusa', async () => {
     await expect(
       owner.query(
-        `insert into app.envios (clinic_id, appointment_id, template_name, wamid)
-         values ($1, $2, $3, 'wamid.X')`,
-        [c.clinicA, consulta, TEMPLATE],
+        `insert into app.envios
+           (clinic_id, appointment_id, appointment_starts_at, template_name, wamid)
+         values ($1, $2, $3, $4, 'wamid.X')`,
+        [c.clinicA, consulta, inicio, TEMPLATE],
       ),
     ).rejects.toThrow(/envio_wamid_e_momento_juntos/);
   });
