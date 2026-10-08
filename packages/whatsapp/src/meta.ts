@@ -12,6 +12,33 @@ import { LimitadorPorNumero, RELOGIO_REAL, type Relogio } from './limite';
 /** Quanto esperar antes de cada nova tentativa. Só para falha temporária. */
 const ESPERAS_MS = [500, 2_000, 8_000];
 
+/**
+ * Teto de uma tentativa. Sem ele, pedido pendurado só terminava por erro do sistema
+ * operacional, na casa dos minutos — segurando a ação, a transação e a volta do laço.
+ * A Meta responde envio em menos de 2 s; quinze é folga, não estimativa.
+ */
+const TIMEOUT_MS = 15_000;
+
+/**
+ * Falhas em que a conexão nem chegou a abrir: o pedido NÃO saiu, e repetir é seguro.
+ * Qualquer outra falha de rede pode ter acontecido depois de o pedido sair.
+ */
+const NAO_SAIU = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
+
+function codigoDaFalhaDeRede(erro: unknown): string | undefined {
+  const causa: unknown = erro instanceof Error ? erro.cause : undefined;
+  const codigo: unknown =
+    typeof causa === 'object' && causa !== null && 'code' in causa ? causa.code : undefined;
+  return typeof codigo === 'string' ? codigo : undefined;
+}
+
 export interface ConfigMeta {
   /**
    * De onde vem o token de cada número. NÃO é um token: o cliente pergunta a
@@ -22,6 +49,8 @@ export interface ConfigMeta {
   baseUrl?: string;
   porSegundo?: number;
   relogio?: Relogio;
+  /** Teto de cada tentativa. Injetável para o teste não esperar quinze segundos. */
+  timeoutMs?: number;
   /** Injetável para teste; por padrão, o fetch do runtime. */
   buscar?: typeof fetch;
 }
@@ -44,6 +73,7 @@ export class ClienteMeta implements ClienteWhatsApp {
   readonly #limitador: LimitadorPorNumero;
   readonly #relogio: Relogio;
   readonly #buscar: typeof fetch;
+  readonly #timeoutMs: number;
 
   constructor(cfg: ConfigMeta) {
     this.#cofre = cfg.cofre;
@@ -52,6 +82,7 @@ export class ClienteMeta implements ClienteWhatsApp {
     this.#relogio = cfg.relogio ?? RELOGIO_REAL;
     this.#limitador = new LimitadorPorNumero(cfg.porSegundo ?? 10, this.#relogio);
     this.#buscar = cfg.buscar ?? fetch;
+    this.#timeoutMs = cfg.timeoutMs ?? TIMEOUT_MS;
   }
 
   async enviarTemplate(p: EnvioDeTemplate): Promise<ResultadoEnvio> {
@@ -170,10 +201,9 @@ export class ClienteMeta implements ClienteWhatsApp {
 
       const r = await this.#tentarComCredencialViva(phoneNumberId, corpo);
       if (r.ok) return r;
-      // Recusa definitiva não melhora com repetição — e credencial recusada é
-      // definitiva também: o token fresco já foi tentado lá dentro, e o backoff
-      // de rede não conserta credencial.
-      if (r.motivo === 'recusado' || r.motivo === 'credencial') return r;
+      // Só `temporario` repete. Recusa e credencial não melhoram com repetição, e
+      // `incerto` pode já ter saído: repetir é a mensagem duplicada no celular do paciente.
+      if (r.motivo !== 'temporario') return r;
       ultimo = { motivo: r.motivo, detalhe: r.detalhe };
     }
 
@@ -189,44 +219,52 @@ export class ClienteMeta implements ClienteWhatsApp {
     corpo: unknown,
     token: string,
   ): Promise<ResultadoEnvio & { credencial?: boolean }> {
+    let resposta: Response;
     try {
-      const resposta = await this.#buscar(
-        `${this.#base}/${this.#versao}/${phoneNumberId}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify(corpo),
+      resposta = await this.#buscar(`${this.#base}/${this.#versao}/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
         },
-      );
-
-      const dados = (await resposta.json()) as RespostaMeta;
-
-      if (resposta.ok) {
-        const wamid = dados.messages?.[0]?.id;
-        return wamid === undefined
-          ? { ok: false, motivo: 'temporario', detalhe: 'resposta sem wamid' }
-          : { ok: true, wamid };
-      }
-
-      const detalhe = dados.error?.message ?? `http ${resposta.status}`;
-      // 401, ou o código 190 (OAuthException) que a Meta usa para token inválido
-      // ou expirado. Nos dois casos o token em mão pode simplesmente ter mudado.
-      if (resposta.status === 401 || dados.error?.code === 190) {
-        return { ok: false, motivo: 'recusado', detalhe, credencial: true };
-      }
-      const motivo: MotivoDeFalha =
-        resposta.status === 429 || resposta.status >= 500 ? 'temporario' : 'recusado';
-      return { ok: false, motivo, detalhe };
+        body: JSON.stringify(corpo),
+        signal: AbortSignal.timeout(this.#timeoutMs),
+      });
     } catch (erro) {
-      // Rede caiu: vale tentar de novo.
-      return {
-        ok: false,
-        motivo: 'temporario',
-        detalhe: erro instanceof Error ? erro.message : 'falha de rede',
-      };
+      const detalhe = erro instanceof Error ? erro.message : 'falha de rede';
+      // Conexão que nem abriu: o pedido não saiu, repetir é seguro. O resto — conexão que
+      // caiu, tempo esgotado — pode ter acontecido com a mensagem já aceita.
+      const codigo = codigoDaFalhaDeRede(erro);
+      return codigo !== undefined && NAO_SAIU.has(codigo)
+        ? { ok: false, motivo: 'temporario', detalhe }
+        : { ok: false, motivo: 'incerto', detalhe };
     }
+
+    let dados: RespostaMeta;
+    try {
+      dados = (await resposta.json()) as RespostaMeta;
+    } catch {
+      // A Meta respondeu; o corpo é que não deu para ler. Num 2xx, a mensagem saiu.
+      if (resposta.ok) return { ok: false, motivo: 'incerto', detalhe: 'resposta 2xx ilegível' };
+      dados = {};
+    }
+
+    if (resposta.ok) {
+      const wamid = dados.messages?.[0]?.id;
+      // 2xx é aceite. Sem wamid não dá para gravar o envio, mas repetir duplicaria.
+      return wamid === undefined
+        ? { ok: false, motivo: 'incerto', detalhe: 'resposta 2xx sem wamid' }
+        : { ok: true, wamid };
+    }
+
+    const detalhe = dados.error?.message ?? `http ${String(resposta.status)}`;
+    // 401, ou o código 190 (OAuthException) que a Meta usa para token inválido
+    // ou expirado. Nos dois casos o token em mão pode simplesmente ter mudado.
+    if (resposta.status === 401 || dados.error?.code === 190) {
+      return { ok: false, motivo: 'recusado', detalhe, credencial: true };
+    }
+    const motivo: MotivoDeFalha =
+      resposta.status === 429 || resposta.status >= 500 ? 'temporario' : 'recusado';
+    return { ok: false, motivo, detalhe };
   }
 }
