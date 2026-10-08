@@ -1,3 +1,5 @@
+import type { BatimentoRegistrado } from './saude';
+
 /**
  * Parada limpa.
  *
@@ -69,4 +71,25 @@ export async function rodarLaco(laco: Laco): Promise<void> {
     }
     await laco.parada.dormir(laco.intervaloMs);
   }
+}
+
+export interface LacoVigiado extends Laco {
+  /** Só batimento que já está no `/estado`: o tipo recusa o que `criarBatimento` devolve. */
+  batimento: BatimentoRegistrado;
+}
+
+/**
+ * Um laço que aparece no `/estado`: bate a cada volta concluída.
+ *
+ * A batida mora aqui, e não na tarefa de cada laço, para não depender de alguém lembrar de
+ * marcá-la. Volta que falha não bate: falhar sempre é a forma mais comum de estar parado.
+ */
+export function rodarLacoVigiado(laco: LacoVigiado): Promise<void> {
+  return rodarLaco({
+    ...laco,
+    tarefa: async () => {
+      await laco.tarefa();
+      laco.batimento.marcar();
+    },
+  });
 }

@@ -183,3 +183,32 @@ export async function desconectarWhatsapp(): Promise<void> {
   await naApi('/api/whatsapp/desconectar');
   revalidatePath('/configuracoes/whatsapp');
 }
+
+/**
+ * "Enviar confirmação agora": devolve à fila uma ação que a queda descartou.
+ *
+ * Não manda mensagem daqui — devolve a ação, e o worker refaz o caminho com a
+ * checagem de pertinência. Se a afirmação do template venceu nesse meio-tempo, ela
+ * volta para descartada em vez de mandar "confirme sua consulta de amanhã" sobre
+ * um horário de ontem.
+ */
+export async function reenviarConfirmacao(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('acao'));
+  await naApi(`/api/acoes/${id}/reenviar`);
+  revalidatePath('/hoje');
+}
+
+/**
+ * Revela o telefone inteiro de um paciente, e o toque É o ato deliberado que a
+ * regra do DESIGN.md exige. Nenhuma listagem traz o número inteiro; ele vem do
+ * endpoint por paciente, e só quando alguém pede.
+ */
+// Arquivo 'use server': todo export tem de ser assíncrono, mesmo quando não há o
+// que esperar. A restrição é do Next, não nossa.
+// eslint-disable-next-line @typescript-eslint/require-await
+export async function revelarTelefone(formulario: FormData): Promise<void> {
+  const id = texto(formulario.get('paciente'));
+  // O número em si é buscado pela tela, do endpoint por paciente. Aqui só se
+  // registra o ato: quem tocou pediu para ver aquele número.
+  redirect(`/hoje?revelar=${encodeURIComponent(id)}`);
+}

@@ -1,4 +1,5 @@
 import {
+  acoes,
   agenda,
   alertas,
   atrasos,
@@ -171,6 +172,47 @@ export function registrarPainel(app: FastifyInstance, ctx: ContextoPainel): void
       return p ? [p] : [];
     });
     return r.respondido ? reply : reply.send(r.valor);
+  });
+
+  /**
+   * O telefone inteiro de UM paciente, por pedido explícito.
+   *
+   * É a contrapartida da regra: nenhuma listagem devolve o número inteiro, e ele
+   * sai daqui — de um endpoint por paciente, que é o que o botão "Ligar" chama.
+   * Tocar nele é um ato deliberado (DESIGN.md), e é por isso que ele existe
+   * separado em vez de o número viajar em toda lista.
+   *
+   * Quando houver log de auditoria, é aqui que a linha "quem revelou o telefone de
+   * quem, e quando" vai morar — anotado em docs/OPERACAO.md. Não agora.
+   */
+  app.get('/api/pacientes/:id/telefone', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return reply.code(400).send({ erro: 'pedido_invalido' });
+
+    const r = await comUsuario(ctx, req, reply, (trx) => pacientes.porId(trx, id));
+    if (r.respondido) return reply;
+    return r.valor
+      ? reply.send({ telefone: r.valor.phone_e164 })
+      : reply.code(404).send({ erro: 'paciente_nao_encontrado' });
+  });
+
+  /**
+   * "Enviar confirmação agora": devolve uma ação descartada para a fila.
+   *
+   * Não reimplementa o envio — só volta a ação para `pendente` com vencimento
+   * agora, e o worker refaz o caminho inteiro, checagem de pertinência incluída.
+   * Se a afirmação do template tiver vencido nesse meio-tempo, ela volta para
+   * `sem_proposito` em vez de mandar mensagem falsa.
+   */
+  app.post('/api/acoes/:id/reenviar', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return reply.code(400).send({ erro: 'pedido_invalido' });
+
+    const r = await comUsuario(ctx, req, reply, (trx) => acoes.reenfileirar(trx, id));
+    if (r.respondido) return reply;
+    return r.valor
+      ? reply.send({ ok: true })
+      : reply.code(404).send({ erro: 'acao_nao_descartada' });
   });
 
   app.post('/api/pacientes/:id/consentimento', async (req, reply) => {

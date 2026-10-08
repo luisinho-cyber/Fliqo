@@ -16,6 +16,24 @@ export interface ClienteWhatsApp {
   marcarDigitando(p: EnvioDeDigitando): Promise<void>;
 }
 
+/**
+ * De onde sai o token de envio de cada número.
+ *
+ * O token é POR CLÍNICA: cada clínica conecta a própria conta, e mandar mensagem
+ * em nome dela exige a credencial dela. O cliente não guarda token nenhum — ele
+ * pergunta, a cada envio, qual é o token daquele `phoneNumberId`.
+ *
+ * `esquecer` existe porque o token muda sem ninguém avisar: a clínica reconecta,
+ * a Meta revoga, a chave de cifragem é rotacionada. Quando a Meta recusa a
+ * credencial, o cliente manda esquecer e tenta UMA vez com token fresco — se o
+ * fresco também for recusado, a falha é definitiva.
+ */
+export interface CofreDeTokens {
+  /** Token daquele número, ou undefined quando não há token utilizável. */
+  doNumero(phoneNumberId: string): Promise<string | undefined>;
+  esquecer(phoneNumberId: string): void;
+}
+
 export interface EnvioDeDigitando {
   phoneNumberId: string;
   /** wamid da última mensagem do paciente. */
@@ -47,15 +65,34 @@ export type ResultadoEnvio =
  * `recusado` é definitivo (template errado, número inválido): repetir não adianta.
  * `temporario` é o que vale a pena tentar de novo (limite, instabilidade da Meta).
  */
-export type MotivoDeFalha = 'recusado' | 'temporario';
+/**
+ * `credencial` é o que sobrou depois de já ter tentado com token fresco: não é
+ * cache velho, é a credencial da clínica que não serve mais. Quem chama usa isso
+ * para marcar o número em erro UMA vez e abrir um alerta que nomeia a causa, em
+ * vez de N alertas de ação falhada.
+ */
+export type MotivoDeFalha = 'recusado' | 'temporario' | 'credencial';
 
-/** Templates da régua de confirmação. Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido na volta. */
+/**
+ * Templates da régua de confirmação. Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido na volta.
+ *
+ * `afirma` é o que o TEXTO do template diz sobre quando — e o texto vive na Meta,
+ * não aqui (confirmação e lembrete vão sem variáveis). É por essa declaração que
+ * `lerAfirmacao`, em @fliqo/core, decide se uma ação represada durante uma queda
+ * ainda pode sair. **Trocar o texto de um template na Meta exige revisitar a
+ * declaração abaixo** — nenhum teste pega essa divergência.
+ */
 export const TEMPLATES = {
   confirmacao: {
     nome: 'confirmacao_consulta',
+    afirma: 'consulta_amanha_ou_depois',
     botoes: [PAYLOAD_BOTOES.CONFIRMAR, PAYLOAD_BOTOES.REMARCAR, PAYLOAD_BOTOES.CANCELAR],
   },
-  lembreteFinal: { nome: 'lembrete_final', botoes: [] as string[] },
+  lembreteFinal: {
+    nome: 'lembrete_final',
+    afirma: 'consulta_hoje_ainda_por_vir',
+    botoes: [] as string[],
+  },
   ofertaDeVaga: { nome: 'oferta_de_vaga', botoes: [PAYLOAD_BOTOES.QUERO_VAGA] },
   /**
    * Aviso de atraso. "Prefiro remarcar" reusa o payload de remarcação: o atraso

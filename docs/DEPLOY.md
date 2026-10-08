@@ -240,23 +240,62 @@ ele é o webhook do passo 8.
 - **Root Directory**: vazio
 - **Config-as-code file path**: `apps/worker/railway.json`
 
-O worker atende HTTP numa rota só, `/health`, e o `railway.json` dele já aponta o
-health check para lá. **Não gere domínio**: o health check do Railway bate na porta
+O worker atende HTTP em duas rotas, e o `railway.json` dele aponta o health check
+para `/health`. **Não gere domínio**: o health check do Railway bate na porta
 interna do serviço, e o worker não tem nada para servir ao público.
 
-Um worker sem health check morre em silêncio, e silêncio aqui significa nenhuma
-confirmação enviada, nenhuma vaga oferecida e ninguém sabendo. O `/health` responde
-**503** quando um dos laços para de dar sinal — e é esse 503 que faz o Railway
-reiniciar o serviço.
+- `/health` responde 200 enquanto o processo está de pé. O health check do Railway
+  roda só no início do deploy, aceita qualquer 2xx e serve para o deploy novo entrar
+  no ar; ele não roda depois disso e não reinicia nada.
+- `/estado` diz se o trabalho está saindo: `verde`, `degradado` (laço batendo, envio
+  represado) ou `travado` (laço sem sinal), com a causa e os números. Fica fora do
+  health check e **só responde com `Authorization: Bearer <ESTADO_TOKEN>`**. Sem token
+  válido, responde 404 igual a uma rota que não existe; sem `ESTADO_TOKEN` configurado,
+  fica fechado para todos. Ele diz exatamente quando o sistema está fraco, e isso não é
+  para quem sonda a porta — mesmo que alguém gere um domínio para o worker por engano.
+
+O que reinicia o worker é a política `ON_FAILURE`, e ela só age quando o processo
+sai com erro. Um laço travado não faz o processo sair: o worker fica de pé, nada é
+enviado, e o `/estado` diz `travado`. O aviso que chega a alguém é o e-mail do vigia
+de operador.
 
 Em **Variables**:
 
-| Variável            | De onde vem                                                          |
-| ------------------- | -------------------------------------------------------------------- |
-| `DATABASE_URL`      | passo 4, o mesmo da API                                              |
-| `WHATSAPP_TOKEN`    | Meta > WhatsApp > API Setup, token do número                         |
-| `ANTHROPIC_API_KEY` | do painel do provedor; **cole direto aqui, e em nenhum outro lugar** |
-| `LOG_LEVEL`         | `info`                                                               |
+| Variável             | De onde vem                                                                   |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `DATABASE_URL`       | passo 4, o mesmo da API                                                       |
+| `WHATSAPP_TOKEN_KEY` | **o mesmo valor que está na api** — é a chave que decifra os tokens           |
+| `ANTHROPIC_API_KEY`  | do painel do provedor; **cole direto aqui, e em nenhum outro lugar**          |
+| `EMAIL_API_KEY`      | do painel do serviço de e-mail; **cole direto aqui, e em nenhum outro lugar** |
+| `EMAIL_REMETENTE`    | um remetente verificado no serviço, ex. `avisos@suaclinica.com.br`            |
+| `OPERADOR_EMAIL`     | o seu e-mail: é quem recebe o aviso                                           |
+| `ESTADO_TOKEN`       | `openssl rand -base64 32` no **seu** terminal; **cole direto aqui**           |
+| `LOG_LEVEL`          | `info`                                                                        |
+
+**As três de e-mail são do vigia de operador** (migração 0015). Ele roda de 15 em 15
+minutos em horário comercial e avisa quando uma clínica fica com o WhatsApp fora por
+mais de 20 min, quando passa 3 h com ação vencida e nenhuma mensagem saindo, ou quando
+a qualidade do número cai do verde.
+
+**A `EMAIL_API_KEY` fica SÓ no worker.** Não na api, não no painel, não no CI. Quem
+manda e-mail é o worker; um runner de CI que pode mandar e-mail em nome da Fliqo é
+superfície nova sem nada em troca, e a api não tem o que fazer com ela.
+
+**`ESTADO_TOKEN` é segredo e fica SÓ no worker.** Opcional: sem ele, o `/estado` não
+responde a ninguém. Com menos de 32 caracteres, o worker não sobe.
+
+`EMAIL_API_URL` e `OPERADOR_FUSO` são opcionais: valem `https://api.resend.com/emails`
+e `America/Sao_Paulo`. O fuso é o **seu**, não o da clínica — é a sua caixa de entrada
+que toca, e é ele que decide o que é "horário comercial" para o vigia.
+
+**Não existe mais um token de WhatsApp de ambiente.** Cada clínica manda com a
+credencial dela: a api cifra o token no momento da conexão, e o worker decifra para
+enviar. Por isso o worker precisa da `WHATSAPP_TOKEN_KEY` — sem ela ele não tem como
+mandar mensagem em nome de ninguém, e o start falha dizendo isso.
+
+Um token único de reserva seria pior do que falhar: uma clínica mal configurada
+passaria a mandar mensagem pelo número errado, os pacientes dela receberiam de um
+remetente estranho, e nada apareceria em log nenhum.
 
 `ANTHROPIC_MODEL` é opcional. Sem ela, vale `claude-haiku-4-5`. Trocar de modelo
 é mudar essa variável e reiniciar o worker.
@@ -311,27 +350,30 @@ serviço?". Configurar um segredo num serviço que não o usa não é inofensivo
 lugar a mais de onde ele vaza no dia em que alguém ganhar acesso de leitura às
 variáveis daquele serviço.
 
-| Variável                | api | worker | web | Por quê                                                |
-| ----------------------- | :-: | :----: | :-: | ------------------------------------------------------ |
-| `DATABASE_URL`          |  ✓  |   ✓    |  —  | o painel não fala com o banco (CLAUDE.md, regra 10)    |
-| `DATABASE_ADMIN_URL`    |  —  |   —    |  —  | **em nenhum**, ver abaixo                              |
-| `SUPABASE_JWT_SECRET`   |  ✓  |   —    |  —  | quem verifica o token do painel é a api                |
-| `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel              |
-| `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                   |
-| `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                |
-| `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api       |
-| `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                   |
-| `WHATSAPP_TOKEN`        |  —  |   ✓    |  —  | quem envia mensagem é o worker                         |
-| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra; o worker decifra para enviar              |
-| `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela           |
-| `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil |
-| `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup               |
-| `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                         |
-| `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                    |
-| `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`              |
-| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                 |
-| `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão              |
-| `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel          |
+| Variável                | api | worker | web | Por quê                                                      |
+| ----------------------- | :-: | :----: | :-: | ------------------------------------------------------------ |
+| `DATABASE_URL`          |  ✓  |   ✓    |  —  | o painel não fala com o banco (CLAUDE.md, regra 10)          |
+| `DATABASE_ADMIN_URL`    |  —  |   —    |  —  | **em nenhum**, ver abaixo                                    |
+| `SUPABASE_JWT_SECRET`   |  ✓  |   —    |  —  | quem verifica o token do painel é a api                      |
+| `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel                    |
+| `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                         |
+| `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                      |
+| `EMAIL_API_KEY`         |  —  |   ✓    |  —  | **só o worker**: é ele que manda o aviso de operador         |
+| `EMAIL_REMETENTE`       |  —  |   ✓    |  —  | idem                                                         |
+| `OPERADOR_EMAIL`        |  —  |   ✓    |  —  | idem                                                         |
+| `ESTADO_TOKEN`          |  —  |   ✓    |  —  | **só o worker**: é ele quem responde o `/estado`             |
+| `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api             |
+| `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                         |
+| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra o token da clínica; o worker decifra para enviar |
+| `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela                 |
+| `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil       |
+| `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup                     |
+| `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                               |
+| `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                          |
+| `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`                    |
+| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                       |
+| `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão                    |
+| `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel                |
 
 ### `DATABASE_ADMIN_URL` não vai para o Railway em hipótese nenhuma
 
@@ -410,8 +452,10 @@ Abra no navegador:
 https://<o domínio do passo 5>/health
 ```
 
-Tem de aparecer `{"ok":true}`. Se aparecer, a API subiu e o Railway vai mantê-la
-no ar — é esse mesmo endereço que ele consulta para saber se precisa reiniciar.
+Tem de aparecer `{"ok":true}`. Se aparecer, a API subiu. O Railway consulta esse
+mesmo endereço só no início de cada deploy, para decidir se o deploy novo entra no
+ar; depois disso ele não o consulta mais, e quem reinicia a API quando ela cai é a
+política `ON_FAILURE`.
 
 Se o deploy ficar reiniciando sem parar, abra os logs do serviço no Railway: a
 API morre no start de propósito quando falta uma variável, e o log diz o nome da

@@ -8,17 +8,19 @@ import {
   FILA_OFERTA,
   FILA_RESPOSTA,
 } from '@fliqo/db/fila';
-import { ClienteMeta } from '@fliqo/whatsapp';
+import { ClienteMeta, lerChave } from '@fliqo/whatsapp';
 import pino from 'pino';
-import { rodarUmaVez } from './acoes';
 import { varrerAtrasos, varrerClinica } from './atrasos';
 import { abrirRodada } from './ofertas';
 import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
-import { criarParada, rodarLaco } from './parada';
+import { criarCofre } from './cofre';
+import { criarParada, rodarLaco, rodarLacoVigiado } from './parada';
+import { vigiarOperador } from './vigia-de-operador';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
-import { criarBatimento, servidorDeSaude } from './saude';
+import { criarSinaisDeSaude, registrarLaco, servidorDeSaude } from './saude';
+import { iniciarLacoDeAcoes } from './laco-de-acoes';
 
 /**
  * Tetos de conexão, explícitos.
@@ -37,7 +39,12 @@ recusarAdminUrl('o worker');
 const log = pino({ level: config.LOG_LEVEL });
 const db = criarDb(config.DATABASE_URL, POOL_CONSULTAS);
 const boss = criarFila(config.DATABASE_URL, POOL_DA_FILA);
-const whatsapp = new ClienteMeta({ token: config.WHATSAPP_TOKEN });
+/**
+ * O cliente não guarda token: ele pergunta ao cofre, a cada envio, qual é o
+ * token daquele número. Cada clínica manda com a credencial dela.
+ */
+const cofre = criarCofre({ db, chave: lerChave(config.WHATSAPP_TOKEN_KEY) });
+const whatsapp = new ClienteMeta({ cofre });
 const llm = new ClienteAnthropic({
   apiKey: config.ANTHROPIC_API_KEY,
   modelo: config.ANTHROPIC_MODEL,
@@ -118,48 +125,68 @@ await boss.work<{ clinicId: string; profissionalId: string; inicio: string; fim:
 );
 
 const parada = criarParada();
-const batimentoDeAcoes = criarBatimento();
-const batimentoDeAtrasos = criarBatimento();
-
-/** Laço das ações agendadas. Roda a cada 30 s, sem sobrepor uma rodada na outra. */
-const laco = rodarLaco({
-  parada,
-  intervaloMs: 30_000,
-  // Uma rodada ruim não pode matar o worker: o próximo ciclo tenta de novo.
-  aoFalhar: (erro) => {
-    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'rodada falhou');
-  },
-  tarefa: async () => {
-    const r = await rodarUmaVez({ db, whatsapp, aoProgredir: batimentoDeAcoes.marcar });
-    batimentoDeAcoes.marcar();
-    if (r.pegas > 0 || r.devolvidas > 0) log.info(r, 'rodada de ações');
-  },
-});
+const sinais = criarSinaisDeSaude();
+const lacoDeAcoes = iniciarLacoDeAcoes({ parada, db, whatsapp, log, sinais });
+const batimentoDeAtrasos = registrarLaco(sinais, 'atrasos');
 
 /**
  * Laço dos atrasos. A cada 2 min porque um atraso que cresce entre uma volta e
  * outra ainda dá tempo de ser avisado antes de o paciente sair de casa.
  */
-const lacoDeAtrasos = rodarLaco({
+const lacoDeAtrasos = rodarLacoVigiado({
   parada,
+  batimento: batimentoDeAtrasos,
   intervaloMs: 120_000,
   aoFalhar: (erro) => {
     log.error({ erro: erro instanceof Error ? erro.message : erro }, 'varredura de atrasos falhou');
   },
   tarefa: async () => {
     const r = await varrerAtrasos({ db, whatsapp });
-    batimentoDeAtrasos.marcar();
     if (r.avisosAoPaciente > 0 || r.alertasDeRecepcao > 0 || r.alertasDeEspera > 0) {
       log.info(r, 'varredura de atrasos');
     }
   },
 });
 
-const lacos = Promise.all([laco, lacoDeAtrasos]);
+/**
+ * O vigia de operador. A cada 15 min, e ele mesmo decide se está em horário de avisar.
+ *
+ * Quinze minutos e não trinta porque a carência de "WhatsApp fora" é de vinte: com meia hora
+ * de laço, uma queda de vinte e um minutos poderia esperar outros vinte e nove para virar
+ * e-mail, e aí a carência passaria a ser de cinquenta sem ninguém ter escolhido isso.
+ *
+ * Fora do batimento de vida de propósito: o /estado do worker fala dos laços que entregam
+ * mensagem de paciente. Um vigia travado é ruim, mas não é a mesma urgência de a régua parar,
+ * e misturá-los faria o /estado dizer `travado` com a régua funcionando.
+ */
+const lacoDoVigia = rodarLaco({
+  parada,
+  intervaloMs: 900_000,
+  aoFalhar: (erro) => {
+    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'vigia de operador falhou');
+  },
+  tarefa: async () => {
+    const r = await vigiarOperador({
+      db,
+      email: {
+        chave: config.EMAIL_API_KEY,
+        remetente: config.EMAIL_REMETENTE,
+        destinatario: config.OPERADOR_EMAIL,
+        url: config.EMAIL_API_URL,
+      },
+      fusoDoOperador: config.OPERADOR_FUSO,
+    });
+    // Nada de chave, nada de e-mail: só contagens e id de clínica.
+    if (r.avisadas > 0 || r.falhas.length > 0) log.info(r, 'vigia de operador');
+  },
+});
+
+const lacos = Promise.all([lacoDeAcoes, lacoDeAtrasos, lacoDoVigia]);
 
 const saude = servidorDeSaude({
   porta: config.PORT,
-  batimentos: { acoes: batimentoDeAcoes, atrasos: batimentoDeAtrasos },
+  sinais,
+  tokenDoEstado: config.ESTADO_TOKEN,
 });
 
 /**

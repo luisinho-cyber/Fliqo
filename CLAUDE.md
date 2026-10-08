@@ -31,7 +31,18 @@ Antes de dizer que uma tarefa terminou: typecheck e testes passando. Sem exceç�
 
 ## Regras inegociáveis
 1. **Dinheiro é inteiro em centavos** (`Cents`). Percentual é inteiro em basis points (`BasisPoints`). Nunca float, nunca `toFixed` para cálculo.
-2. **Multi-tenant pela RLS.** Toda query da aplicação roda dentro de `withClinic(clinicId, fn)`, que abre uma transação e faz `set_config('app.clinic_id', ...)`. A aplicação conecta como `fliqo_app`, nunca como dono do schema. Cruzar clínicas só em funções `security definer` revisadas (hoje: `app.claim_due_actions`).
+2. **Multi-tenant pela RLS.** Toda query da aplicação roda dentro de `withClinic(clinicId, fn)`, que abre uma transação e faz `set_config('app.clinic_id', ...)`. A aplicação conecta como `fliqo_app`, nunca como dono do schema. Cruzar clínicas só em funções `security definer` revisadas. São **seis**, e a lista é o portão — acrescentar uma sétima sem passar por `packages/db/tests/security-definer.test.ts` quebra o CI:
+
+   | Função | Por quê |
+   | --- | --- |
+   | `app.claim_due_actions` | o worker pega o lote de ações vencidas de todas as clínicas (0001) |
+   | `app.clinic_by_phone_number_id` | o webhook traduz o número da Meta em clínica, antes de haver clínica na transação (0003) |
+   | `app.requeue_stuck_actions` | o varredor devolve à fila o que ficou preso em `executando` (0004) |
+   | `app.clinics_with_appointments_today` | a varredura de atrasos devolve só ids de clínica (0006) |
+   | `app.clinic_ids_of_member` | o painel lista as clínicas de quem acabou de entrar, antes de haver clínica na transação (0007) |
+   | `app.operator_health` | **de operador** (0015): a pergunta é do fundador e a resposta é sobre todas as clínicas de uma vez. Retorno **agregado** — contagens e carimbos, nunca linha de paciente, telefone ou conteúdo de mensagem |
+
+   As cinco primeiras cruzam porque algo acontece ANTES de haver clínica na transação. A sexta cruza por outra razão, e é a única assim: o que a torna aceitável é o retorno, não o propósito.
 3. **Conflito de agenda é resolvido pelo banco** (`no_double_booking`). O código trata o erro `23P01` e responde "horário acabou de ser ocupado"; não tenta prevenir com SELECT antes de INSERT.
 4. **A IA pede, o código decide.** A IA nunca recebe `clinic_id` nem `patient_id`; o executor injeta a partir da conversa. Toda chamada de ferramenta passa por `validarChamada`. Horário só pode ser marcado se veio de `buscar_horarios` na mesma conversa.
 5. **Silêncio não é cancelamento.** Só libera horário quem disse que não vem ou a recepção.

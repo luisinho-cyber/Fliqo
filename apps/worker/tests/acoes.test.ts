@@ -95,12 +95,11 @@ async function statusDaConsulta(id: string): Promise<string> {
 }
 
 /**
- * A batida de vida do health check.
+ * A batida de vida do `/estado`.
  *
- * Ela existe para o `/health` distinguir "trabalhando devagar" de "travou". Se o
+ * Ela existe para o veredito distinguir "trabalhando devagar" de "travou". Se o
  * sinal só viesse ao fim da rodada, uma rodada legítima de cinquenta ações com
- * envio lento passaria da janela e o Railway reiniciaria o worker NO MEIO do
- * trabalho — perdendo o que estava na mão para descobrir que estava tudo bem.
+ * envio lento passaria da janela e seria declarada travada NO MEIO do trabalho.
  */
 describe('batida de vida durante a rodada', () => {
   it('bate a cada ação concluída, não uma vez ao fim', async () => {

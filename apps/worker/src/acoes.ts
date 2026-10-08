@@ -1,5 +1,16 @@
 import { sql } from 'kysely';
-import { agenda, alertas, numeros, withClinic, type Db, type Trx } from '@fliqo/db';
+import { lerAfirmacao, type AfirmacaoDoTemplate } from '@fliqo/core';
+import {
+  acoes,
+  agenda,
+  alertas,
+  conexao,
+  hoje,
+  numeros,
+  withClinic,
+  type Db,
+  type Trx,
+} from '@fliqo/db';
 import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
 import { enviarAtivo } from './envio';
 import { expirarEPassarAdiante } from './ofertas';
@@ -36,9 +47,9 @@ export interface Dependencias {
   /**
    * Batida de vida, chamada a CADA ação concluída — não ao fim da rodada.
    *
-   * O health check precisa distinguir "está trabalhando devagar" de "travou". Uma
+   * O `/estado` precisa distinguir "está trabalhando devagar" de "travou". Uma
    * rodada de cinquenta ações com envio lento demora minutos legitimamente; se o
-   * sinal só viesse no fim, o Railway reiniciaria o worker no meio do trabalho.
+   * sinal só viesse no fim, ela seria declarada travada no meio do trabalho.
    */
   aoProgredir?: () => void;
 }
@@ -66,13 +77,58 @@ export async function devolverPresas(db: Db, limiteMin = LIMITE_PRESA_MIN): Prom
   return r.rows[0]?.requeue_stuck_actions ?? 0;
 }
 
-export type SaidaDaAcao = { ok: true } | { ok: false; motivo: string; definitivo: boolean };
+export type SaidaDaAcao =
+  | { ok: true }
+  /**
+   * A ação venceu: a afirmação do template não é mais verdade. NÃO é falha — é
+   * consequência esperada de o WhatsApp ter ficado fora, e por isso não vira
+   * alerta. O que a recepção precisa saber aparece na tela Hoje como decisão.
+   */
+  | { ok: false; semProposito: true; motivo: string }
+  /**
+   * A credencial da clínica não serve mais. Também não é falha DESTA ação: é a
+   * clínica que está fora. A ação volta a esperar, o número é marcado em erro uma
+   * vez, e um alerta nomeia a causa.
+   */
+  | { ok: false; credencial: true; motivo: string }
+  | { ok: false; motivo: string; definitivo: boolean };
+
+/**
+ * A pertinência antes de enviar.
+ *
+ * Retomar não é reexecutar: uma ação represada durante a queda pode não fazer mais
+ * sentido quando o número volta. A decisão é de `lerAfirmacao`, em @fliqo/core, e
+ * sai do que o TEXTO do template afirma — não de um limite em minutos, que acerta
+ * a virada do dia num sentido e erra no outro.
+ */
+async function aindaFazSentido(
+  trx: Trx,
+  clinicId: string,
+  afirmacao: AfirmacaoDoTemplate,
+  inicioDaConsulta: Date,
+  agora: Date,
+): Promise<SaidaDaAcao | undefined> {
+  const { fuso } = await hoje.dadosDaClinica(trx, clinicId);
+  const leitura = lerAfirmacao(afirmacao, inicioDaConsulta, agora, fuso);
+  if (leitura.vale) return undefined;
+  return { ok: false, semProposito: true, motivo: leitura.motivo };
+}
 
 async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Promise<SaidaDaAcao> {
   if (acao.appointment_id === null) return { ok: false, motivo: 'sem consulta', definitivo: true };
   const consulta = await agenda.porId(trx, acao.appointment_id);
   if (!consulta) return { ok: true }; // consulta sumiu: nada a fazer
   if (consulta.status !== 'agendado') return { ok: true }; // já confirmada ou cancelada
+
+  const agora = (dep.agora ?? (() => new Date()))();
+  const venceu = await aindaFazSentido(
+    trx,
+    acao.clinic_id,
+    TEMPLATES.confirmacao.afirma,
+    consulta.starts_at,
+    agora,
+  );
+  if (venceu) return venceu;
 
   const phoneNumberId = await numeros.ativoDaClinica(trx);
   if (phoneNumberId === undefined) {
@@ -89,6 +145,7 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
   });
 
   if (r.ok) return { ok: true };
+  if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
   // Sem consentimento o alerta já foi criado; insistir não resolve.
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
@@ -102,6 +159,16 @@ async function lembreteFinal(
   const consulta = await agenda.porId(trx, acao.appointment_id);
   if (!consulta) return { ok: true };
   if (!['agendado', 'confirmado', 'em_risco'].includes(consulta.status)) return { ok: true };
+
+  const agora = (dep.agora ?? (() => new Date()))();
+  const venceu = await aindaFazSentido(
+    trx,
+    acao.clinic_id,
+    TEMPLATES.lembreteFinal.afirma,
+    consulta.starts_at,
+    agora,
+  );
+  if (venceu) return venceu;
 
   const phoneNumberId = await numeros.ativoDaClinica(trx);
   if (phoneNumberId === undefined) {
@@ -117,6 +184,7 @@ async function lembreteFinal(
   });
 
   if (r.ok) return { ok: true };
+  if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
 
@@ -222,21 +290,54 @@ async function falhar(
   `.execute(trx);
 }
 
+/**
+ * A clínica está fora: marca o número em erro e abre UM alerta.
+ *
+ * A ação volta a esperar — não é falha dela, é a clínica que não tem por onde
+ * falar. A partir daqui `claim_due_actions` deixa de reclamar as ações de envio
+ * desta clínica, então a pilha para de ser consumida e retoma quando o número
+ * voltar. O `attempts` é devolvido: uma queda de WhatsApp não pode comer o
+ * orçamento de retentativa da ação.
+ */
+async function aClinicaEstaFora(trx: Trx, acao: AcaoPendente, motivo: string): Promise<void> {
+  const numero = await conexao.status(trx);
+  if (numero !== undefined) await conexao.marcarErro(trx, numero.id, motivo);
+
+  await alertas.criarSeNaoHouverAberto(trx, acao.clinic_id, {
+    tipo: 'whatsapp_fora',
+    gravidade: 'urgente',
+    titulo: 'O WhatsApp da clínica está fora do ar',
+    corpo:
+      'Nenhuma mensagem sai enquanto isso. As confirmações de amanhã estão esperando e saem quando o número voltar — religue em Configurações › WhatsApp.',
+  });
+
+  await sql`
+    update app.scheduled_actions
+       set status = 'pendente', last_error = ${motivo},
+           attempts = greatest(attempts - 1, 0)
+     where id = ${acao.id}
+  `.execute(trx);
+}
+
 export interface ResumoDaRodada {
   pegas: number;
   feitas: number;
   falhas: number;
   devolvidas: number;
+  semProposito: number;
+  esperandoOWhatsapp: number;
 }
 
 /** Uma passada: devolve o que ficou preso, pega o lote e executa cada ação. */
 export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<ResumoDaRodada> {
   const devolvidas = await devolverPresas(dep.db);
-  const acoes = await reservar(dep.db, limite);
+  const pendentes = await reservar(dep.db, limite);
   let feitas = 0;
   let falhas = 0;
+  let semProposito = 0;
+  let esperandoOWhatsapp = 0;
 
-  for (const acao of acoes) {
+  for (const acao of pendentes) {
     // Cada ação na própria transação: uma falha não derruba o lote inteiro.
     await withClinic(
       acao.clinic_id,
@@ -245,6 +346,13 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
         if (r.ok) {
           await concluir(trx, acao.id);
           feitas++;
+        } else if ('semProposito' in r) {
+          // Não é falha, e por isso não alerta: a queda venceu a mensagem.
+          await acoes.encerrarSemProposito(trx, acao.id, r.motivo);
+          semProposito++;
+        } else if ('credencial' in r) {
+          await aClinicaEstaFora(trx, acao, r.motivo);
+          esperandoOWhatsapp++;
         } else {
           await falhar(trx, acao, r.motivo, r.definitivo);
           falhas++;
@@ -255,5 +363,5 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
     dep.aoProgredir?.();
   }
 
-  return { pegas: acoes.length, feitas, falhas, devolvidas };
+  return { pegas: pendentes.length, feitas, falhas, devolvidas, semProposito, esperandoOWhatsapp };
 }

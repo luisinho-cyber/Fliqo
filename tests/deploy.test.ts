@@ -89,9 +89,9 @@ describe.each(SERVICOS)('$nome', ({ pasta, pacote }) => {
   });
 
   /**
-   * Health check nos TRÊS, worker incluído. Um worker sem health check morre em
-   * silêncio, e silêncio aqui significa nenhuma confirmação enviada e ninguém
-   * sabendo — o pior caso deste produto.
+   * Health check nos TRÊS, worker incluído. Ele roda só no início do deploy e é o
+   * que impede um deploy que não sobe de entrar no lugar do que estava no ar. Não
+   * vigia o serviço depois disso.
    */
   it('tem health check', () => {
     expect(railway.deploy?.healthcheckPath).toBe('/health');
