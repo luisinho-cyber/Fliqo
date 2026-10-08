@@ -18,6 +18,7 @@ import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
 import { criarCofre } from './cofre';
 import { criarParada, rodarLaco } from './parada';
+import { vigiarOperador } from './vigia-de-operador';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
 import { criarBatimento, servidorDeSaude } from './saude';
 
@@ -161,7 +162,40 @@ const lacoDeAtrasos = rodarLaco({
   },
 });
 
-const lacos = Promise.all([laco, lacoDeAtrasos]);
+/**
+ * O vigia de operador. A cada 15 min, e ele mesmo decide se está em horário de avisar.
+ *
+ * Quinze minutos e não trinta porque a carência de "WhatsApp fora" é de vinte: com meia hora
+ * de laço, uma queda de vinte e um minutos poderia esperar outros vinte e nove para virar
+ * e-mail, e aí a carência passaria a ser de cinquenta sem ninguém ter escolhido isso.
+ *
+ * Fora do batimento de vida de propósito: o /health do worker fala dos laços que entregam
+ * mensagem de paciente. Um vigia travado é ruim, mas não é a mesma urgência de a régua parar,
+ * e misturá-los faria o Railway reiniciar o worker por causa do vigia.
+ */
+const lacoDoVigia = rodarLaco({
+  parada,
+  intervaloMs: 900_000,
+  aoFalhar: (erro) => {
+    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'vigia de operador falhou');
+  },
+  tarefa: async () => {
+    const r = await vigiarOperador({
+      db,
+      email: {
+        chave: config.EMAIL_API_KEY,
+        remetente: config.EMAIL_REMETENTE,
+        destinatario: config.OPERADOR_EMAIL,
+        url: config.EMAIL_API_URL,
+      },
+      fusoDoOperador: config.OPERADOR_FUSO,
+    });
+    // Nada de chave, nada de e-mail: só contagens e id de clínica.
+    if (r.avisadas > 0 || r.falhas.length > 0) log.info(r, 'vigia de operador');
+  },
+});
+
+const lacos = Promise.all([laco, lacoDeAtrasos, lacoDoVigia]);
 
 const saude = servidorDeSaude({
   porta: config.PORT,

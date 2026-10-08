@@ -14,6 +14,7 @@ export * as hoje from './repos/hoje';
 export * as ia from './repos/ia';
 export * as financeiro from './repos/financeiro';
 export * as numeros from './repos/numeros';
+export * as operador from './repos/operador';
 export * as pacientes from './repos/pacientes';
 export * as procedimentos from './repos/procedimentos';
 export * as qualificacao from './repos/qualificacao';

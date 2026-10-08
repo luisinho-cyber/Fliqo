@@ -1,3 +1,4 @@
+import type { CausaDeOperador } from '@fliqo/core';
 import type { ColumnType, Generated } from 'kysely';
 
 /**
@@ -357,11 +358,26 @@ export interface TabelaConsumoIa {
   created_at: Automatico<Date>;
 }
 
+/**
+ * O estado do reenvio de aviso ao operador (0015).
+ *
+ * Uma linha por (clínica, causa). O worker lê e grava DENTRO de `withClinic`, uma clínica por
+ * vez — a leitura cruzada é da função `app.operator_health`, que é agregada.
+ */
+export interface TabelaAvisosDeOperador {
+  clinic_id: string;
+  cause: CausaDeOperador;
+  first_seen_at: ComDefault<Date>;
+  last_sent_at: ComDefault<Date>;
+  sends: ComDefault<number>;
+}
+
 export interface Banco {
   'app.clinics': TabelaClinicas;
   'app.clinic_members': TabelaMembros;
   'app.professionals': TabelaProfissionais;
   'app.procedures': TabelaProcedimentos;
+  'app.operator_notices': TabelaAvisosDeOperador;
   'app.patients': TabelaPacientes;
   'app.appointments': TabelaConsultas;
   'app.scheduled_actions': TabelaAcoes;
@@ -406,6 +422,13 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     waiting_room_alert_minutes: true,
   },
   'app.clinic_members': { clinic_id: true, user_id: true, role: true },
+  'app.operator_notices': {
+    clinic_id: true,
+    cause: true,
+    first_seen_at: true,
+    last_sent_at: true,
+    sends: true,
+  },
   'app.professionals': { id: true, clinic_id: true, name: true, active: true },
   'app.procedures': {
     id: true,

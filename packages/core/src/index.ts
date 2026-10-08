@@ -9,3 +9,4 @@ export * from './atrasos';
 export * from './hoje';
 export * from './telefone';
 export * from './pertinencia';
+export * from './operador';

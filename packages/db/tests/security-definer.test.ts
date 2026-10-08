@@ -24,6 +24,12 @@ const ESPERADAS = [
   // Painel: as clínicas da pessoa que acabou de entrar, antes de haver clínica
   // na transação. Devolve só os ids (0007).
   'clinic_ids_of_member',
+  // A SEXTA, e a primeira que cruza clínicas por outra razão que não "ainda não há
+  // clínica na transação": a pergunta é do OPERADOR, e a resposta é sobre todas as
+  // clínicas de uma vez (0015). O que a torna aceitável é o retorno — contagens e
+  // carimbos, nunca uma linha de ninguém. `operator-health.test.ts` falha se uma coluna
+  // identificável aparecer ali.
+  'operator_health',
 ].sort();
 
 let owner: pg.Pool;

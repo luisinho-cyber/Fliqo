@@ -251,12 +251,28 @@ reiniciar o serviço.
 
 Em **Variables**:
 
-| Variável             | De onde vem                                                          |
-| -------------------- | -------------------------------------------------------------------- |
-| `DATABASE_URL`       | passo 4, o mesmo da API                                              |
-| `WHATSAPP_TOKEN_KEY` | **o mesmo valor que está na api** — é a chave que decifra os tokens  |
-| `ANTHROPIC_API_KEY`  | do painel do provedor; **cole direto aqui, e em nenhum outro lugar** |
-| `LOG_LEVEL`          | `info`                                                               |
+| Variável             | De onde vem                                                                   |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `DATABASE_URL`       | passo 4, o mesmo da API                                                       |
+| `WHATSAPP_TOKEN_KEY` | **o mesmo valor que está na api** — é a chave que decifra os tokens           |
+| `ANTHROPIC_API_KEY`  | do painel do provedor; **cole direto aqui, e em nenhum outro lugar**          |
+| `EMAIL_API_KEY`      | do painel do serviço de e-mail; **cole direto aqui, e em nenhum outro lugar** |
+| `EMAIL_REMETENTE`    | um remetente verificado no serviço, ex. `avisos@suaclinica.com.br`            |
+| `OPERADOR_EMAIL`     | o seu e-mail: é quem recebe o aviso                                           |
+| `LOG_LEVEL`          | `info`                                                                        |
+
+**As três de e-mail são do vigia de operador** (migração 0015). Ele roda de 15 em 15
+minutos em horário comercial e avisa quando uma clínica fica com o WhatsApp fora por
+mais de 20 min, quando passa 3 h com ação vencida e nenhuma mensagem saindo, ou quando
+a qualidade do número cai do verde.
+
+**A `EMAIL_API_KEY` fica SÓ no worker.** Não na api, não no painel, não no CI. Quem
+manda e-mail é o worker; um runner de CI que pode mandar e-mail em nome da Fliqo é
+superfície nova sem nada em troca, e a api não tem o que fazer com ela.
+
+`EMAIL_API_URL` e `OPERADOR_FUSO` são opcionais: valem `https://api.resend.com/emails`
+e `America/Sao_Paulo`. O fuso é o **seu**, não o da clínica — é a sua caixa de entrada
+que toca, e é ele que decide o que é "horário comercial" para o vigia.
 
 **Não existe mais um token de WhatsApp de ambiente.** Cada clínica manda com a
 credencial dela: a api cifra o token no momento da conexão, e o worker decifra para
@@ -328,6 +344,9 @@ variáveis daquele serviço.
 | `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel                    |
 | `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                         |
 | `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                      |
+| `EMAIL_API_KEY`         |  —  |   ✓    |  —  | **só o worker**: é ele que manda o aviso de operador         |
+| `EMAIL_REMETENTE`       |  —  |   ✓    |  —  | idem                                                         |
+| `OPERADOR_EMAIL`        |  —  |   ✓    |  —  | idem                                                         |
 | `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api             |
 | `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                         |
 | `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra o token da clínica; o worker decifra para enviar |
