@@ -131,7 +131,7 @@ export interface VereditoDeSaude {
 
 export interface EntradaDoVeredito {
   batimentos: Record<string, Batimento>;
-  entrega?: Entrega;
+  entrega: Entrega;
   janelaMs?: number;
 }
 
@@ -147,7 +147,7 @@ export function vereditoDeSaude(entrada: EntradaDoVeredito, agoraMs: number): Ve
     lacos[nome] = { ultimaBatidaMs: idade, travado };
   }
 
-  const medida = entrada.entrega?.ultima();
+  const medida = entrada.entrega.ultima();
   const idadeDaMedidaMs = medida === undefined ? null : agoraMs - medida.emMs;
   /*
    * Medida ausente ou velha NÃO é represamento: o worker acabou de subir e ainda não deu a
@@ -214,8 +214,11 @@ export const CODIGO_POR_ESTADO: Record<EstadoDeSaude, number> = {
 export interface ConfigSaude {
   porta: number;
   batimentos: Record<string, Batimento>;
-  /** A medida de entrega. Ausente, o veredito usa só os batimentos, como antes. */
-  entrega?: Entrega;
+  /**
+   * A medida de entrega. Obrigatória: opcional, o `index.ts` podia deixar de passá-la e o
+   * veredito voltava a olhar só batimento, com todo teste verde. Assim, não compila.
+   */
+  entrega: Entrega;
   janelaMs?: number;
   agora?: () => number;
 }
@@ -248,7 +251,7 @@ export function servidorDeSaude(cfg: ConfigSaude): Server {
     const veredito = vereditoDeSaude(
       {
         batimentos: cfg.batimentos,
-        ...(cfg.entrega === undefined ? {} : { entrega: cfg.entrega }),
+        entrega: cfg.entrega,
         ...(cfg.janelaMs === undefined ? {} : { janelaMs: cfg.janelaMs }),
       },
       agora(),

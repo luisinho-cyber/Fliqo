@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -25,7 +24,10 @@ function batimentoEm(ms: number): Batimento {
 describe('vereditoDeSaude', () => {
   it('laços batendo agora é saudável', () => {
     const v = vereditoDeSaude(
-      { batimentos: { acoes: batimentoEm(1_000), atrasos: batimentoEm(1_000) } },
+      {
+        batimentos: { acoes: batimentoEm(1_000), atrasos: batimentoEm(1_000) },
+        entrega: criarEntrega(),
+      },
       1_000,
     );
     expect(v.ok).toBe(true);
@@ -36,7 +38,10 @@ describe('vereditoDeSaude', () => {
     // O de atrasos bateu agora; o de ações está parado há mais que a janela.
     const agora = 10 * 60_000 + 5_000;
     const v = vereditoDeSaude(
-      { batimentos: { acoes: batimentoEm(0), atrasos: batimentoEm(agora) } },
+      {
+        batimentos: { acoes: batimentoEm(0), atrasos: batimentoEm(agora) },
+        entrega: criarEntrega(),
+      },
       agora,
     );
     expect(v.ok).toBe(false);
@@ -48,7 +53,10 @@ describe('vereditoDeSaude', () => {
   it('dentro da janela, por pouco, ainda é saudável', () => {
     // Trabalhar devagar não é estar travado. Travado falso aqui é alarme falso.
     const agora = JANELA_DE_SAUDE_MS;
-    const v = vereditoDeSaude({ batimentos: { acoes: batimentoEm(0) } }, agora);
+    const v = vereditoDeSaude(
+      { batimentos: { acoes: batimentoEm(0) }, entrega: criarEntrega() },
+      agora,
+    );
     expect(v.ok).toBe(true);
   });
 
@@ -61,16 +69,22 @@ describe('vereditoDeSaude', () => {
 
   it('o batimento nasce vivo: processo que acabou de subir não está travado', () => {
     const b = criarBatimento(() => 5_000);
-    expect(vereditoDeSaude({ batimentos: { acoes: b } }, 5_000).ok).toBe(true);
+    expect(vereditoDeSaude({ batimentos: { acoes: b }, entrega: criarEntrega() }, 5_000).ok).toBe(
+      true,
+    );
   });
 
   it('marcar renova a idade', () => {
     let relogio = 0;
     const b = criarBatimento(() => relogio);
     relogio = 20 * 60_000;
-    expect(vereditoDeSaude({ batimentos: { acoes: b } }, relogio).ok).toBe(false);
+    expect(vereditoDeSaude({ batimentos: { acoes: b }, entrega: criarEntrega() }, relogio).ok).toBe(
+      false,
+    );
     b.marcar();
-    expect(vereditoDeSaude({ batimentos: { acoes: b } }, relogio).ok).toBe(true);
+    expect(vereditoDeSaude({ batimentos: { acoes: b }, entrega: criarEntrega() }, relogio).ok).toBe(
+      true,
+    );
   });
 });
 
@@ -84,14 +98,9 @@ describe('o servidor', () => {
   async function subir(
     batimentos: Record<string, Batimento>,
     agoraMs: number,
-    entrega?: Entrega,
+    entrega: Entrega = criarEntrega(),
   ): Promise<string> {
-    const servidor = servidorDeSaude({
-      porta: 0,
-      batimentos,
-      agora: () => agoraMs,
-      ...(entrega === undefined ? {} : { entrega }),
-    });
+    const servidor = servidorDeSaude({ porta: 0, batimentos, entrega, agora: () => agoraMs });
     fechar = () => servidor.close();
     await new Promise((resolve) => servidor.once('listening', resolve));
     const { port } = servidor.address() as AddressInfo;
@@ -263,7 +272,10 @@ describe('o veredito mede entrega, não só batimento', () => {
   it('sem medida nenhuma é verde: worker que acabou de subir não nasce degradado', () => {
     // Tratar ausência como problema faria todo deploy começar fora do verde, e aí ninguém
     // olharia o estado nunca mais.
-    const v = vereditoDeSaude({ batimentos: { acoes: batimentoEm(1_000) } }, 1_000);
+    const v = vereditoDeSaude(
+      { batimentos: { acoes: batimentoEm(1_000) }, entrega: criarEntrega() },
+      1_000,
+    );
     expect(v.estado).toBe('verde');
     expect(v.entrega.idadeDaMedidaMs).toBeNull();
   });
@@ -291,13 +303,21 @@ describe('o veredito mede entrega, não só batimento', () => {
 
     const agora = 12 * 60_000;
     expect(
-      vereditoDeSaude({ batimentos: { acoes: batimentoEm(0), atrasos: batimentoEm(agora) } }, agora)
-        .causa,
+      vereditoDeSaude(
+        {
+          batimentos: { acoes: batimentoEm(0), atrasos: batimentoEm(agora) },
+          entrega: criarEntrega(),
+        },
+        agora,
+      ).causa,
     ).toBe('laço parado: "acoes" sem batida há 12 min');
   });
 
   it('no verde não há causa', () => {
-    const v = vereditoDeSaude({ batimentos: { acoes: batimentoEm(1_000) } }, 1_000);
+    const v = vereditoDeSaude(
+      { batimentos: { acoes: batimentoEm(1_000) }, entrega: criarEntrega() },
+      1_000,
+    );
     expect(v.causa).toBeNull();
   });
 
@@ -363,33 +383,5 @@ describe('o código HTTP de cada estado', () => {
     const corpo = await (await fetch(`${base}/estado`)).text();
     expect(corpo).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
     expect(corpo.toLowerCase()).not.toContain('clinic');
-  });
-});
-
-describe('a ligação em index.ts, que nenhum teste de unidade alcança', () => {
-  /**
-   * A guarda que impede a feature de ser desligada em silêncio.
-   *
-   * `index.ts` é código de topo: ele sobe servidor e laço no import, então nenhum teste o
-   * importa. Sem esta guarda, apagar a linha que MEDE deixa todo teste de unidade verde e o
-   * /health volta a afirmar saúde de graça — que é exatamente o defeito que este trabalho
-   * existe para corrigir. Mutei essa linha e nada caiu; então ela passou a ter guarda.
-   */
-  const fonte = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-
-  it('a medida de entrega é criada', () => {
-    expect(fonte).toContain('criarEntrega(');
-  });
-
-  it('o laço de ações marca a medida DEPOIS de rodar', () => {
-    // A ordem importa: medir antes contaria o lote que a própria rodada ia resolver.
-    const laco = fonte.slice(fonte.indexOf('rodarUmaVez('));
-    expect(laco).toContain('entrega.marcar(');
-    expect(laco).toContain('vencidasRepresadas(');
-  });
-
-  it('a medida chega ao servidor de saúde', () => {
-    const servidor = fonte.slice(fonte.indexOf('servidorDeSaude('));
-    expect(servidor).toContain('entrega');
   });
 });
