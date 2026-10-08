@@ -114,8 +114,20 @@ export function criarEntrega(): Entrega {
  * rodando e batendo, e o `/estado` simplesmente deixava de saber que ele existia — laço
  * travado sem nenhum sinal. Registrado por quem roda, não existe batimento fora do veredito.
  */
+/**
+ * A marca de "este batimento está no veredito".
+ *
+ * É um símbolo de verdade e NÃO é exportado: fora deste arquivo não há como escrever o valor
+ * sem cast, então `registrarLaco` é o único produtor de `BatimentoRegistrado`. Laço e servidor
+ * exigem a marca; trocar `registrarLaco` por `criarBatimento` em qualquer ponto da ligação
+ * deixa de compilar, e `criarBatimento` segue livre para os testes.
+ */
+const REGISTRADO: unique symbol = Symbol('batimento registrado no /estado');
+
+export type BatimentoRegistrado = Batimento & { readonly [REGISTRADO]: true };
+
 export interface SinaisDeSaude {
-  batimentos: Record<string, Batimento>;
+  batimentos: Record<string, BatimentoRegistrado>;
   entrega: Entrega;
 }
 
@@ -128,8 +140,8 @@ export function registrarLaco(
   sinais: SinaisDeSaude,
   nome: string,
   agora: () => number = Date.now,
-): Batimento {
-  const batimento = criarBatimento(agora);
+): BatimentoRegistrado {
+  const batimento: BatimentoRegistrado = { ...criarBatimento(agora), [REGISTRADO]: true };
   sinais.batimentos[nome] = batimento;
   return batimento;
 }

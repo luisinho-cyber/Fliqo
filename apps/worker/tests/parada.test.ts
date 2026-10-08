@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { criarParada, rodarLaco } from '../src/parada';
+import { criarParada, rodarLaco, rodarLacoVigiado } from '../src/parada';
+import { criarSinaisDeSaude, registrarLaco } from '../src/saude';
 
 /**
  * A parada limpa, testada onde ela mora.
@@ -124,5 +125,47 @@ describe('rodarLaco', () => {
 
     expect(voltas).toBe(2);
     expect((erros[0] as Error).message).toBe('rodada ruim');
+  });
+});
+
+describe('rodarLacoVigiado', () => {
+  it('volta concluída bate o batimento', async () => {
+    let relogio = 0;
+    const batimento = registrarLaco(criarSinaisDeSaude(), 'teste', () => relogio);
+    const parada = criarParada();
+    const laco = rodarLacoVigiado({
+      parada,
+      batimento,
+      intervaloMs: 60_000,
+      aoFalhar: () => undefined,
+      tarefa: () => {
+        relogio = 5_000;
+        return Promise.resolve();
+      },
+    });
+    parada.pedir();
+    await laco;
+    expect(batimento.ultimo()).toBe(5_000);
+  });
+
+  it('volta que falha NÃO bate: falhar sempre é a forma mais comum de estar parado', async () => {
+    let relogio = 0;
+    const batimento = registrarLaco(criarSinaisDeSaude(), 'teste', () => relogio);
+    const parada = criarParada();
+    const falhas: unknown[] = [];
+    const laco = rodarLacoVigiado({
+      parada,
+      batimento,
+      intervaloMs: 60_000,
+      aoFalhar: (erro) => falhas.push(erro),
+      tarefa: () => {
+        relogio = 5_000;
+        return Promise.reject(new Error('banco fora'));
+      },
+    });
+    parada.pedir();
+    await laco;
+    expect(falhas).toHaveLength(1);
+    expect(batimento.ultimo()).toBe(0);
   });
 });

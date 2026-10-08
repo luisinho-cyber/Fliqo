@@ -10,6 +10,7 @@ import {
   vereditoDeSaude,
   type Batimento,
   type Entrega,
+  type SinaisDeSaude,
 } from '../src/saude';
 
 /**
@@ -21,6 +22,18 @@ import {
 /** Batimento com relógio na mão: nada aqui depende do tempo passar de verdade. */
 function batimentoEm(ms: number): Batimento {
   return { marcar: () => undefined, ultimo: () => ms };
+}
+
+/**
+ * Sinais para o servidor, com cada laço batendo pela última vez no instante pedido.
+ *
+ * O servidor só aceita batimento registrado, então os laços entram por `registrarLaco`, como
+ * em produção — cada um com o relógio parado no próprio instante.
+ */
+function sinaisCom(ultimasBatidas: Record<string, number>, entrega: Entrega): SinaisDeSaude {
+  const sinais: SinaisDeSaude = { batimentos: {}, entrega };
+  for (const [nome, ms] of Object.entries(ultimasBatidas)) registrarLaco(sinais, nome, () => ms);
+  return sinais;
 }
 
 describe('vereditoDeSaude', () => {
@@ -120,13 +133,13 @@ describe('o servidor', () => {
   });
 
   async function subir(
-    batimentos: Record<string, Batimento>,
+    ultimasBatidas: Record<string, number>,
     agoraMs: number,
     entrega: Entrega = criarEntrega(),
   ): Promise<string> {
     const servidor = servidorDeSaude({
       porta: 0,
-      sinais: { batimentos, entrega },
+      sinais: sinaisCom(ultimasBatidas, entrega),
       agora: () => agoraMs,
     });
     fechar = () => servidor.close();
@@ -136,7 +149,7 @@ describe('o servidor', () => {
   }
 
   it('/estado devolve 200 com os laços vivos', async () => {
-    const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
+    const base = await subir({ acoes: 1_000 }, 1_000);
     const r = await fetch(`${base}/estado`);
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ ok: true });
@@ -146,14 +159,14 @@ describe('o servidor', () => {
     // O healthcheck do Railway pergunta o /health, só no deploy, e não reinicia nada. Este 503
     // não aciona plataforma nenhuma: reiniciar com laço travado exigiria o worker sair com erro.
     const agora = 30 * 60_000;
-    const base = await subir({ acoes: batimentoEm(0) }, agora);
+    const base = await subir({ acoes: 0 }, agora);
     const r = await fetch(`${base}/estado`);
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ ok: false });
   });
 
   it('qualquer outro caminho é 404: o worker serve as duas rotas e mais nada', async () => {
-    const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
+    const base = await subir({ acoes: 1_000 }, 1_000);
     expect((await fetch(`${base}/`)).status).toBe(404);
     expect((await fetch(`${base}/metrics`)).status).toBe(404);
   });
@@ -168,7 +181,7 @@ describe('o servidor', () => {
      * `estado` é palavra de conjunto fechado, `causa` nomeia laço e número, e `entrega` são
      * contagens agregadas: nenhum diz de QUAL clínica se trata.
      */
-    const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
+    const base = await subir({ acoes: 1_000 }, 1_000);
     const corpo = await (await fetch(`${base}/estado`)).text();
     expect(Object.keys(JSON.parse(corpo) as object).sort()).toEqual([
       'causa',
@@ -180,7 +193,7 @@ describe('o servidor', () => {
   });
 
   it('e nenhuma das duas rotas conta id, versão ou variável de ambiente', async () => {
-    const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
+    const base = await subir({ acoes: 1_000 }, 1_000);
     for (const rota of ['/health', '/estado']) {
       const corpo = (await (await fetch(`${base}${rota}`)).text()).toLowerCase();
       for (const agulha of ['version', 'versao', 'node', 'database', 'token', 'key', 'clinic']) {
@@ -211,7 +224,7 @@ describe('o /health é liveness e não sabe nada de entrega', () => {
     entrega.marcar(30, agora);
     const servidor = servidorDeSaude({
       porta: 0,
-      sinais: { batimentos: { acoes: batimentoEm(0) }, entrega },
+      sinais: sinaisCom({ acoes: 0 }, entrega),
       agora: () => agora,
     });
     fechar = () => servidor.close();
@@ -369,7 +382,7 @@ describe('o código HTTP de cada estado', () => {
     entrega.marcar(vencidas, agoraMs);
     const servidor = servidorDeSaude({
       porta: 0,
-      sinais: { batimentos: { acoes: batimentoEm(agoraMs) }, entrega },
+      sinais: sinaisCom({ acoes: agoraMs }, entrega),
       agora: () => agoraMs,
     });
     fechar = () => servidor.close();

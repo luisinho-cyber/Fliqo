@@ -16,7 +16,7 @@ import { tratarResposta } from './botao';
 import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
 import { criarCofre } from './cofre';
-import { criarParada, rodarLaco } from './parada';
+import { criarParada, rodarLaco, rodarLacoVigiado } from './parada';
 import { vigiarOperador } from './vigia-de-operador';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
 import { criarSinaisDeSaude, registrarLaco, servidorDeSaude } from './saude';
@@ -133,15 +133,15 @@ const batimentoDeAtrasos = registrarLaco(sinais, 'atrasos');
  * Laço dos atrasos. A cada 2 min porque um atraso que cresce entre uma volta e
  * outra ainda dá tempo de ser avisado antes de o paciente sair de casa.
  */
-const lacoDeAtrasos = rodarLaco({
+const lacoDeAtrasos = rodarLacoVigiado({
   parada,
+  batimento: batimentoDeAtrasos,
   intervaloMs: 120_000,
   aoFalhar: (erro) => {
     log.error({ erro: erro instanceof Error ? erro.message : erro }, 'varredura de atrasos falhou');
   },
   tarefa: async () => {
     const r = await varrerAtrasos({ db, whatsapp });
-    batimentoDeAtrasos.marcar();
     if (r.avisosAoPaciente > 0 || r.alertasDeRecepcao > 0 || r.alertasDeEspera > 0) {
       log.info(r, 'varredura de atrasos');
     }

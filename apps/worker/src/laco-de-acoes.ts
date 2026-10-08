@@ -2,7 +2,7 @@ import { operador, type Db } from '@fliqo/db';
 import type { ClienteWhatsApp } from '@fliqo/whatsapp';
 import type { Logger } from 'pino';
 import { rodarUmaVez } from './acoes';
-import { rodarLaco, type Parada } from './parada';
+import { rodarLacoVigiado, type Parada } from './parada';
 import { registrarLaco, type SinaisDeSaude } from './saude';
 
 /**
@@ -40,8 +40,9 @@ export function iniciarLacoDeAcoes(dep: DependenciasDoLacoDeAcoes): Promise<void
   const batimento = registrarLaco(dep.sinais, NOME_DO_LACO_DE_ACOES, agora);
   const { entrega } = dep.sinais;
 
-  return rodarLaco({
+  return rodarLacoVigiado({
     parada: dep.parada,
+    batimento,
     intervaloMs: INTERVALO_DO_LACO_DE_ACOES_MS,
     // Uma rodada ruim não pode matar o worker: o próximo ciclo tenta de novo.
     aoFalhar: (erro) => {
@@ -53,7 +54,6 @@ export function iniciarLacoDeAcoes(dep: DependenciasDoLacoDeAcoes): Promise<void
         whatsapp: dep.whatsapp,
         aoProgredir: batimento.marcar,
       });
-      batimento.marcar();
 
       /*
        * A medida vem DEPOIS da rodada, de propósito: o que sobra represado depois de o laço
