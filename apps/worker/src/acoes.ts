@@ -5,6 +5,7 @@ import {
   agenda,
   alertas,
   conexao,
+  envios,
   hoje,
   numeros,
   withClinic,
@@ -12,7 +13,7 @@ import {
   type Trx,
 } from '@fliqo/db';
 import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
-import { enviarAtivo } from './envio';
+import { enviarAtivo, type PedidoDeEnvioAtivo, type ResultadoEnvioAtivo } from './envio';
 import { expirarEPassarAdiante } from './ofertas';
 
 /**
@@ -64,8 +65,8 @@ async function reservar(db: Db, limite: number): Promise<AcaoPendente[]> {
  *
  * `claim_due_actions` marca a ação antes de executar. Se o worker morrer no meio,
  * ninguém desmarca, e aquela confirmação nunca mais sai — o paciente simplesmente
- * não é avisado. Como a ação é idempotente do ponto de vista do paciente (ele
- * recebe a confirmação de novo, no pior caso), devolver é mais seguro que deixar.
+ * não é avisado. Devolver é seguro porque o envio tem trava própria (0017): a ação
+ * que já tinha mandado a mensagem e voltou não manda de novo.
  */
 export async function devolverPresas(db: Db, limiteMin = LIMITE_PRESA_MIN): Promise<number> {
   // Pela função security definer: o varredor roda sem clínica na transação, e a
@@ -78,7 +79,8 @@ export async function devolverPresas(db: Db, limiteMin = LIMITE_PRESA_MIN): Prom
 }
 
 export type SaidaDaAcao =
-  | { ok: true }
+  /** `jaSaiu`: a trava de envio achou a mesma mensagem já enviada, e nada foi mandado. */
+  | { ok: true; jaSaiu?: true }
   /**
    * A ação venceu: a afirmação do template não é mais verdade. NÃO é falha — é
    * consequência esperada de o WhatsApp ter ficado fora, e por isso não vira
@@ -114,6 +116,34 @@ async function aindaFazSentido(
   return { ok: false, semProposito: true, motivo: leitura.motivo };
 }
 
+/**
+ * Envia com a trava da 0017: reserva antes, wamid depois, desfaz se não saiu.
+ *
+ * A reserva vem ANTES da chamada à Meta porque é ela que impede a segunda: se a mesma
+ * mensagem para a mesma consulta já saiu — por um requeue, uma retentativa, ou outro
+ * worker com a mesma ação —, o banco recusa e nada é enviado.
+ */
+async function enviarUmaVez(
+  trx: Trx,
+  dep: Dependencias,
+  acao: AcaoPendente,
+  consultaId: string,
+  pedido: PedidoDeEnvioAtivo,
+): Promise<ResultadoEnvioAtivo | { ok: true; jaSaiu: true }> {
+  const reserva = await envios.reservar(trx, {
+    clinicId: acao.clinic_id,
+    appointmentId: consultaId,
+    template: pedido.template,
+    acaoId: acao.id,
+  });
+  if (!reserva.ok) return { ok: true, jaSaiu: true };
+
+  const r = await enviarAtivo(trx, dep.whatsapp, pedido);
+  if (r.ok) await envios.concluir(trx, reserva.id, r.wamid);
+  else await envios.desfazer(trx, reserva.id);
+  return r;
+}
+
 async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Promise<SaidaDaAcao> {
   if (acao.appointment_id === null) return { ok: false, motivo: 'sem consulta', definitivo: true };
   const consulta = await agenda.porId(trx, acao.appointment_id);
@@ -135,7 +165,7 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
-  const r = await enviarAtivo(trx, dep.whatsapp, {
+  const r = await enviarUmaVez(trx, dep, acao, consulta.id, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,
@@ -144,7 +174,7 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
     consultaId: consulta.id,
   });
 
-  if (r.ok) return { ok: true };
+  if (r.ok) return 'jaSaiu' in r ? r : { ok: true };
   if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
   // Sem consentimento o alerta já foi criado; insistir não resolve.
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
@@ -175,7 +205,7 @@ async function lembreteFinal(
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
-  const r = await enviarAtivo(trx, dep.whatsapp, {
+  const r = await enviarUmaVez(trx, dep, acao, consulta.id, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,
@@ -183,7 +213,7 @@ async function lembreteFinal(
     consultaId: consulta.id,
   });
 
-  if (r.ok) return { ok: true };
+  if (r.ok) return 'jaSaiu' in r ? r : { ok: true };
   if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
@@ -326,6 +356,8 @@ export interface ResumoDaRodada {
   devolvidas: number;
   semProposito: number;
   esperandoOWhatsapp: number;
+  /** Ações que voltaram com a mensagem já enviada: a trava segurou a repetição. */
+  repeticoesEvitadas: number;
 }
 
 /** Uma passada: devolve o que ficou preso, pega o lote e executa cada ação. */
@@ -336,6 +368,7 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
   let falhas = 0;
   let semProposito = 0;
   let esperandoOWhatsapp = 0;
+  let repeticoesEvitadas = 0;
 
   for (const acao of pendentes) {
     // Cada ação na própria transação: uma falha não derruba o lote inteiro.
@@ -346,6 +379,7 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
         if (r.ok) {
           await concluir(trx, acao.id);
           feitas++;
+          if (r.jaSaiu === true) repeticoesEvitadas++;
         } else if ('semProposito' in r) {
           // Não é falha, e por isso não alerta: a queda venceu a mensagem.
           await acoes.encerrarSemProposito(trx, acao.id, r.motivo);
@@ -363,5 +397,13 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
     dep.aoProgredir?.();
   }
 
-  return { pegas: pendentes.length, feitas, falhas, devolvidas, semProposito, esperandoOWhatsapp };
+  return {
+    pegas: pendentes.length,
+    feitas,
+    falhas,
+    devolvidas,
+    semProposito,
+    esperandoOWhatsapp,
+    repeticoesEvitadas,
+  };
 }

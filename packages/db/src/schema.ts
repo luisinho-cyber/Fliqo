@@ -372,6 +372,18 @@ export interface TabelaAvisosDeOperador {
   sends: ComDefault<number>;
 }
 
+/** Trava de envio (0017). `wamid` e `enviado_em` vazios só enquanto a reserva está aberta. */
+export interface TabelaEnvios {
+  id: ComDefault<string>;
+  clinic_id: string;
+  appointment_id: string;
+  template_name: string;
+  action_id: string | null;
+  wamid: string | null;
+  enviado_em: Date | null;
+  created_at: Automatico<Date>;
+}
+
 export interface Banco {
   'app.clinics': TabelaClinicas;
   'app.clinic_members': TabelaMembros;
@@ -381,6 +393,7 @@ export interface Banco {
   'app.patients': TabelaPacientes;
   'app.appointments': TabelaConsultas;
   'app.scheduled_actions': TabelaAcoes;
+  'app.envios': TabelaEnvios;
   'app.waitlist_entries': TabelaEspera;
   'app.slot_offers': TabelaOfertas;
   'app.conversations': TabelaConversas;
@@ -468,6 +481,16 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     checked_in_at: true,
     started_at: true,
     finished_at: true,
+  },
+  'app.envios': {
+    id: true,
+    clinic_id: true,
+    appointment_id: true,
+    template_name: true,
+    action_id: true,
+    wamid: true,
+    enviado_em: true,
+    created_at: true,
   },
   'app.scheduled_actions': {
     id: true,
