@@ -251,12 +251,21 @@ reiniciar o serviço.
 
 Em **Variables**:
 
-| Variável            | De onde vem                                                          |
-| ------------------- | -------------------------------------------------------------------- |
-| `DATABASE_URL`      | passo 4, o mesmo da API                                              |
-| `WHATSAPP_TOKEN`    | Meta > WhatsApp > API Setup, token do número                         |
-| `ANTHROPIC_API_KEY` | do painel do provedor; **cole direto aqui, e em nenhum outro lugar** |
-| `LOG_LEVEL`         | `info`                                                               |
+| Variável             | De onde vem                                                          |
+| -------------------- | -------------------------------------------------------------------- |
+| `DATABASE_URL`       | passo 4, o mesmo da API                                              |
+| `WHATSAPP_TOKEN_KEY` | **o mesmo valor que está na api** — é a chave que decifra os tokens  |
+| `ANTHROPIC_API_KEY`  | do painel do provedor; **cole direto aqui, e em nenhum outro lugar** |
+| `LOG_LEVEL`          | `info`                                                               |
+
+**Não existe mais um token de WhatsApp de ambiente.** Cada clínica manda com a
+credencial dela: a api cifra o token no momento da conexão, e o worker decifra para
+enviar. Por isso o worker precisa da `WHATSAPP_TOKEN_KEY` — sem ela ele não tem como
+mandar mensagem em nome de ninguém, e o start falha dizendo isso.
+
+Um token único de reserva seria pior do que falhar: uma clínica mal configurada
+passaria a mandar mensagem pelo número errado, os pacientes dela receberiam de um
+remetente estranho, e nada apareceria em log nenhum.
 
 `ANTHROPIC_MODEL` é opcional. Sem ela, vale `claude-haiku-4-5`. Trocar de modelo
 é mudar essa variável e reiniciar o worker.
@@ -311,27 +320,26 @@ serviço?". Configurar um segredo num serviço que não o usa não é inofensivo
 lugar a mais de onde ele vaza no dia em que alguém ganhar acesso de leitura às
 variáveis daquele serviço.
 
-| Variável                | api | worker | web | Por quê                                                |
-| ----------------------- | :-: | :----: | :-: | ------------------------------------------------------ |
-| `DATABASE_URL`          |  ✓  |   ✓    |  —  | o painel não fala com o banco (CLAUDE.md, regra 10)    |
-| `DATABASE_ADMIN_URL`    |  —  |   —    |  —  | **em nenhum**, ver abaixo                              |
-| `SUPABASE_JWT_SECRET`   |  ✓  |   —    |  —  | quem verifica o token do painel é a api                |
-| `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel              |
-| `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                   |
-| `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                |
-| `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api       |
-| `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                   |
-| `WHATSAPP_TOKEN`        |  —  |   ✓    |  —  | quem envia mensagem é o worker                         |
-| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra; o worker decifra para enviar              |
-| `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela           |
-| `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil |
-| `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup               |
-| `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                         |
-| `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                    |
-| `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`              |
-| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                 |
-| `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão              |
-| `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel          |
+| Variável                | api | worker | web | Por quê                                                      |
+| ----------------------- | :-: | :----: | :-: | ------------------------------------------------------------ |
+| `DATABASE_URL`          |  ✓  |   ✓    |  —  | o painel não fala com o banco (CLAUDE.md, regra 10)          |
+| `DATABASE_ADMIN_URL`    |  —  |   —    |  —  | **em nenhum**, ver abaixo                                    |
+| `SUPABASE_JWT_SECRET`   |  ✓  |   —    |  —  | quem verifica o token do painel é a api                      |
+| `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel                    |
+| `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                         |
+| `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                      |
+| `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api             |
+| `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                         |
+| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra o token da clínica; o worker decifra para enviar |
+| `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela                 |
+| `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil       |
+| `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup                     |
+| `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                               |
+| `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                          |
+| `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`                    |
+| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                       |
+| `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão                    |
+| `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel                |
 
 ### `DATABASE_ADMIN_URL` não vai para o Railway em hipótese nenhuma
 
