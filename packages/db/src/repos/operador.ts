@@ -23,6 +23,7 @@ interface LinhaDeSaude {
   enviadas_ultima_hora: string;
   enviadas_na_janela: string;
   vencidas_na_janela: string;
+  vencidas_pendentes: string;
   qualidade: string | null;
 }
 
@@ -50,6 +51,7 @@ export async function saudeDasClinicas(
     enviadasNaUltimaHora: Number(l.enviadas_ultima_hora),
     enviadasNaJanela: Number(l.enviadas_na_janela),
     vencidasNaJanela: Number(l.vencidas_na_janela),
+    vencidasPendentes: Number(l.vencidas_pendentes),
     qualidade: l.qualidade,
   }));
 }
@@ -120,4 +122,16 @@ export async function esquecerCausas(
     .where('cause', 'in', [...causas])
     .executeTakeFirst();
   return Number(r.numDeletedRows);
+}
+
+/**
+ * A fila de envio represada agora, somada em todas as clínicas.
+ *
+ * É o número que o /health do worker precisa, e ele vem da MESMA função de operador — não de
+ * uma sétima função definer. Ler `scheduled_actions` direto fora de `withClinic` devolveria
+ * zero pela RLS, que é o jeito mais silencioso de um health check mentir.
+ */
+export async function vencidasRepresadas(db: Db): Promise<number> {
+  const saudes = await saudeDasClinicas(db);
+  return saudes.reduce((soma, s) => soma + s.vencidasPendentes, 0);
 }

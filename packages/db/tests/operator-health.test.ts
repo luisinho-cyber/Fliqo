@@ -33,6 +33,10 @@ const COLUNAS_PERMITIDAS = [
   'enviadas_ultima_hora',
   'enviadas_na_janela',
   'vencidas_na_janela',
+  // A oitava, pela 0016: a fila de envio represada NESTE instante, que é o que o /health do
+  // worker usa. Entrou porque a lista caiu quando ela apareceu — o portão funcionando — e
+  // porque ela cabe no mesmo contrato: é uma contagem.
+  'vencidas_pendentes',
   'qualidade',
 ] as const;
 
@@ -88,7 +92,7 @@ afterAll(async () => {
 });
 
 describe('o retorno da função é agregado, e nada além disso', () => {
-  it('as colunas são exatamente as sete permitidas', async () => {
+  it('as colunas são exatamente as oito permitidas', async () => {
     // Lido do catálogo, não do código: é o que o Postgres de fato devolve.
     const { rows } = await owner.query<{ assinatura: string }>(
       `select pg_get_function_result(oid) as assinatura

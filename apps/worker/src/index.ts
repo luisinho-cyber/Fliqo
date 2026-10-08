@@ -1,5 +1,5 @@
 import { ClienteAnthropic } from '@fliqo/ai';
-import { criarDb, recusarAdminUrl, withClinic } from '@fliqo/db';
+import { criarDb, operador, recusarAdminUrl, withClinic } from '@fliqo/db';
 import {
   criarFila,
   FILA_ATRASOS,
@@ -20,7 +20,7 @@ import { criarCofre } from './cofre';
 import { criarParada, rodarLaco } from './parada';
 import { vigiarOperador } from './vigia-de-operador';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
-import { criarBatimento, servidorDeSaude } from './saude';
+import { criarBatimento, criarEntrega, servidorDeSaude } from './saude';
 
 /**
  * Tetos de conexão, explícitos.
@@ -127,6 +127,15 @@ await boss.work<{ clinicId: string; profissionalId: string; inicio: string; fim:
 const parada = criarParada();
 const batimentoDeAcoes = criarBatimento();
 const batimentoDeAtrasos = criarBatimento();
+/**
+ * A medida de entrega, tirada pelo MESMO laço que suprime o envio.
+ *
+ * É o contrapeso do batimento. Uma clínica com o número em erro faz o `claim_due_actions`
+ * deixar de reclamar as ações dela: a rodada termina limpa, rápida, e o batimento bate — o
+ * sinal andava na direção contrária do problema. Agora quem suprime também conta o que
+ * represou, e o /health deixa de afirmar saúde de graça.
+ */
+const entrega = criarEntrega();
 
 /** Laço das ações agendadas. Roda a cada 30 s, sem sobrepor uma rodada na outra. */
 const laco = rodarLaco({
@@ -139,6 +148,14 @@ const laco = rodarLaco({
   tarefa: async () => {
     const r = await rodarUmaVez({ db, whatsapp, aoProgredir: batimentoDeAcoes.marcar });
     batimentoDeAcoes.marcar();
+
+    /*
+     * A medida vem DEPOIS da rodada, de propósito: o que sobra represado depois de o laço
+     * fazer o que podia é a definição do problema. Medir antes contaria o lote que a própria
+     * rodada ia resolver.
+     */
+    entrega.marcar(await operador.vencidasRepresadas(db), Date.now());
+
     if (r.pegas > 0 || r.devolvidas > 0) log.info(r, 'rodada de ações');
   },
 });
@@ -200,6 +217,7 @@ const lacos = Promise.all([laco, lacoDeAtrasos, lacoDoVigia]);
 const saude = servidorDeSaude({
   porta: config.PORT,
   batimentos: { acoes: batimentoDeAcoes, atrasos: batimentoDeAtrasos },
+  entrega,
 });
 
 /**

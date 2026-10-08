@@ -22,6 +22,7 @@ const SAUDAVEL: SaudeDaClinica = {
   enviadasNaUltimaHora: 12,
   enviadasNaJanela: 30,
   vencidasNaJanela: 30,
+  vencidasPendentes: 0,
   qualidade: 'verde',
 };
 

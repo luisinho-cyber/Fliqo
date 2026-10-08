@@ -64,6 +64,13 @@ export interface SaudeDaClinica {
   enviadasNaJanela: number;
   /** Ações de envio que venceram na janela de silêncio: o que DEVERIA ter saído. */
   vencidasNaJanela: number;
+  /**
+   * Ações de envio ainda `pendente` com prazo no passado, NESTE instante: a fila represada.
+   *
+   * Diferente de `vencidasNaJanela`, que olha para trás e conta o que venceu tendo saído ou
+   * não. Esta olha para agora, e é o que o /health do worker usa.
+   */
+  vencidasPendentes: number;
   /** `verde`, `amarelo`, `vermelho`, `desconhecida`, ou `null` se nunca foi medida. */
   qualidade: string | null;
 }

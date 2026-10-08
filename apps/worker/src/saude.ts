@@ -60,31 +60,119 @@ export function criarBatimento(agora: () => number = Date.now): Batimento {
  */
 export const JANELA_DE_SAUDE_MS = 10 * 60_000;
 
+/**
+ * A medida de ENTREGA, separada do batimento.
+ *
+ * Existe porque o batimento sozinho anda na direção contrária do problema. Ele é marcado a
+ * cada ação concluída e a cada volta do laço — então uma clínica com o número em erro, cujas
+ * ações o `claim_due_actions` deixa de reclamar, produz rodadas que terminam limpas, rápidas,
+ * e com o batimento batendo. Suprimir o envio MELHORAVA o sinal.
+ *
+ * `vencidasRepresadas` é o contrapeso: ação de envio com prazo no passado que ainda está
+ * `pendente`. Ela é medida pelo próprio laço que suprime, a cada volta, e guardada em
+ * memória — o /health não abre conexão, porque um health check que depende do banco transforma
+ * uma oscilação de rede em reinício de worker.
+ */
+export interface MedidaDeEntrega {
+  vencidasRepresadas: number;
+  /** Quando a medida foi tirada. Medida velha é tão suspeita quanto medida ruim. */
+  emMs: number;
+}
+
+export interface Entrega {
+  marcar: (vencidasRepresadas: number, agoraMs: number) => void;
+  ultima: () => MedidaDeEntrega | undefined;
+}
+
+export function criarEntrega(): Entrega {
+  let medida: MedidaDeEntrega | undefined;
+  return {
+    marcar: (vencidasRepresadas, emMs) => {
+      medida = { vencidasRepresadas, emMs };
+    },
+    ultima: () => medida,
+  };
+}
+
+/**
+ * Os três estados, e por que não são dois.
+ *
+ * `travado` é "me reinicie": o laço parou de bater e o processo não está fazendo o trabalho.
+ * `degradado` é "o trabalho não está saindo, e reiniciar NÃO resolve" — número de clínica com
+ * token expirado é o caso típico, e ele persiste por horas.
+ *
+ * Misturar os dois em 503 seria pior do que o problema: a plataforma reiniciaria o worker em
+ * laço enquanto uma clínica estivesse com a credencial vencida, e aí NENHUMA clínica receberia
+ * mensagem para "consertar" a de uma. Por isso `degradado` responde 207, que é 2xx — o
+ * processo continua vivo — e não 200, que é a afirmação de saúde que este arquivo existe para
+ * deixar de fazer de graça.
+ */
+export type EstadoDeSaude = 'verde' | 'degradado' | 'travado';
+
 export interface VereditoDeSaude {
+  /** `true` só no verde. Mantido para quem já lia este campo. */
   ok: boolean;
+  estado: EstadoDeSaude;
   lacos: Record<string, { ultimaBatidaMs: number; travado: boolean }>;
+  entrega: { vencidasRepresadas: number; idadeDaMedidaMs: number | null; represado: boolean };
+}
+
+export interface EntradaDoVeredito {
+  batimentos: Record<string, Batimento>;
+  entrega?: Entrega;
+  janelaMs?: number;
 }
 
 /** Função pura: o servidor só traduz isto em código HTTP. */
-export function vereditoDeSaude(
-  batimentos: Record<string, Batimento>,
-  agoraMs: number,
-  janelaMs: number = JANELA_DE_SAUDE_MS,
-): VereditoDeSaude {
+export function vereditoDeSaude(entrada: EntradaDoVeredito, agoraMs: number): VereditoDeSaude {
+  const janelaMs = entrada.janelaMs ?? JANELA_DE_SAUDE_MS;
   const lacos: VereditoDeSaude['lacos'] = {};
-  let ok = true;
-  for (const [nome, batimento] of Object.entries(batimentos)) {
+  let algumTravado = false;
+  for (const [nome, batimento] of Object.entries(entrada.batimentos)) {
     const idade = agoraMs - batimento.ultimo();
     const travado = idade > janelaMs;
-    if (travado) ok = false;
+    if (travado) algumTravado = true;
     lacos[nome] = { ultimaBatidaMs: idade, travado };
   }
-  return { ok, lacos };
+
+  const medida = entrada.entrega?.ultima();
+  const idadeDaMedidaMs = medida === undefined ? null : agoraMs - medida.emMs;
+  /*
+   * Medida ausente ou velha NÃO é represamento: o worker acabou de subir e ainda não deu a
+   * primeira volta. Tratá-la como ruim faria todo deploy nascer degradado, e aí ninguém
+   * olharia o estado nunca mais.
+   */
+  const represado =
+    medida !== undefined && idadeDaMedidaMs !== null && idadeDaMedidaMs <= janelaMs
+      ? medida.vencidasRepresadas > 0
+      : false;
+
+  const estado: EstadoDeSaude = algumTravado ? 'travado' : represado ? 'degradado' : 'verde';
+
+  return {
+    ok: estado === 'verde',
+    estado,
+    lacos,
+    entrega: {
+      vencidasRepresadas: medida?.vencidasRepresadas ?? 0,
+      idadeDaMedidaMs,
+      represado,
+    },
+  };
 }
+
+/** O código HTTP de cada estado. 207 é 2xx: o processo não é reiniciado por estar degradado. */
+export const CODIGO_POR_ESTADO: Record<EstadoDeSaude, number> = {
+  verde: 200,
+  degradado: 207,
+  travado: 503,
+};
 
 export interface ConfigSaude {
   porta: number;
   batimentos: Record<string, Batimento>;
+  /** A medida de entrega. Ausente, o veredito usa só os batimentos, como antes. */
+  entrega?: Entrega;
   janelaMs?: number;
   agora?: () => number;
 }
@@ -101,8 +189,15 @@ export function servidorDeSaude(cfg: ConfigSaude): Server {
       res.end('{"erro":"nao_encontrado"}');
       return;
     }
-    const veredito = vereditoDeSaude(cfg.batimentos, agora(), cfg.janelaMs);
-    res.writeHead(veredito.ok ? 200 : 503, { 'content-type': 'application/json' });
+    const veredito = vereditoDeSaude(
+      {
+        batimentos: cfg.batimentos,
+        ...(cfg.entrega === undefined ? {} : { entrega: cfg.entrega }),
+        ...(cfg.janelaMs === undefined ? {} : { janelaMs: cfg.janelaMs }),
+      },
+      agora(),
+    );
+    res.writeHead(CODIGO_POR_ESTADO[veredito.estado], { 'content-type': 'application/json' });
     res.end(JSON.stringify(veredito));
   }).listen(cfg.porta, '0.0.0.0');
 }
