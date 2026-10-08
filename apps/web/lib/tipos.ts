@@ -10,9 +10,12 @@ export interface ClinicaNaTela {
   nome: string;
 }
 
+/** Mesma lista do `check` de clinic_members. App não importa app, então ela se repete aqui. */
+export type PapelNaClinica = 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+
 export interface ClinicaDaPessoa extends ClinicaNaTela {
   /** Papel na clínica. Serve para não oferecer o que a API vai negar com 403. */
-  papel: 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+  papel: PapelNaClinica;
   /** Modo convidado: a agenda vive em outro sistema e a Fliqo opera sobre ela. */
   modoConvidado: boolean;
 }
@@ -102,6 +105,59 @@ export interface Hoje {
   consultas: ConsultaDaTela[];
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
+  /** Vazio para quem não é dono: só ele pode aplicar o ajuste. */
+  sugestoesDeDuracao: SugestaoDeDuracaoNaTela[];
+}
+
+export interface SugestaoDeDuracaoNaTela {
+  procedimentoId: string;
+  nome: string;
+  cadastradaMin: number;
+  novaDuracaoMin: number;
+  medianaMin: number;
+  amostra: number;
+}
+
+/**
+ * A sugestão como a API a entrega. O `motivo` da recusa chega junto porque a tela
+ * escreve coisas diferentes para "ainda não medimos o bastante" e "o cadastro está
+ * certo" — são notícias diferentes para o dono.
+ */
+export type SugestaoDaApi =
+  | { sugerir: false; motivo: 'amostra_pequena' | 'divergencia_pequena' }
+  | {
+      sugerir: true;
+      cadastradaMin: number;
+      novaDuracaoMin: number;
+      medianaMin: number;
+      amostra: number;
+    };
+
+export interface ProfissionalNaPontualidade {
+  id: string;
+  nome: string;
+  atendimentos: number;
+  noHorario: number;
+  noHorarioPct: number | null;
+  atrasoMedioMin: number;
+}
+
+export interface ProcedimentoNaPontualidade {
+  id: string;
+  nome: string;
+  cadastradaMin: number;
+  medianaMin: number;
+  amostra: number;
+  ajustadaEm: string | null;
+  sugestao: SugestaoDaApi;
+}
+
+export interface Pontualidade {
+  clinica: ClinicaNaTela;
+  de: string;
+  ate: string;
+  profissionais: ProfissionalNaPontualidade[];
+  procedimentos: ProcedimentoNaPontualidade[];
 }
 
 /** Mesma lista do `check` da 0008. App não importa app, então ela se repete aqui. */
@@ -195,4 +251,45 @@ export interface StatusDoWhatsapp {
   conexao: ConexaoDoWhatsapp | null;
   eventos: EventoDeConexao[];
   fuso: string;
+}
+
+// ---------------------------------------------------------------------------
+// Caixa
+// ---------------------------------------------------------------------------
+
+export interface LinhaNaTela {
+  id: string;
+  nome: string;
+  consultas: number;
+  marcadoCents: number;
+  /** `null` quando não há histórico de comparecimento para projetar. */
+  esperadoCents: number | null;
+  realizadoCents: number;
+}
+
+/** De onde veio o esperado. A tela diz isso na frase, não num rodapé. */
+export type ProcedenciaDoEsperado =
+  | { ha: true; amostra: number; janelaDias: number; porGrupo: Record<string, number> }
+  | { ha: false; motivo: 'sem_historico'; amostra: number; minimo: number };
+
+export interface ProcedimentoSemPreco {
+  id: string;
+  nome: string;
+}
+
+export interface Caixa {
+  clinica: ClinicaNaTela;
+  de: string;
+  ate: string;
+  consultas: number;
+  marcadoCents: number;
+  esperadoCents: number | null;
+  realizadoCents: number;
+  procedencia: ProcedenciaDoEsperado;
+  /** A frase vem montada do servidor: é a mesma conta das tabelas, e não pode divergir. */
+  manchete: string;
+  faltas: { quantidade: number; valorCents: number };
+  semPreco: { consultas: number; procedimentos: ProcedimentoSemPreco[] };
+  porProfissional: LinhaNaTela[];
+  porProcedimento: LinhaNaTela[];
 }

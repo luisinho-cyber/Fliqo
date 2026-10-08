@@ -20,6 +20,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { autenticar, membroDaClinica } from '../auth';
 import { comUsuario, UUID, type ContextoPainel } from './contexto';
+import { sugestoesDeDuracao, type SugestaoNaHoje } from './pontualidade';
 
 /**
  * A tela Hoje, montada de uma vez.
@@ -104,6 +105,13 @@ export interface RespostaHoje {
   consultas: ConsultaDaTela[];
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
+  /**
+   * Procedimentos cuja duração cadastrada não é a real. Vazio para quem não é
+   * dono: mexer no cadastro é decisão de quem manda na clínica, e a rota que
+   * aplica o ajuste nega 403 a todos os outros — oferecer o card a quem vai
+   * levar 403 é prometer um botão que não funciona.
+   */
+  sugestoesDeDuracao: SugestaoNaHoje[];
 }
 
 /** Buraco menor que isto não é vaga: ninguém sai de casa e chega em quinze minutos. */
@@ -186,12 +194,19 @@ export function registrarHoje(app: FastifyInstance, ctx: ContextoPainel): void {
 
   app.get('/api/hoje', async (req, reply) => {
     const agora = new Date();
-    const r = await comUsuario(ctx, req, reply, (trx, u) => montar(trx, u.clinicId, agora));
+    const r = await comUsuario(ctx, req, reply, (trx, u) =>
+      montar(trx, u.clinicId, agora, u.papel === 'dono'),
+    );
     return r.respondido ? reply : reply.send(r.valor);
   });
 }
 
-async function montar(trx: Trx, clinicId: string, agora: Date): Promise<RespostaHoje> {
+async function montar(
+  trx: Trx,
+  clinicId: string,
+  agora: Date,
+  ehDono: boolean,
+): Promise<RespostaHoje> {
   const clinica = await hoje.dadosDaClinica(trx, clinicId);
   const { dataIso, inicio, fim } = diaNoFuso(agora, clinica.fuso);
 
@@ -202,6 +217,7 @@ async function montar(trx: Trx, clinicId: string, agora: Date): Promise<Resposta
     medidas.map((m) => [`${m.professional_id}|${m.procedure_id}`, m] as const),
   );
   const abertos = await alertas.abertos(trx);
+  const sugestoes = ehDono ? await sugestoesDeDuracao(trx) : [];
 
   const consultas: ConsultaDaTela[] = [];
   const vagas: VagaDaTela[] = [];
@@ -292,6 +308,7 @@ async function montar(trx: Trx, clinicId: string, agora: Date): Promise<Resposta
       detalhe: a.body,
       consultaId: a.appointment_id,
     })),
+    sugestoesDeDuracao: sugestoes,
   };
 }
 
