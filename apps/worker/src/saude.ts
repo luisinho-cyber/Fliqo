@@ -113,6 +113,8 @@ export interface VereditoDeSaude {
   /** `true` só no verde. Mantido para quem já lia este campo. */
   ok: boolean;
   estado: EstadoDeSaude;
+  /** Por que não está verde, em uma frase. `null` no verde: estado bom não precisa de causa. */
+  causa: string | null;
   lacos: Record<string, { ultimaBatidaMs: number; travado: boolean }>;
   entrega: { vencidasRepresadas: number; idadeDaMedidaMs: number | null; represado: boolean };
 }
@@ -152,6 +154,7 @@ export function vereditoDeSaude(entrada: EntradaDoVeredito, agoraMs: number): Ve
   return {
     ok: estado === 'verde',
     estado,
+    causa: causaDoEstado(estado, lacos, medida?.vencidasRepresadas ?? 0),
     lacos,
     entrega: {
       vencidasRepresadas: medida?.vencidasRepresadas ?? 0,
@@ -159,6 +162,30 @@ export function vereditoDeSaude(entrada: EntradaDoVeredito, agoraMs: number): Ve
       represado,
     },
   };
+}
+
+/**
+ * A causa nomeia o laço e o número, e nada mais: o corpo é lido por quem tem a porta, e
+ * "qual clínica" é pergunta do e-mail do vigia de operador, não desta rota.
+ */
+function causaDoEstado(
+  estado: EstadoDeSaude,
+  lacos: VereditoDeSaude['lacos'],
+  vencidasRepresadas: number,
+): string | null {
+  if (estado === 'travado') {
+    const parados = Object.entries(lacos)
+      .filter(([, l]) => l.travado)
+      .map(
+        ([nome, l]) =>
+          `"${nome}" sem batida há ${String(Math.floor(l.ultimaBatidaMs / 60_000))} min`,
+      );
+    return `laço parado: ${parados.join('; ')}`;
+  }
+  if (estado === 'degradado') {
+    return `${String(vencidasRepresadas)} ação(ões) de envio vencida(s) que não saíram`;
+  }
+  return null;
 }
 
 /** O código HTTP de cada estado. 207 é 2xx: o processo não é reiniciado por estar degradado. */
@@ -179,12 +206,25 @@ export interface ConfigSaude {
 
 /**
  * Servidor mínimo, com `node:http` e sem dependência nova: o worker não serve
- * página nenhuma, e puxar um framework para responder uma rota seria peso sem uso.
+ * página nenhuma, e puxar um framework para responder duas rotas seria peso sem uso.
+ *
+ * As duas rotas respondem perguntas DIFERENTES, e misturá-las foi o que fez o /health mentir:
+ *
+ *   * `/health` — "o processo está de pé?". 200 enquanto ele vive. É o que o healthcheck do
+ *     Railway pergunta no início do deploy, e por isso não consulta batimento nem entrega:
+ *     liveness que sabe de entrega passa a responder outra coisa com o mesmo nome.
+ *   * `/estado` — "o trabalho está saindo?". O veredito inteiro: estado, causa e números.
+ *     Fica fora do healthcheck do Railway.
  */
 export function servidorDeSaude(cfg: ConfigSaude): Server {
   const agora = cfg.agora ?? Date.now;
   return createServer((req, res) => {
-    if (req.url !== '/health') {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+      return;
+    }
+    if (req.url !== '/estado') {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end('{"erro":"nao_encontrado"}');
       return;

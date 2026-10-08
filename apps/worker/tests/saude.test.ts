@@ -12,11 +12,9 @@ import {
 } from '../src/saude';
 
 /**
- * O health check do worker.
- *
- * Um `/health` que devolve 200 porque o processo existe é pior do que não ter:
- * ele afirma saúde enquanto o laço está travado, e worker travado em silêncio é o
- * pior caso deste produto — ninguém é confirmado e nada avisa.
+ * As duas rotas do worker: `/health` diz se o processo está de pé; `/estado` diz se o trabalho
+ * está saindo. Worker travado em silêncio é o pior caso deste produto — ninguém é confirmado e
+ * nada avisa —, e é o `/estado` que diz isso, não o `/health`.
  */
 
 /** Batimento com relógio na mão: nada aqui depende do tempo passar de verdade. */
@@ -100,9 +98,9 @@ describe('o servidor', () => {
     return `http://127.0.0.1:${String(port)}`;
   }
 
-  it('devolve 200 com os laços vivos', async () => {
+  it('/estado devolve 200 com os laços vivos', async () => {
     const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
-    const r = await fetch(`${base}/health`);
+    const r = await fetch(`${base}/estado`);
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ ok: true });
   });
@@ -110,30 +108,31 @@ describe('o servidor', () => {
   it('devolve 503 com laço travado — é o código que faz o Railway reiniciar', async () => {
     const agora = 30 * 60_000;
     const base = await subir({ acoes: batimentoEm(0) }, agora);
-    const r = await fetch(`${base}/health`);
+    const r = await fetch(`${base}/estado`);
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ ok: false });
   });
 
-  it('qualquer outro caminho é 404: o worker não serve mais nada', async () => {
+  it('qualquer outro caminho é 404: o worker serve as duas rotas e mais nada', async () => {
     const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
     expect((await fetch(`${base}/`)).status).toBe(404);
     expect((await fetch(`${base}/metrics`)).status).toBe(404);
   });
 
-  it('a resposta não conta nada além da saúde do serviço', async () => {
+  it('o /estado não conta nada além do veredito', async () => {
     /*
-     * Health check é público. Versão, variável de ambiente ou nome de clínica ali é
-     * reconhecimento de graça para quem varre a internet.
+     * Versão, variável de ambiente ou nome de clínica aqui é reconhecimento de graça para quem
+     * alcançar a porta.
      *
-     * A lista tinha duas chaves e passou a ter quatro quando o /health passou a medir
-     * entrega. Ampliar foi decisão, não acidente — este `toEqual` é o portão, e ele caiu
-     * quando as chaves novas entraram. `estado` é uma palavra de um conjunto fechado e
-     * `entrega` são contagens agregadas: nenhum dos dois diz de QUAL clínica se trata.
+     * A lista é o portão: ela cresceu de duas chaves para quatro quando o veredito passou a
+     * medir entrega, e para cinco quando ganhou a causa. Ampliar é decisão, não acidente.
+     * `estado` é palavra de conjunto fechado, `causa` nomeia laço e número, e `entrega` são
+     * contagens agregadas: nenhum diz de QUAL clínica se trata.
      */
     const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
-    const corpo = await (await fetch(`${base}/health`)).text();
+    const corpo = await (await fetch(`${base}/estado`)).text();
     expect(Object.keys(JSON.parse(corpo) as object).sort()).toEqual([
+      'causa',
       'entrega',
       'estado',
       'lacos',
@@ -141,12 +140,68 @@ describe('o servidor', () => {
     ]);
   });
 
-  it('e o corpo continua sem id, sem versão e sem variável de ambiente', async () => {
+  it('e nenhuma das duas rotas conta id, versão ou variável de ambiente', async () => {
     const base = await subir({ acoes: batimentoEm(1_000) }, 1_000);
-    const corpo = (await (await fetch(`${base}/health`)).text()).toLowerCase();
-    for (const agulha of ['version', 'versao', 'node', 'database', 'token', 'key', 'clinic']) {
-      expect(corpo, `o /health conta "${agulha}"`).not.toContain(agulha);
+    for (const rota of ['/health', '/estado']) {
+      const corpo = (await (await fetch(`${base}${rota}`)).text()).toLowerCase();
+      for (const agulha of ['version', 'versao', 'node', 'database', 'token', 'key', 'clinic']) {
+        expect(corpo, `${rota} conta "${agulha}"`).not.toContain(agulha);
+      }
     }
+  });
+});
+
+/**
+ * As duas perguntas, separadas.
+ *
+ * `/health` é liveness: "o processo está de pé?". É o que o healthcheck do Railway pergunta no
+ * início do deploy. Quando ele passou a saber de entrega, passou a responder outra pergunta
+ * com o mesmo nome — e foi isso que o fez mentir. O veredito mora em `/estado`.
+ */
+describe('o /health é liveness e não sabe nada de entrega', () => {
+  let fechar: (() => void) | undefined;
+  afterEach(() => {
+    fechar?.();
+    fechar = undefined;
+  });
+
+  /** O pior cenário que o veredito conhece: laço parado há meia hora e trinta represadas. */
+  async function subirNoPiorEstado(): Promise<string> {
+    const agora = 30 * 60_000;
+    const entrega = criarEntrega();
+    entrega.marcar(30, agora);
+    const servidor = servidorDeSaude({
+      porta: 0,
+      batimentos: { acoes: batimentoEm(0) },
+      entrega,
+      agora: () => agora,
+    });
+    fechar = () => servidor.close();
+    await new Promise((resolve) => servidor.once('listening', resolve));
+    const { port } = servidor.address() as AddressInfo;
+    return `http://127.0.0.1:${String(port)}`;
+  }
+
+  it('com laço travado e trinta represadas, /health continua 200', async () => {
+    const base = await subirNoPiorEstado();
+    expect((await fetch(`${base}/health`)).status).toBe(200);
+  });
+
+  it('e o corpo do /health é só o "estou de pé", sem número nem estado', async () => {
+    const base = await subirNoPiorEstado();
+    expect(await (await fetch(`${base}/health`)).json()).toEqual({ ok: true });
+  });
+
+  it('enquanto o /estado, no mesmo instante, diz o que está errado', async () => {
+    // Sem esta linha, os dois testes acima passariam com um servidor que nem soubesse do
+    // veredito. É ela que prova que a informação existe — só não está no /health.
+    const base = await subirNoPiorEstado();
+    const r = await fetch(`${base}/estado`);
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({
+      estado: 'travado',
+      entrega: { vencidasRepresadas: 30 },
+    });
   });
 });
 
@@ -158,7 +213,7 @@ describe('o servidor', () => {
  * `claim_due_actions` deixa de reclamar — produzia rodadas limpas, rápidas, com o batimento
  * batendo. Suprimir o envio MELHORAVA o sinal.
  */
-describe('o /health mede entrega, não só batimento', () => {
+describe('o veredito mede entrega, não só batimento', () => {
   function entregaCom(vencidas: number, emMs: number): Entrega {
     const e = criarEntrega();
     e.marcar(vencidas, emMs);
@@ -224,6 +279,26 @@ describe('o /health mede entrega, não só batimento', () => {
     expect(v.entrega.represado).toBe(false);
   });
 
+  it('a causa diz o número no degradado e o laço no travado', () => {
+    expect(
+      vereditoDeSaude(
+        { batimentos: { acoes: batimentoEm(1_000) }, entrega: entregaCom(30, 1_000) },
+        1_000,
+      ).causa,
+    ).toBe('30 ação(ões) de envio vencida(s) que não saíram');
+
+    const agora = 12 * 60_000;
+    expect(
+      vereditoDeSaude({ batimentos: { acoes: batimentoEm(0), atrasos: batimentoEm(agora) } }, agora)
+        .causa,
+    ).toBe('laço parado: "acoes" sem batida há 12 min');
+  });
+
+  it('no verde não há causa', () => {
+    const v = vereditoDeSaude({ batimentos: { acoes: batimentoEm(1_000) } }, 1_000);
+    expect(v.causa).toBeNull();
+  });
+
   it('a medida mais nova substitui a anterior', () => {
     const e = criarEntrega();
     e.marcar(30, 1_000);
@@ -255,9 +330,9 @@ describe('o código HTTP de cada estado', () => {
     return `http://127.0.0.1:${String(port)}`;
   }
 
-  it('com 30 ações represadas, /health NÃO responde verde', async () => {
+  it('com 30 ações represadas, /estado NÃO responde verde', async () => {
     const base = await subirCom(30, 1_000);
-    const r = await fetch(`${base}/health`);
+    const r = await fetch(`${base}/estado`);
     expect(r.status).not.toBe(200);
     expect(await r.json()).toMatchObject({ ok: false, estado: 'degradado' });
   });
@@ -269,21 +344,21 @@ describe('o código HTTP de cada estado', () => {
      * para "consertar" a de uma. Reiniciar não cria credencial.
      */
     const base = await subirCom(30, 1_000);
-    const r = await fetch(`${base}/health`);
+    const r = await fetch(`${base}/estado`);
     expect(r.status).toBe(207);
     expect(r.status).toBeLessThan(300);
   });
 
   it('nada represado é 200', async () => {
     const base = await subirCom(0, 1_000);
-    expect((await fetch(`${base}/health`)).status).toBe(200);
+    expect((await fetch(`${base}/estado`)).status).toBe(200);
   });
 
   it('o corpo do degradado não conta de QUAL clínica é o represamento', async () => {
     // Health check é público. A contagem é agregada; quem precisa saber de qual clínica
     // recebe o e-mail do vigia de operador, que é autenticado por ser e-mail.
     const base = await subirCom(30, 1_000);
-    const corpo = await (await fetch(`${base}/health`)).text();
+    const corpo = await (await fetch(`${base}/estado`)).text();
     expect(corpo).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
     expect(corpo.toLowerCase()).not.toContain('clinic');
   });

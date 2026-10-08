@@ -9,12 +9,14 @@ import { CODIGO_POR_ESTADO, criarBatimento, criarEntrega, vereditoDeSaude } from
 import { WhatsappFalso } from './fake';
 
 /**
- * O caso que o enunciado nomeou: número em erro, trinta ações pendentes, /health não verde.
+ * O caso que o enunciado nomeou: número em erro, trinta ações pendentes, estado não verde.
+ *
+ * O veredito mora em `/estado`. O `/health` é liveness e não sabe de entrega (saude.test.ts).
  *
  * Ele existe porque o sinal andava na direção CONTRÁRIA do problema. O batimento é marcado a
  * cada ação concluída e a cada volta do laço; com o número em erro, o `claim_due_actions`
  * deixa de reclamar as ações de envio daquela clínica, a rodada termina limpa e rápida, e o
- * batimento bate. Suprimir o envio melhorava o health check.
+ * batimento bate. Suprimir o envio melhorava o sinal.
  *
  * Então este arquivo não testa a função de medida isolada — testa a cadeia inteira: claim
  * suprimindo de verdade, medida tirada pelo laço que suprimiu, veredito traduzido em código
@@ -67,7 +69,7 @@ async function acoesVencidas(quantas: number): Promise<void> {
   );
 }
 
-/** O veredito como o /health o produziria, com a medida tirada agora pelo laço. */
+/** O veredito como o /estado o produziria, com a medida tirada agora pelo laço. */
 async function vereditoAgora(): Promise<{ estado: string; codigo: number; represadas: number }> {
   const agoraMs = Date.now();
   const entrega = criarEntrega();
@@ -88,7 +90,7 @@ describe('número em erro com trinta ações pendentes', () => {
 
     const r = await rodarUmaVez({ db, whatsapp: new WhatsappFalso() });
 
-    // A rodada termina LIMPA, e é esse o problema que o /health tinha de parar de premiar.
+    // A rodada termina LIMPA, e é esse o problema que o sinal tinha de parar de premiar.
     expect(r.pegas).toBe(0);
     expect(r.falhas).toBe(0);
   });
@@ -101,7 +103,7 @@ describe('número em erro com trinta ações pendentes', () => {
     expect(await operador.vencidasRepresadas(db)).toBe(QUANTAS);
   });
 
-  it('e o /health NÃO responde verde', async () => {
+  it('e o /estado NÃO responde verde', async () => {
     await numero('erro');
     await acoesVencidas(QUANTAS);
     await rodarUmaVez({ db, whatsapp: new WhatsappFalso() });
@@ -125,7 +127,7 @@ describe('número em erro com trinta ações pendentes', () => {
   });
 });
 
-describe('o número volta e o /health volta ao verde', () => {
+describe('o número volta e o /estado volta ao verde', () => {
   it('com o número conectado, a rodada consome a fila e o estado é verde', async () => {
     await numero('conectado');
     // Três, e não trinta: aqui o que se prova é que a fila ESVAZIA e o estado acompanha.
@@ -177,7 +179,7 @@ describe('o que a medida NÃO conta', () => {
   });
 
   it('a medida soma as clínicas, e não vaza qual é qual', async () => {
-    // O /health é público: a contagem é agregada de propósito. Quem precisa saber de QUAL
+    // O /estado não diz clínica: a contagem é agregada de propósito. Quem precisa saber de QUAL
     // clínica recebe o e-mail do vigia de operador.
     await numero('erro');
     await acoesVencidas(2);
