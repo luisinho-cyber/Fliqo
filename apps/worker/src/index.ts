@@ -19,7 +19,7 @@ import { criarCofre } from './cofre';
 import { criarParada, rodarLaco } from './parada';
 import { vigiarOperador } from './vigia-de-operador';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
-import { criarBatimento, servidorDeSaude } from './saude';
+import { criarSinaisDeSaude, registrarLaco, servidorDeSaude } from './saude';
 import { iniciarLacoDeAcoes } from './laco-de-acoes';
 
 /**
@@ -125,8 +125,9 @@ await boss.work<{ clinicId: string; profissionalId: string; inicio: string; fim:
 );
 
 const parada = criarParada();
-const acoes = iniciarLacoDeAcoes({ parada, db, whatsapp, log });
-const batimentoDeAtrasos = criarBatimento();
+const sinais = criarSinaisDeSaude();
+const lacoDeAcoes = iniciarLacoDeAcoes({ parada, db, whatsapp, log, sinais });
+const batimentoDeAtrasos = registrarLaco(sinais, 'atrasos');
 
 /**
  * Laço dos atrasos. A cada 2 min porque um atraso que cresce entre uma volta e
@@ -180,12 +181,11 @@ const lacoDoVigia = rodarLaco({
   },
 });
 
-const lacos = Promise.all([acoes.terminou, lacoDeAtrasos, lacoDoVigia]);
+const lacos = Promise.all([lacoDeAcoes, lacoDeAtrasos, lacoDoVigia]);
 
 const saude = servidorDeSaude({
   porta: config.PORT,
-  batimentos: { acoes: acoes.batimento, atrasos: batimentoDeAtrasos },
-  entrega: acoes.entrega,
+  sinais,
 });
 
 /**

@@ -3,7 +3,7 @@ import type { ClienteWhatsApp } from '@fliqo/whatsapp';
 import type { Logger } from 'pino';
 import { rodarUmaVez } from './acoes';
 import { rodarLaco, type Parada } from './parada';
-import { criarBatimento, criarEntrega, type Batimento, type Entrega } from './saude';
+import { registrarLaco, type SinaisDeSaude } from './saude';
 
 /**
  * O laço das ações agendadas, fora do `index.ts`.
@@ -13,9 +13,10 @@ import { criarBatimento, criarEntrega, type Batimento, type Entrega } from './sa
  * mesma classe de defeito que ela existe para corrigir: um sinal que confere a forma e não o
  * valor. Aqui o laço é importável e testado pelo que faz (health-represado.test.ts).
  *
- * O batimento e a medida nascem AQUI, e não no `index.ts`: quem roda o laço é quem os marca,
- * então não existe jeito de ligar o laço sem eles. O que sobra para o `index.ts` é entregá-los
- * ao servidor de saúde, e lá a `entrega` é obrigatória — esquecê-la não compila.
+ * O laço se registra nos sinais de saúde AQUI, e não no `index.ts`: quem roda o laço é quem
+ * cria e marca o batimento e a medida, então não existe jeito de ligar o laço sem que o
+ * `/estado` o enxergue. Os sinais são obrigatórios aqui e no servidor — esquecê-los, de um
+ * lado ou do outro, não compila.
  */
 
 /** A cada 30 s, sem sobrepor uma rodada na outra. */
@@ -26,22 +27,20 @@ export interface DependenciasDoLacoDeAcoes {
   db: Db;
   whatsapp: ClienteWhatsApp;
   log: Pick<Logger, 'info' | 'error'>;
+  sinais: SinaisDeSaude;
   agora?: () => number;
 }
 
-export interface LacoDeAcoes {
-  /** Resolve quando a volta em curso termina depois de pedida a parada. */
-  terminou: Promise<void>;
-  batimento: Batimento;
-  entrega: Entrega;
-}
+/** O nome com que o laço aparece no `/estado`. */
+export const NOME_DO_LACO_DE_ACOES = 'acoes';
 
-export function iniciarLacoDeAcoes(dep: DependenciasDoLacoDeAcoes): LacoDeAcoes {
+/** Resolve quando a volta em curso termina depois de pedida a parada. */
+export function iniciarLacoDeAcoes(dep: DependenciasDoLacoDeAcoes): Promise<void> {
   const agora = dep.agora ?? Date.now;
-  const batimento = criarBatimento(agora);
-  const entrega = criarEntrega();
+  const batimento = registrarLaco(dep.sinais, NOME_DO_LACO_DE_ACOES, agora);
+  const { entrega } = dep.sinais;
 
-  const terminou = rodarLaco({
+  return rodarLaco({
     parada: dep.parada,
     intervaloMs: INTERVALO_DO_LACO_DE_ACOES_MS,
     // Uma rodada ruim não pode matar o worker: o próximo ciclo tenta de novo.
@@ -66,6 +65,4 @@ export function iniciarLacoDeAcoes(dep: DependenciasDoLacoDeAcoes): LacoDeAcoes 
       if (r.pegas > 0 || r.devolvidas > 0) dep.log.info(r, 'rodada de ações');
     },
   });
-
-  return { terminou, batimento, entrega };
 }

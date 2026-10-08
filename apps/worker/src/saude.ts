@@ -107,6 +107,34 @@ export function criarEntrega(): Entrega {
 }
 
 /**
+ * O que o `/estado` lê: os batimentos dos laços e a medida de entrega, num objeto só.
+ *
+ * O laço SE REGISTRA aqui (`registrarLaco`), em vez de o `index.ts` montar um mapa de
+ * batimentos à mão. No mapa à mão, tirar uma chave não quebrava nada: o laço continuava
+ * rodando e batendo, e o `/estado` simplesmente deixava de saber que ele existia — laço
+ * travado sem nenhum sinal. Registrado por quem roda, não existe batimento fora do veredito.
+ */
+export interface SinaisDeSaude {
+  batimentos: Record<string, Batimento>;
+  entrega: Entrega;
+}
+
+export function criarSinaisDeSaude(): SinaisDeSaude {
+  return { batimentos: {}, entrega: criarEntrega() };
+}
+
+/** Cria o batimento do laço JÁ registrado no veredito: é o único jeito de um laço ter batimento. */
+export function registrarLaco(
+  sinais: SinaisDeSaude,
+  nome: string,
+  agora: () => number = Date.now,
+): Batimento {
+  const batimento = criarBatimento(agora);
+  sinais.batimentos[nome] = batimento;
+  return batimento;
+}
+
+/**
  * Os três estados, e por que não são dois.
  *
  * `travado`: o laço parou de bater, e o processo não está fazendo o trabalho.
@@ -213,12 +241,12 @@ export const CODIGO_POR_ESTADO: Record<EstadoDeSaude, number> = {
 
 export interface ConfigSaude {
   porta: number;
-  batimentos: Record<string, Batimento>;
   /**
-   * A medida de entrega. Obrigatória: opcional, o `index.ts` podia deixar de passá-la e o
-   * veredito voltava a olhar só batimento, com todo teste verde. Assim, não compila.
+   * Obrigatório, e lido a cada pergunta: o laço que se registrar depois de o servidor subir
+   * aparece no veredito seguinte. Opcional, o `index.ts` podia deixar de passá-lo e o
+   * `/estado` responderia verde sem olhar laço nenhum. Assim, não compila.
    */
-  entrega: Entrega;
+  sinais: SinaisDeSaude;
   janelaMs?: number;
   agora?: () => number;
 }
@@ -250,8 +278,7 @@ export function servidorDeSaude(cfg: ConfigSaude): Server {
     }
     const veredito = vereditoDeSaude(
       {
-        batimentos: cfg.batimentos,
-        entrega: cfg.entrega,
+        ...cfg.sinais,
         ...(cfg.janelaMs === undefined ? {} : { janelaMs: cfg.janelaMs }),
       },
       agora(),

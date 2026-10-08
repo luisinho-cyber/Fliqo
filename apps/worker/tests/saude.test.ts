@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   criarBatimento,
   criarEntrega,
+  criarSinaisDeSaude,
   JANELA_DE_SAUDE_MS,
+  registrarLaco,
   servidorDeSaude,
   vereditoDeSaude,
   type Batimento,
@@ -88,6 +90,28 @@ describe('vereditoDeSaude', () => {
   });
 });
 
+describe('registrarLaco', () => {
+  it('o laço registrado entra no veredito, e parado aparece travado pelo nome', () => {
+    let relogio = 0;
+    const sinais = criarSinaisDeSaude();
+    registrarLaco(sinais, 'acoes', () => relogio);
+    relogio = 2 * JANELA_DE_SAUDE_MS;
+
+    const v = vereditoDeSaude(sinais, relogio);
+    expect(v.estado).toBe('travado');
+    expect(v.lacos.acoes?.travado).toBe(true);
+  });
+
+  it('o batimento devolvido é o MESMO que o veredito lê: marcar nele renova o laço', () => {
+    let relogio = 0;
+    const sinais = criarSinaisDeSaude();
+    const b = registrarLaco(sinais, 'acoes', () => relogio);
+    relogio = 2 * JANELA_DE_SAUDE_MS;
+    b.marcar();
+    expect(vereditoDeSaude(sinais, relogio).estado).toBe('verde');
+  });
+});
+
 describe('o servidor', () => {
   let fechar: (() => void) | undefined;
   afterEach(() => {
@@ -100,7 +124,11 @@ describe('o servidor', () => {
     agoraMs: number,
     entrega: Entrega = criarEntrega(),
   ): Promise<string> {
-    const servidor = servidorDeSaude({ porta: 0, batimentos, entrega, agora: () => agoraMs });
+    const servidor = servidorDeSaude({
+      porta: 0,
+      sinais: { batimentos, entrega },
+      agora: () => agoraMs,
+    });
     fechar = () => servidor.close();
     await new Promise((resolve) => servidor.once('listening', resolve));
     const { port } = servidor.address() as AddressInfo;
@@ -183,8 +211,7 @@ describe('o /health é liveness e não sabe nada de entrega', () => {
     entrega.marcar(30, agora);
     const servidor = servidorDeSaude({
       porta: 0,
-      batimentos: { acoes: batimentoEm(0) },
-      entrega,
+      sinais: { batimentos: { acoes: batimentoEm(0) }, entrega },
       agora: () => agora,
     });
     fechar = () => servidor.close();
@@ -342,8 +369,7 @@ describe('o código HTTP de cada estado', () => {
     entrega.marcar(vencidas, agoraMs);
     const servidor = servidorDeSaude({
       porta: 0,
-      batimentos: { acoes: batimentoEm(agoraMs) },
-      entrega,
+      sinais: { batimentos: { acoes: batimentoEm(agoraMs) }, entrega },
       agora: () => agoraMs,
     });
     fechar = () => servidor.close();

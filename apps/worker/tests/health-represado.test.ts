@@ -7,9 +7,14 @@ import type pg from 'pg';
 import pino from 'pino';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { rodarUmaVez } from '../src/acoes';
-import { iniciarLacoDeAcoes, type LacoDeAcoes } from '../src/laco-de-acoes';
+import { iniciarLacoDeAcoes } from '../src/laco-de-acoes';
 import { criarParada } from '../src/parada';
-import { JANELA_DE_SAUDE_MS, servidorDeSaude } from '../src/saude';
+import {
+  criarSinaisDeSaude,
+  JANELA_DE_SAUDE_MS,
+  servidorDeSaude,
+  type SinaisDeSaude,
+} from '../src/saude';
 import { WhatsappFalso } from './fake';
 
 /**
@@ -81,32 +86,31 @@ async function acoesVencidas(quantas: number): Promise<void> {
  * A parada é pedida logo depois de iniciar: a primeira volta já começou (o laço chama a tarefa
  * antes do primeiro `await`), termina inteira, e o laço sai em vez de dormir 30 s.
  */
-async function umaVolta(agora: () => number = Date.now): Promise<LacoDeAcoes> {
+async function umaVolta(agora: () => number = Date.now): Promise<SinaisDeSaude> {
   const parada = criarParada();
+  const sinais = criarSinaisDeSaude();
   const laco = iniciarLacoDeAcoes({
     parada,
     db,
     whatsapp: new WhatsappFalso(),
     log: pino({ level: 'silent' }),
+    sinais,
     agora,
   });
   parada.pedir();
-  await laco.terminou;
+  await laco;
   // Volta que falhou cai em `aoFalhar` e não mede: sem esta linha, o erro viraria "verde".
-  expect(laco.entrega.ultima(), 'a volta não chegou a medir').toBeDefined();
-  return laco;
+  expect(sinais.entrega.ultima(), 'a volta não chegou a medir').toBeDefined();
+  return sinais;
 }
 
-/** Pergunta ao servidor de saúde, ligado ao batimento e à medida que o laço marcou. */
+/** Pergunta ao servidor de saúde, ligado aos sinais em que o laço se registrou. */
 async function perguntar(
-  laco: LacoDeAcoes,
+  sinais: SinaisDeSaude,
   rota: '/estado' | '/health',
+  agora: () => number = Date.now,
 ): Promise<{ status: number; corpo: Record<string, unknown> }> {
-  const servidor = servidorDeSaude({
-    porta: 0,
-    batimentos: { acoes: laco.batimento },
-    entrega: laco.entrega,
-  });
+  const servidor = servidorDeSaude({ porta: 0, sinais, agora });
   try {
     await new Promise((resolve) => servidor.once('listening', resolve));
     const { port } = servidor.address() as AddressInfo;
@@ -133,8 +137,8 @@ describe('número em erro com trinta ações pendentes', () => {
     await numero('erro');
     await acoesVencidas(QUANTAS);
 
-    const laco = await umaVolta();
-    expect(laco.entrega.ultima()?.vencidasRepresadas).toBe(QUANTAS);
+    const sinais = await umaVolta();
+    expect(sinais.entrega.ultima()?.vencidasRepresadas).toBe(QUANTAS);
   });
 
   it('e o /estado NÃO responde verde', async () => {
@@ -179,8 +183,8 @@ describe('a medida sai da volta do laço', () => {
 
     // As ações não têm consulta, então cada uma falha como 'sem consulta' e é definitiva —
     // o que importa é que saem de `pendente`, que é o que a medida conta.
-    const laco = await umaVolta();
-    expect(laco.entrega.ultima()?.vencidasRepresadas).toBe(0);
+    const sinais = await umaVolta();
+    expect(sinais.entrega.ultima()?.vencidasRepresadas).toBe(0);
   });
 
   it('e com o número conectado o /estado volta ao verde', async () => {
@@ -200,20 +204,52 @@ describe('a medida sai da volta do laço', () => {
 
     let relogio = 0;
     const parada = criarParada();
+    const sinais = criarSinaisDeSaude();
     const laco = iniciarLacoDeAcoes({
       parada,
       db,
       whatsapp: new WhatsappFalso(),
       log: pino({ level: 'silent' }),
+      sinais,
       agora: () => relogio,
     });
     // O batimento nasceu em 0. Tudo o que a volta marcar daqui em diante sai em 2 janelas.
     relogio = 2 * JANELA_DE_SAUDE_MS;
     parada.pedir();
-    await laco.terminou;
+    await laco;
 
-    expect(laco.batimento.ultimo()).toBe(2 * JANELA_DE_SAUDE_MS);
-    expect(laco.entrega.ultima()?.emMs).toBe(2 * JANELA_DE_SAUDE_MS);
+    expect(sinais.batimentos.acoes?.ultimo()).toBe(2 * JANELA_DE_SAUDE_MS);
+    expect(sinais.entrega.ultima()?.emMs).toBe(2 * JANELA_DE_SAUDE_MS);
+  });
+});
+
+/**
+ * O laço se registra sozinho no `/estado`.
+ *
+ * Antes, o `index.ts` montava o mapa de batimentos à mão, e tirar a chave `acoes` dele não
+ * quebrava nada: o laço seguia rodando e medindo, e o `/estado` nunca mais dizia "laço parado"
+ * para ele. Agora quem registra é o próprio `iniciarLacoDeAcoes`.
+ */
+describe('o laço de ações aparece no /estado sem ninguém lembrar de ligá-lo', () => {
+  it('uma volta e o laço está lá, pelo nome', async () => {
+    await numero('conectado');
+    const r = await perguntar(await umaVolta(), '/estado');
+    expect(r.corpo).toMatchObject({ lacos: { acoes: { travado: false } } });
+  });
+
+  it('e quando ele para de bater, o /estado diz travado e nomeia o laço', async () => {
+    await numero('conectado');
+    let relogio = 0;
+    const sinais = await umaVolta(() => relogio);
+
+    // Nenhuma volta nova: o laço parou. Passadas duas janelas, quem pergunta tem de saber.
+    relogio = 2 * JANELA_DE_SAUDE_MS;
+    const r = await perguntar(sinais, '/estado', () => relogio);
+    expect(r.status).toBe(503);
+    expect(r.corpo).toMatchObject({
+      estado: 'travado',
+      causa: 'laço parado: "acoes" sem batida há 20 min',
+    });
   });
 });
 
