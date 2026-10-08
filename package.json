@@ -26,7 +26,8 @@
     "build:web": "npm --prefix apps/web run build",
     "e2e:demo": "npm --prefix apps/demo run e2e",
     "db:papel-app": "node packages/db/scripts/papel-app.mjs",
-    "db:conferir-rls": "node packages/db/scripts/rls-definer.mjs"
+    "db:conferir-rls": "node packages/db/scripts/rls-definer.mjs",
+    "e2e:web": "tsx tests-e2e/preparar-banco.ts && playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
