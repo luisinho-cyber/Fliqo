@@ -33,6 +33,15 @@ const ABAS: readonly Aba[] = [
   { href: '/agenda', rotulo: 'Agenda', papeis: null, recurso: null, soConvidado: false },
   { href: '/caixa', rotulo: 'Caixa', papeis: DINHEIRO, recurso: 'financeiro', soConvidado: false },
   {
+    // Toda a equipe lê: a duração é o que a agenda reserva. Quem edita é dono e
+    // financeiro, e a API nega 403 aos outros.
+    href: '/procedimentos',
+    rotulo: 'Procedimentos',
+    papeis: null,
+    recurso: null,
+    soConvidado: false,
+  },
+  {
     href: '/pontualidade',
     rotulo: 'Pontualidade',
     papeis: SO_DONO,

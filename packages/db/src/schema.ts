@@ -89,6 +89,15 @@ export interface TabelaProcedimentos {
    */
   duration_updated_at: ColumnType<Date | null, Date | null, Date | null>;
   duration_updated_by: ColumnType<string | null, string | null, string | null>;
+  /**
+   * O retorno é característica do PROCEDIMENTO. Os dois campos andam juntos pelo check
+   * `procedures_followup_check` (0014): ou pede retorno e diz em quantos dias, ou não pede
+   * e o prazo é nulo. Nada aqui agenda consulta — a de retorno é marcada como qualquer outra.
+   */
+  requires_followup: ComDefault<boolean>;
+  followup_days: ColumnType<number | null, number | null, number | null>;
+  created_at: ComDefault<Date>;
+  updated_at: ComDefault<Date>;
 }
 
 /** Uma importação de agenda do modo convidado, com as contas que têm de fechar (0012). */
@@ -435,6 +444,10 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     source: true,
     duration_updated_at: true,
     duration_updated_by: true,
+    requires_followup: true,
+    followup_days: true,
+    created_at: true,
+    updated_at: true,
   },
   'app.schedule_imports': {
     id: true,
