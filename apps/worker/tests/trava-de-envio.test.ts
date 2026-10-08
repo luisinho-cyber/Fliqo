@@ -118,3 +118,23 @@ describe('o envio que NÃO saiu não trava o próximo', () => {
     expect(await statusDaConfirmacao()).toBe('feito');
   });
 });
+
+describe('envio incerto: a mensagem pode ter saído', () => {
+  it('não repete, para em erro, e a recepção é avisada para conferir', async () => {
+    await consultaComConfirmacaoVencida();
+    whatsapp.roteiro.push({ ok: false, motivo: 'incerto', detalhe: 'conexão caiu' });
+
+    const r = await rodarUmaVez({ db, whatsapp });
+    expect(r.incertas).toBe(1);
+    expect(await statusDaConfirmacao()).toBe('erro');
+
+    const { rows } = await owner.query<{ title: string }>(
+      `select title from app.alerts where kind = 'acao_falhou'`,
+    );
+    expect(rows.map((l) => l.title)).toEqual(['Não sei se "confirmacao" chegou ao paciente']);
+
+    // A volta seguinte não pega a ação de novo: é o "não repetir".
+    await rodarUmaVez({ db, whatsapp });
+    expect(whatsapp.enviados).toHaveLength(0);
+  });
+});

@@ -93,6 +93,11 @@ export type SaidaDaAcao =
    * vez, e um alerta nomeia a causa.
    */
   | { ok: false; credencial: true; motivo: string }
+  /**
+   * A mensagem PODE ter saído: a conexão caiu ou o tempo esgotou depois de o pedido sair.
+   * Não repete — repetir é a confirmação duplicada. Vira alerta para a recepção conferir.
+   */
+  | { ok: false; incerto: true; motivo: string }
   | { ok: false; motivo: string; definitivo: boolean };
 
 /**
@@ -176,6 +181,7 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
 
   if (r.ok) return 'jaSaiu' in r ? r : { ok: true };
   if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
+  if (r.motivo === 'incerto') return { ok: false, incerto: true, motivo: r.detalhe };
   // Sem consentimento o alerta já foi criado; insistir não resolve.
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
@@ -215,6 +221,7 @@ async function lembreteFinal(
 
   if (r.ok) return 'jaSaiu' in r ? r : { ok: true };
   if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
+  if (r.motivo === 'incerto') return { ok: false, incerto: true, motivo: r.detalhe };
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
 
@@ -321,6 +328,30 @@ async function falhar(
 }
 
 /**
+ * O envio pode ter saído e não há como saber. A ação para em 'erro' — sem retentativa,
+ * que é o que duplicaria — e a recepção recebe um alerta que diz exatamente isso.
+ *
+ * O alerta é a outra metade da decisão: sem ele, "não repetir" viraria "paciente sem
+ * confirmação e ninguém sabendo".
+ */
+async function talvezTenhaSaido(trx: Trx, acao: AcaoPendente, motivo: string): Promise<void> {
+  await trx
+    .updateTable('app.scheduled_actions')
+    .set({ status: 'erro', last_error: `envio incerto: ${motivo}` })
+    .where('id', '=', acao.id)
+    .execute();
+
+  await alertas.criar(trx, acao.clinic_id, {
+    tipo: 'acao_falhou',
+    gravidade: 'urgente',
+    titulo: `Não sei se "${acao.kind}" chegou ao paciente`,
+    corpo:
+      'A conexão com o WhatsApp caiu no meio do envio: a mensagem pode ter saído ou não. Confira a conversa antes de reenviar, para o paciente não receber duas vezes.',
+    ...(acao.appointment_id === null ? {} : { consultaId: acao.appointment_id }),
+  });
+}
+
+/**
  * A clínica está fora: marca o número em erro e abre UM alerta.
  *
  * A ação volta a esperar — não é falha dela, é a clínica que não tem por onde
@@ -356,6 +387,8 @@ export interface ResumoDaRodada {
   devolvidas: number;
   semProposito: number;
   esperandoOWhatsapp: number;
+  /** Envio que pode ter saído: parou sem repetir, e a recepção foi avisada. */
+  incertas: number;
   /** Ações que voltaram com a mensagem já enviada: a trava segurou a repetição. */
   repeticoesEvitadas: number;
 }
@@ -369,6 +402,7 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
   let semProposito = 0;
   let esperandoOWhatsapp = 0;
   let repeticoesEvitadas = 0;
+  let incertas = 0;
 
   for (const acao of pendentes) {
     // Cada ação na própria transação: uma falha não derruba o lote inteiro.
@@ -387,6 +421,9 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
         } else if ('credencial' in r) {
           await aClinicaEstaFora(trx, acao, r.motivo);
           esperandoOWhatsapp++;
+        } else if ('incerto' in r) {
+          await talvezTenhaSaido(trx, acao, r.motivo);
+          incertas++;
         } else {
           await falhar(trx, acao, r.motivo, r.definitivo);
           falhas++;
@@ -404,6 +441,7 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
     devolvidas,
     semProposito,
     esperandoOWhatsapp,
+    incertas,
     repeticoesEvitadas,
   };
 }
