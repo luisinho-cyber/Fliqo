@@ -35,7 +35,7 @@ function clienteComResposta(resposta: () => Response): {
 const ENVIO: EnvioDeTemplate = {
   phoneNumberId: '111',
   paraE164: '+5511999990000',
-  template: 'fliqo_remarcacao',
+  template: 'atraso_normalizou',
   variaveis: ['Maria', 'Clínica Modelo'],
 };
 
@@ -199,7 +199,8 @@ describe('o envio de um template da clínica', () => {
   const params = {
     nome_paciente: 'Maria',
     nome_profissional: 'Dra. Helena',
-    data_hora: 'terça, 14/10, às 14:30',
+    data: 'terça, 14/10',
+    hora: '14:30',
     nome_clinica: 'Clínica Modelo',
   };
 
@@ -208,16 +209,16 @@ describe('o envio de um template da clínica', () => {
     const portas = new PortasFalsas('111222');
     const enviar = criarEnviadorDeTemplate(cliente, portas);
 
-    const r = await enviar('clinica-1', '+5511999990000', 'confirmacaoConsulta', params);
+    const r = await enviar('clinica-1', '+5511999990000', 'confirmacao', params);
 
     expect(r).toEqual({ ok: true, wamid: 'wamid.ABC', novo: true });
     expect(cliente.enviados[0]).toEqual({
       phoneNumberId: '111222',
       paraE164: '+5511999990000',
-      template: 'fliqo_confirmacao_consulta',
+      template: 'confirmacao_consulta',
       idioma: 'pt_BR',
-      variaveis: ['Maria', 'Dra. Helena', 'terça, 14/10, às 14:30', 'Clínica Modelo'],
-      botoes: ['CONFIRMAR_CONSULTA', 'REMARCAR_CONSULTA'],
+      variaveis: ['Maria', 'Dra. Helena', 'terça, 14/10', '14:30', 'Clínica Modelo'],
+      botoes: ['CONFIRMAR_CONSULTA', 'REMARCAR_CONSULTA', 'CANCELAR_CONSULTA'],
     });
   });
 
@@ -236,16 +237,17 @@ describe('o envio de um template da clínica', () => {
   it('grava o wamid devolvido, com o nome da Meta e não a chave de código', async () => {
     const portas = new PortasFalsas('111222');
     const enviar = criarEnviadorDeTemplate(new ClienteFalso(), portas);
-    await enviar('clinica-1', '+5511999990000', 'vagaLiberada', {
+    await enviar('clinica-1', '+5511999990000', 'ofertaDeVaga', {
       nome_paciente: 'Maria',
-      data_hora: 'quinta, 09:00',
+      data: 'quinta, 16/10',
+      hora: '09:00',
       nome_clinica: 'Clínica Modelo',
     });
     expect(portas.gravados).toEqual([
       {
         clinicId: 'clinica-1',
         paraE164: '+5511999990000',
-        template: 'fliqo_vaga_liberada',
+        template: 'oferta_de_vaga',
         wamid: 'wamid.ABC',
       },
     ]);
@@ -254,9 +256,8 @@ describe('o envio de um template da clínica', () => {
   it('wamid que já estava gravado volta com novo: false', async () => {
     const portas = new PortasFalsas('111222', ['wamid.ABC']);
     const enviar = criarEnviadorDeTemplate(new ClienteFalso(), portas);
-    const r = await enviar('clinica-1', '+5511999990000', 'remarcacao', {
-      nome_paciente: 'Maria',
-      nome_clinica: 'Clínica Modelo',
+    const r = await enviar('clinica-1', '+5511999990000', 'atrasoNormalizou', {
+      horario_original: '14:30',
     });
     expect(r).toEqual({ ok: true, wamid: 'wamid.ABC', novo: false });
   });
@@ -264,9 +265,8 @@ describe('o envio de um template da clínica', () => {
   it('clínica sem número conectado não chega na Meta', async () => {
     const cliente = new ClienteFalso();
     const enviar = criarEnviadorDeTemplate(cliente, new PortasFalsas(undefined));
-    const r = await enviar('clinica-1', '+5511999990000', 'remarcacao', {
-      nome_paciente: 'Maria',
-      nome_clinica: 'Clínica Modelo',
+    const r = await enviar('clinica-1', '+5511999990000', 'atrasoNormalizou', {
+      horario_original: '14:30',
     });
     expect(r).toMatchObject({ ok: false, recusa: 'clinica_sem_numero' });
     expect(cliente.enviados).toHaveLength(0);
@@ -276,9 +276,8 @@ describe('o envio de um template da clínica', () => {
     const cliente = new ClienteFalso();
     const portas = new PortasFalsas('111222');
     const enviar = criarEnviadorDeTemplate(cliente, portas);
-    const r = await enviar('clinica-1', '+5511999990000', 'remarcacao', {
-      nome_paciente: 'Maria',
-      nome_clinica: '',
+    const r = await enviar('clinica-1', '+5511999990000', 'atrasoNormalizou', {
+      horario_original: '',
     });
     expect(r).toMatchObject({ ok: false, recusa: 'parametro_vazio' });
     expect(cliente.enviados).toHaveLength(0);
@@ -296,8 +295,8 @@ describe('o envio de um template da clínica', () => {
     const r = await criarEnviadorDeTemplate(cliente, portas)(
       'clinica-1',
       '+5511999990000',
-      'remarcacao',
-      { nome_paciente: 'Maria', nome_clinica: 'Clínica Modelo' },
+      'atrasoNormalizou',
+      { horario_original: '14:30' },
     );
     expect(r).toMatchObject({
       ok: false,
@@ -319,8 +318,8 @@ describe('o envio de um template da clínica', () => {
     const r = await criarEnviadorDeTemplate(cliente, new PortasFalsas('111222'))(
       'clinica-1',
       '+5511999990000',
-      'remarcacao',
-      { nome_paciente: 'Maria', nome_clinica: 'Clínica Modelo' },
+      'atrasoNormalizou',
+      { horario_original: '14:30' },
     );
     expect(r).toMatchObject({ recusa: 'meta', falha: 'limite_de_envio', repetir: true });
   });

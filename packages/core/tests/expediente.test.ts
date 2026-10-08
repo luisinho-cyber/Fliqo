@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dataDaMensagem,
   dataNoFuso,
   diaNoFuso,
   expedienteEmIntervalos,
+  horaDaMensagem,
   noFuso,
   semanaNoFuso,
   somarDias,
@@ -118,5 +120,50 @@ describe('semanaNoFuso', () => {
     for (let i = 1; i < s.dias.length; i++) {
       expect(s.dias[i]?.inicio.getTime()).toBe(s.dias[i - 1]?.fim.getTime());
     }
+  });
+});
+
+describe('a data e a hora que a mensagem do paciente mostra', () => {
+  // 14 de outubro de 2026 é uma quarta-feira. 17:30 UTC = 14:30 em São Paulo.
+  const instante = new Date('2026-10-14T17:30:00Z');
+
+  it('a data sai curta e em português, sem "-feira"', () => {
+    // "quarta-feira, 14/10" é longo para uma mensagem que o paciente lê de relance.
+    expect(dataDaMensagem(instante, 'America/Sao_Paulo')).toBe('quarta, 14/10');
+  });
+
+  it('a hora sai HH:MM, no fuso da clínica', () => {
+    expect(horaDaMensagem(instante, 'America/Sao_Paulo')).toBe('14:30');
+  });
+
+  it('a mesma consulta em Manaus mostra uma hora a menos', () => {
+    // Clínica em Manaus não pode receber hora calculada em São Paulo: é o paciente chegando
+    // uma hora adiantado.
+    expect(horaDaMensagem(instante, 'America/Manaus')).toBe('13:30');
+    expect(dataDaMensagem(instante, 'America/Manaus')).toBe('quarta, 14/10');
+  });
+
+  it('perto da meia-noite, o fuso muda o DIA, não só a hora', () => {
+    // 02:30 UTC de quinta é ainda quarta às 23:30 em São Paulo. Uma data calculada em UTC
+    // mandaria o paciente no dia errado.
+    const madrugada = new Date('2026-10-15T02:30:00Z');
+    expect(dataDaMensagem(madrugada, 'America/Sao_Paulo')).toBe('quarta, 14/10');
+    expect(horaDaMensagem(madrugada, 'America/Sao_Paulo')).toBe('23:30');
+  });
+
+  it('as duas são puras: a mesma entrada dá a mesma saída', () => {
+    // Nenhum relógio escondido — é o que permite elas viverem em core (CLAUDE.md).
+    expect(dataDaMensagem(instante, 'America/Sao_Paulo')).toBe(
+      dataDaMensagem(instante, 'America/Sao_Paulo'),
+    );
+    expect(horaDaMensagem(instante, 'America/Sao_Paulo')).toBe(
+      horaDaMensagem(instante, 'America/Sao_Paulo'),
+    );
+  });
+
+  it('a hora nunca sai com segundos nem a data com ano', () => {
+    // O corpo aprovado na Meta tem espaço limitado, e o paciente não precisa do ano.
+    expect(horaDaMensagem(instante, 'America/Sao_Paulo')).not.toMatch(/:\d\d:/);
+    expect(dataDaMensagem(instante, 'America/Sao_Paulo')).not.toContain('2026');
   });
 });

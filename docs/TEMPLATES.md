@@ -1,174 +1,106 @@
 # Templates de WhatsApp para submeter na Meta
 
 > **Você não precisa copiar nada daqui à mão.** `npm run whatsapp:registrar-templates` submete
-> os sete templates abaixo pela API, com o nome, o corpo, os exemplos e os botões saídos de
+> os cinco templates abaixo pela API, com o nome, o corpo, os exemplos e os botões saídos de
 > `packages/whatsapp/src/templates.ts`. Esta página existe para você conferir o TEXTO antes de
-> submeter e para saber o que esperar da revisão da Meta — não para ser digitada no painel.
+> submeter e para saber o que esperar da revisão — não para ser digitada no painel da Meta.
 
-> **O nome na Meta tem de ser idêntico ao do código, caractere por caractere.** O script
-> garante isso enquanto for ele a submeter. Se você criar algum à mão no painel da Meta, nome
-> diferente faz a Meta responder "template não existe" (erro 132001), e esse erro só aparece
-> com a clínica real esperando a confirmação.
+> **Se você criar algum à mão no painel da Meta, o nome tem de ser idêntico ao do código,
+> caractere por caractere.** Sem acento, sem espaço, sem maiúscula. O código envia por nome;
+> nome diferente faz a Meta responder "template não existe" (erro 132001), e esse erro só
+> aparece com a clínica real esperando a confirmação. Enquanto for o script a submeter, isso
+> está garantido — a lista de nomes sai do próprio `templates.ts`.
 
-> **A ORDEM dos botões também é contrato.** O envio manda o payload de cada botão por ÍNDICE
-> (`index: '0'`, `'1'`, em `packages/whatsapp/src/meta.ts`), não por texto. Botão fora de ordem
-> faz o paciente tocar em "preciso remarcar" e o sistema entender "confirmou", **sem erro
+> **São cinco, e são os cinco nomes que já existiam.** Nome novo não é de graça: cada template
+> conta contra o limite da conta, e um conjunto novo ao lado do antigo deixa metade órfã —
+> aprovada, consumindo cota, e sem código que a envie. O que mudou foi o **corpo** de dois
+> deles, não o nome de nenhum.
+
+> **Com o mesmo nome, código e Meta mudam JUNTOS.** Não existe janela em que o corpo novo
+> esteja aprovado e o código antigo ainda funcione: `confirmacao_consulta` passou de zero para
+> cinco variáveis, e enviar cinco contra um corpo de zero devolve erro 132000 em TODO envio —
+> assim como enviar zero contra o corpo novo. A ordem é: submeter, **esperar a aprovação**, e só
+> então mesclar o código. Está escrito de novo no fim desta página, porque é o passo que custa
+> caro se for invertido.
+
+> **A ORDEM dos botões é contrato.** O envio manda o payload de cada botão por ÍNDICE
+> (`index: '0'`, `'1'`, `'2'` em `packages/whatsapp/src/meta.ts`), não por texto. Botão fora de
+> ordem faz o paciente tocar em "preciso remarcar" e o sistema entender "confirmou", **sem erro
 > nenhum**. É a divergência mais perigosa desta página, porque ela não falha: ela mente.
 
 Idioma de todos: **pt_BR**. Categoria de todos: **utility**. Nenhum template nosso é marketing.
 
-**Nenhum template tem variável no cabeçalho**, e nenhum corpo começa ou termina com variável —
-a Meta recusa a submissão nos dois casos, e há teste que impede qualquer definição nossa de
-chegar lá assim.
+**Nenhum corpo começa ou termina com variável, e nenhum tem duas variáveis coladas** — a Meta
+recusa a submissão nos três casos, e há teste que impede qualquer definição nossa de chegar lá
+assim (`conferirCorpo`, em `templates.ts`).
 
-## Os sete templates
+## Os cinco templates
 
-Lidos de `packages/whatsapp/src/templates.ts`, que é o único lugar onde nome, corpo, parâmetro
-e botão de template existem no código.
+| Nome na Meta           | Variáveis | Botões | Quem envia                   |
+| ---------------------- | :-------: | :----: | ---------------------------- |
+| `confirmacao_consulta` |     5     |   3    | `apps/worker/src/acoes.ts`   |
+| `lembrete_final`       |     0     |   0    | `apps/worker/src/acoes.ts`   |
+| `oferta_de_vaga`       |     4     |   1    | `apps/worker/src/ofertas.ts` |
+| `aviso_de_atraso`      |     2     |   2    | `apps/worker/src/atrasos.ts` |
+| `atraso_normalizou`    |     1     |   0    | `apps/worker/src/atrasos.ts` |
 
-| Nome na Meta                 | Variáveis | Botões | Quem envia hoje                 |
-| ---------------------------- | :-------: | :----: | ------------------------------- |
-| `fliqo_confirmacao_consulta` |     4     |   2    | ninguém ainda — veja "a virada" |
-| `fliqo_lembrete_vespera`     |     4     |   2    | ninguém ainda — falta a régua   |
-| `fliqo_remarcacao`           |     2     |   0    | ninguém ainda — veja "a virada" |
-| `fliqo_vaga_liberada`        |     3     |   1    | ninguém ainda — veja "a virada" |
-| `confirmacao_consulta`       |     0     |   3    | `apps/worker/src/acoes.ts`      |
-| `oferta_de_vaga`             |     0     |   1    | `apps/worker/src/ofertas.ts`    |
-| `lembrete_final`             |     0     |   0    | `apps/worker/src/acoes.ts`      |
-| `aviso_de_atraso`            |     2     |   2    | `apps/worker/src/atrasos.ts`    |
-| `atraso_normalizou`          |     1     |   0    | `apps/worker/src/atrasos.ts`    |
+Todos têm remetente no código. Nenhum template registrado fica sem uso.
 
-**Por que registrar template que ninguém envia ainda.** A aprovação da Meta leva de minutos a
-dias, e o código não pode usar um template antes de ele estar aprovado. Então a ordem é esta:
-registra, espera a aprovação, e só então vira o código para os nomes novos. O contrário —
-virar o código primeiro — para a régua de confirmação da clínica inteira até a Meta responder.
+### Data e hora são duas variáveis, nunca uma
+
+Nos dois templates que falam de um horário futuro, `{{data}}` e `{{hora}}` são separadas, com o
+`, às ` entre elas como **texto aprovado**. Três razões, nessa ordem de peso:
+
+1. A Meta recusa duas variáveis coladas sem texto entre elas — `{{1}}{{2}}` não chega ao revisor.
+2. O corpo fica legível: "para terça, 14/10, às 14:30" em vez de um carimbo colado.
+3. O "às" passa a ser parte do texto aprovado em vez de concatenação nossa, então mudar a
+   grafia da hora não exige nova revisão.
+
+**A formatação mora no código**, em `dataDaMensagem` e `horaDaMensagem`
+(`packages/core/src/expediente.ts`), no fuso da clínica — uma clínica em Manaus não recebe hora
+calculada em São Paulo. Trocar `14:30` por `14h30` é uma linha no core e **zero** submissões.
 
 ---
 
-## 1. `fliqo_confirmacao_consulta`
+## 1. `confirmacao_consulta`
 
-Primeiro pedido de confirmação, `confirm_hours_before` antes da consulta (2 a 72 h).
+Primeiro pedido de confirmação, `confirm_hours_before` antes da consulta (2 a 72 h, migração 0001).
 
 ```
-Olá, {{1}}. Sua consulta com {{2}} está marcada para {{3}}.
+Olá, {{1}}. Sua consulta com {{2}} está marcada para {{3}}, às {{4}}.
 
 Você confirma que vai poder vir? Se precisar de outro horário, a gente remarca por aqui.
 
-Mensagem da clínica {{4}}. Pode responder nesta conversa.
+Mensagem da clínica {{5}}. Pode responder nesta conversa.
 ```
 
-| Variável | Conteúdo             | Exemplo na submissão     |
-| -------- | -------------------- | ------------------------ |
-| `{{1}}`  | nome do paciente     | `Maria`                  |
-| `{{2}}`  | nome do profissional | `Dra. Helena`            |
-| `{{3}}`  | data e hora          | `terça, 14/10, às 14:30` |
-| `{{4}}`  | nome da clínica      | `Clínica Modelo`         |
+| Variável | Conteúdo             | Exemplo na submissão |
+| -------- | -------------------- | -------------------- |
+| `{{1}}`  | nome do paciente     | `Maria`              |
+| `{{2}}`  | nome do profissional | `Dra. Helena`        |
+| `{{3}}`  | data                 | `terça, 14/10`       |
+| `{{4}}`  | hora                 | `14:30`              |
+| `{{5}}`  | nome da clínica      | `Clínica Modelo`     |
 
-**Botões, nesta ordem:** `Confirmar` (payload `CONFIRMAR_CONSULTA`), `Preciso remarcar`
-(payload `REMARCAR_CONSULTA`).
+**Botões, nesta ordem:**
 
-**Dois botões, e não três — uma perda que vale registrar.** O template que está no ar hoje tem
-um terceiro, `Não vou poder ir` (`CANCELAR_CONSULTA`), e ele é o único toque que LIBERA o
-horário e dispara a lista de espera. Sem ele, quem não pode vir tem de escrever, e a IA
-interpreta — o que funciona, mas perde o caminho de um toque. Se quiser os três, é uma linha em
-`templates.ts` (`BOTAO.CANCELAR` já existe) e o número de botões nesta página muda para 3.
+| #   | Texto exato          | Payload que o código manda |
+| --- | -------------------- | -------------------------- |
+| 1   | `Confirmar presença` | `CONFIRMAR_CONSULTA`       |
+| 2   | `Preciso remarcar`   | `REMARCAR_CONSULTA`        |
+| 3   | `Não vou poder ir`   | `CANCELAR_CONSULTA`        |
 
-O texto não diz "amanhã" de propósito: com 72 h de antecedência seria mentira. Quem diz o dia é
+**O terceiro botão é o que paga a conta.** `Não vou poder ir` é o único toque que LIBERA o
+horário e dispara a lista de espera (`liberar_horario_e_ofertar`). Sem ele, quem não pode vir
+tem de escrever, e a vaga só abre depois de a IA interpretar o texto — a mesma vaga, horas mais
+tarde, com menos chance de ser preenchida.
+
+O corpo não diz "amanhã" de propósito: com 72 h de antecedência seria mentira. Quem diz o dia é
 `{{3}}`.
 
 ---
 
-## 2. `fliqo_lembrete_vespera`
-
-Lembrete do dia anterior, para quem ainda não respondeu o primeiro pedido.
-
-```
-Olá, {{1}}. Passando para lembrar da sua consulta com {{2}}, {{3}}.
-
-Ainda não recebemos sua confirmação. Responder ajuda a organizar a agenda do dia, e se você não puder vir o horário fica livre para outro paciente.
-
-Mensagem da clínica {{4}}. Pode responder nesta conversa.
-```
-
-| Variável | Conteúdo             | Exemplo na submissão      |
-| -------- | -------------------- | ------------------------- |
-| `{{1}}`  | nome do paciente     | `Maria`                   |
-| `{{2}}`  | nome do profissional | `Dra. Helena`             |
-| `{{3}}`  | data e hora          | `amanhã, 14/10, às 14:30` |
-| `{{4}}`  | nome da clínica      | `Clínica Modelo`          |
-
-**Botões, nesta ordem:** `Confirmar` (payload `CONFIRMAR_CONSULTA`), `Preciso remarcar` (payload
-`REMARCAR_CONSULTA`) — os mesmos do template anterior.
-
-**Nada na régua agenda este template ainda.** `app.action_kind` (migração 0001) tem
-`confirmacao`, `lembrete_final`, `marcar_risco` e `expirar_oferta` — não tem véspera. Ligar
-isto exige valor novo na enum, linha nova no gatilho `app.sync_appointment_actions` e um ajuste
-por clínica de quando enviar: ou seja, **migração, e fase própria**. Registrar agora é só para
-a aprovação não ser o gargalo depois.
-
----
-
-## 3. `fliqo_remarcacao`
-
-Resposta ao pedido de remarcação.
-
-```
-Olá, {{1}}. Recebemos seu pedido para remarcar a consulta.
-
-Me diga nesta conversa quais dias e horários são melhores para você, e eu procuro uma vaga. Seu horário atual continua reservado até a gente combinar o novo.
-
-Mensagem da clínica {{2}}. Pode responder nesta conversa.
-```
-
-| Variável | Conteúdo         |
-| -------- | ---------------- |
-| `{{1}}`  | nome do paciente |
-| `{{2}}`  | nome da clínica  |
-
-Sem botão: remarcar é escolher dia e hora, e isso não cabe em resposta rápida.
-
-"Seu horário atual continua reservado" é a regra 5 do CLAUDE.md escrita para o paciente —
-**pedir para remarcar não libera o horário.**
-
-**Quando este template é necessário, e quando não é.** Se o paciente acabou de tocar em
-"Preciso remarcar", a janela de 24 h está aberta e a atendente responde em texto livre, sem
-template. Este template serve para o caso em que a janela FECHOU (o paciente pediu, ficou em
-silêncio mais de 24 h, e a clínica volta ao assunto) — é exatamente o que o erro 131047 avisa.
-
----
-
-## 4. `fliqo_vaga_liberada`
-
-Lista de espera: abriu horário.
-
-```
-Olá, {{1}}. Abriu um horário na nossa agenda: {{2}}.
-
-Você está na lista de espera para este atendimento. Quem responder primeiro fica com o horário; se não der para você, não precisa fazer nada.
-
-Mensagem da clínica {{3}}. Pode responder nesta conversa.
-```
-
-| Variável | Conteúdo                   | Exemplo                   |
-| -------- | -------------------------- | ------------------------- |
-| `{{1}}`  | nome do paciente           | `Maria`                   |
-| `{{2}}`  | data e hora da vaga aberta | `quinta, 16/10, às 09:00` |
-| `{{3}}`  | nome da clínica            | `Clínica Modelo`          |
-
-**Botão:** `Quero essa vaga` (payload `QUERO_ESTE_HORARIO`).
-
-`{{2}}` é o que faltava na versão anterior: ela dizia "abriu um horário" e dava um botão que
-MARCA a consulta, sem o paciente saber se era terça às 8h ou sexta às 19h.
-
-**Ressalva de categoria.** É o único dos sete em que a Meta pode discordar de `utility` e
-reclassificar como `marketing`. A defesa é real — o paciente pediu para entrar na lista de
-espera —, mas o revisor é literal. Se vier reclassificado, `marketing` exige opt-in registrado
-e respeita a janela de marketing do país, o que muda quando a mensagem pode sair. Não mude o
-texto para tentar escapar; ele já está no tom mais seco possível.
-
----
-
-## 5. `lembrete_final`
+## 2. `lembrete_final`
 
 Lembrete do mesmo dia, `final_reminder_minutes` antes (30 a 240 min). Sem variável e sem botão.
 
@@ -178,13 +110,52 @@ Passando para lembrar da sua consulta de hoje aqui na clínica.
 Se precisar avisar qualquer coisa, pode responder nesta conversa.
 ```
 
-A resposta do paciente cai na conversa e a atendente trata. O texto afirma "consulta hoje e
-ainda por vir", e há código que depende disso (`packages/core/src/pertinencia.ts`, que decide se
-uma mensagem represada por queda de WhatsApp ainda pode sair).
+Sem botão de propósito: a resposta cai na conversa e a atendente trata. O texto afirma "consulta
+hoje e ainda por vir", e há código que depende disso
+(`packages/core/src/pertinencia.ts`, que decide se uma mensagem represada por queda de WhatsApp
+ainda pode sair).
+
+**O que falta aqui, e por que eu não acrescentei:** ele não diz a HORA da consulta de hoje. O
+dado existe no momento do envio. Acrescentar uma variável é uma submissão nova e uma espera de
+revisão, e a clínica sobrevive sem — então fica anotado como melhoria, não como correção, para
+você decidir quando quiser pagar a rodada.
 
 ---
 
-## 6. `aviso_de_atraso`
+## 3. `oferta_de_vaga`
+
+Lista de espera: abriu horário.
+
+```
+Olá, {{1}}. Abriu um horário na nossa agenda: {{2}}, às {{3}}.
+
+Você está na lista de espera para este atendimento. Quem responder primeiro fica com o horário; se não der para você, não precisa fazer nada.
+
+Mensagem da clínica {{4}}. Pode responder nesta conversa.
+```
+
+| Variável | Conteúdo         | Exemplo na submissão |
+| -------- | ---------------- | -------------------- |
+| `{{1}}`  | nome do paciente | `Maria`              |
+| `{{2}}`  | data da vaga     | `quinta, 16/10`      |
+| `{{3}}`  | hora da vaga     | `09:00`              |
+| `{{4}}`  | nome da clínica  | `Clínica Modelo`     |
+
+**Botão:** `Quero este horário` (payload `QUERO_ESTE_HORARIO`).
+
+`{{2}}` e `{{3}}` são a correção que mais importa nesta rodada. A versão anterior dizia "abriu um
+horário" e dava um botão que **marca a consulta** — o paciente aceitava sem saber se era terça às
+8h ou sexta às 19h. O dado estava em `vaga.inicio`, no código, desde sempre.
+
+**Ressalva de categoria.** É o único dos cinco em que a Meta pode discordar de `utility` e
+reclassificar como `marketing`. A defesa é real — o paciente pediu para entrar na lista de espera
+—, mas o revisor é literal. Se vier reclassificado, `marketing` exige opt-in registrado e
+respeita a janela de marketing do país, o que muda quando a mensagem pode sair. Não mude o texto
+para tentar escapar; ele já está no tom mais seco possível.
+
+---
+
+## 4. `aviso_de_atraso`
 
 ```
 Precisamos avisar de um atraso aqui na clínica, de cerca de {{1}} minutos.
@@ -200,13 +171,16 @@ A previsão agora é atender você às {{2}}. Se preferir outro dia, me diga por
 **Botões, nesta ordem:** `Tudo bem, eu vou` (`CHEGO_MAIS_TARDE`), `Preciso remarcar`
 (`REMARCAR_CONSULTA`).
 
-O segundo reusa o payload de remarcação de propósito: o atraso é da clínica, e quem remarca por
-causa dele não cancelou. O primeiro **não mexe na agenda** — o horário marcado continua valendo,
-e é ele que volta se o atraso passar (o template seguinte).
+Sem data, e isso é decisão: o aviso é sempre do dia corrente, e dizer a data de hoje numa
+mensagem que chega hoje é ruído. `{{2}}` é hora, não data e hora colados.
+
+O segundo botão reusa o payload de remarcação de propósito: o atraso é da clínica, e quem remarca
+por causa dele não cancelou. O primeiro **não mexe na agenda** — o horário marcado continua
+valendo, e é ele que volta se o atraso passar (o template seguinte).
 
 ---
 
-## 7. `atraso_normalizou`
+## 5. `atraso_normalizou`
 
 ```
 O atraso aqui na clínica já foi resolvido.
@@ -219,60 +193,21 @@ previsto: a mensagem existe justamente para dizer que o combinado voltou a valer
 
 ---
 
----
+## A ordem de submissão, que não dá para inverter
 
-## 8. `confirmacao_consulta`
+1. **Submeta** (`npm run whatsapp:registrar-templates`). O script lê o que a conta já tem e manda
+   só o que falta — rodar de novo é seguro e é o uso normal.
+2. **Espere a aprovação** de `confirmacao_consulta` e `oferta_de_vaga`. O script mostra o status
+   de cada um a cada execução (`APPROVED`, `PENDING`, `REJECTED`).
+3. **Só então mescle o código.** Até lá, o código com as variáveis novas não pode ir para
+   produção: ele mandaria cinco variáveis contra um corpo aprovado com zero, e todo envio
+   voltaria 132000.
 
-O pedido de confirmação que a régua envia **hoje**, sem variável nenhuma. Continua registrado e
-funcionando até a virada: derrubá-lo antes de `fliqo_confirmacao_consulta` estar aprovado deixa a
-clínica sem confirmação.
+Os outros três (`lembrete_final`, `aviso_de_atraso`, `atraso_normalizou`) não mudaram de corpo:
+se já estiverem aprovados, o script os pula e nada neles exige espera.
 
-```
-Olá! Aqui é da clínica.
-
-Você tem uma consulta marcada com a gente nos próximos dias. Pode nos dizer se vai poder vir?
-
-Se precisar de outro horário, também resolvemos por aqui.
-```
-
-**Botões, nesta ordem:** `Confirmar presença` (`CONFIRMAR_CONSULTA`), `Preciso remarcar`
-(`REMARCAR_CONSULTA`), `Não vou poder ir` (`CANCELAR_CONSULTA`).
-
-Sem variável, a mensagem não diz dia nem hora — é o buraco que o template novo fecha. O paciente
-com duas consultas marcadas não sabe qual está confirmando.
-
----
-
-## 9. `oferta_de_vaga`
-
-A oferta que a lista de espera envia **hoje**, também sem variável. Sai na virada.
-
-```
-Abriu um horário na nossa agenda e você está na lista de espera.
-
-Quem responder primeiro fica com ele. Se não der para você agora, não precisa fazer nada.
-```
-
-**Botão:** `Quero este horário` (`QUERO_ESTE_HORARIO`).
-
-Esta é a versão que não diz QUAL vaga abriu, e cujo botão marca a consulta. É o motivo de
-`fliqo_vaga_liberada` existir.
-
-## A virada do código para os nomes novos
-
-Depois que a Meta aprovar, três call sites mudam de nome e passam a mandar parâmetro:
-
-| Onde                             | De                     | Para                         |
-| -------------------------------- | ---------------------- | ---------------------------- |
-| `apps/worker/src/acoes.ts`       | `confirmacao_consulta` | `fliqo_confirmacao_consulta` |
-| `apps/worker/src/ofertas.ts`     | `oferta_de_vaga`       | `fliqo_vaga_liberada`        |
-| resposta ao pedido de remarcação | (não existe)           | `fliqo_remarcacao`           |
-
-Cada um precisa buscar o nome do profissional, o nome da clínica e formatar a data no fuso da
-clínica — dado que já está no banco no momento do envio, mas que hoje nenhum desses caminhos
-carrega. **É mudança de comportamento da régua, com teste novo, e não entra junto com esta
-página.** `confirmacao_consulta` e `oferta_de_vaga` continuam registrados e funcionando na Meta
-até a virada acontecer; derrubá-los antes é deixar a clínica sem confirmação.
+**Se os dois corpos novos forem reprovados**, o código não vai para produção e nada quebra — é a
+vantagem de a ordem ser esta. Corrija o texto em `templates.ts`, rode o script de novo e espere.
 
 ## Os erros da Meta que têm conduta própria
 
@@ -288,8 +223,8 @@ não o status — que diz o que fazer.
 | `131048` | limite de envio do número                   | sai na próxima tentativa                           |
 | `131056` | muitas mensagens para o mesmo paciente      | sai na próxima tentativa                           |
 
-Código que não está nesta tabela cai em "desconhecida" e é tratado como **definitivo**: repetir
-um erro definitivo gasta o limite de envio do número da clínica sem consertar nada.
+Código fora desta tabela cai em "desconhecida" e é tratado como **definitivo**: repetir um erro
+definitivo gasta o limite de envio do número da clínica sem consertar nada.
 
 ## Como registrar
 
@@ -305,9 +240,6 @@ WHATSAPP_WABA_ID=... WHATSAPP_TOKEN=... npm run whatsapp:registrar-templates
 **Nenhuma dessas duas variáveis vai para serviço do Railway nem para o CI.** O script não é um
 serviço: ele roda do seu terminal, uma vez por conta de WhatsApp Business. Um runner que pode
 criar template na sua conta da Meta é superfície nova sem nada em troca.
-
-Rodar de novo é seguro e é o uso normal: ele lê o que já existe, pula esses, e mostra o status
-de cada um (`APPROVED`, `PENDING`, `REJECTED`).
 
 ## Mensagem fora de template
 

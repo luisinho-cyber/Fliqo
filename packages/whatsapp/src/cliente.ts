@@ -59,14 +59,11 @@ export type MotivoDeFalha = 'recusado' | 'temporario';
  * — e duas listas da mesma coisa divergem: bastava acrescentar uma variável no corpo e esquecer
  * de mudar a contagem aqui para todo envio daquele template falhar com erro 132000. Agora a
  * contagem é CONTADA do corpo e a ordem dos botões é a mesma do registro.
- *
- * As chaves são as que o worker já usa. `confirmacao` e `ofertaDeVaga` apontam para os
- * templates que estão no ar hoje; a virada para os `fliqo_*` troca o apontamento num lugar só.
  */
 export const TEMPLATES = {
-  confirmacao: paraEnvio('confirmacaoAtual'),
+  confirmacao: paraEnvio('confirmacao'),
   lembreteFinal: paraEnvio('lembreteFinal'),
-  ofertaDeVaga: paraEnvio('ofertaDeVagaAtual'),
+  ofertaDeVaga: paraEnvio('ofertaDeVaga'),
   atraso: paraEnvio('avisoDeAtraso'),
   normalizou: paraEnvio('atrasoNormalizou'),
 } as const;

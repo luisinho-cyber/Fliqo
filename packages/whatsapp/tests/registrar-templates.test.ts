@@ -127,14 +127,14 @@ describe('o registro é idempotente', () => {
   });
 
   it('submete só o que falta, e não mexe no que já está lá', async () => {
-    const { buscar, chamadas } = graphFalso([comoExistente('fliqo_remarcacao', 'PENDING')]);
+    const { buscar, chamadas } = graphFalso([comoExistente('oferta_de_vaga', 'PENDING')]);
     const vereditos = await registrarTodos(CFG, buscar);
 
     const posts = chamadas.filter((c) => c.metodo === 'POST');
-    expect(posts.map((p) => (p.corpo as { name: string }).name)).not.toContain('fliqo_remarcacao');
+    expect(posts.map((p) => (p.corpo as { name: string }).name)).not.toContain('oferta_de_vaga');
     expect(posts).toHaveLength(todasAsDefinicoes().length - 1);
     expect(vereditos).toContainEqual({
-      template: 'fliqo_remarcacao',
+      template: 'oferta_de_vaga',
       situacao: 'ja_existe',
       status: 'PENDING',
     });
@@ -143,13 +143,13 @@ describe('o registro é idempotente', () => {
   it('o mesmo nome em outro idioma não conta como registrado', async () => {
     // Template é identificado por (nome, idioma): o nosso é pt_BR e só pt_BR serve.
     const { buscar, chamadas } = graphFalso([
-      { name: 'fliqo_remarcacao', language: 'en_US', status: 'APPROVED' },
+      { name: 'oferta_de_vaga', language: 'en_US', status: 'APPROVED' },
     ]);
     await registrarTodos(CFG, buscar);
     const nomes = chamadas
       .filter((c) => c.metodo === 'POST')
       .map((p) => (p.corpo as { name: string }).name);
-    expect(nomes).toContain('fliqo_remarcacao');
+    expect(nomes).toContain('oferta_de_vaga');
   });
 
   it('"already exists" vindo como erro do POST não quebra o script', async () => {
@@ -174,7 +174,7 @@ describe('o registro é idempotente', () => {
     );
     const vereditos = await registrarTodos(CFG, buscar);
     expect(vereditos[0]).toEqual({
-      template: 'fliqo_confirmacao_consulta',
+      template: 'confirmacao_consulta',
       situacao: 'falhou',
       detalhe: 'Application does not have permission for this action',
     });
@@ -198,7 +198,7 @@ describe('o registro é idempotente', () => {
 
 describe('catálogo inválido não é submetido', () => {
   const quebrado = {
-    nome: 'fliqo_quebrado',
+    nome: 'template_quebrado',
     categoria: 'UTILITY',
     idioma: 'pt_BR',
     parametros: ['a'],
@@ -212,7 +212,7 @@ describe('catálogo inválido não é submetido', () => {
     // corpo que o código não consegue preencher custa dois ciclos de revisão da Meta.
     const { buscar, chamadas } = graphFalso([]);
     await expect(registrarTodos(CFG, buscar, [quebrado])).rejects.toThrow(
-      /fliqo_quebrado: parametro_abre_o_corpo/,
+      /template_quebrado: parametro_abre_o_corpo/,
     );
     expect(chamadas.filter((c) => c.metodo === 'POST')).toHaveLength(0);
   });

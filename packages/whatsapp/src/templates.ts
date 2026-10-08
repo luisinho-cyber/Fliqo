@@ -59,40 +59,44 @@ export interface DefinicaoDeTemplate {
 }
 
 const BOTAO = {
-  CONFIRMAR: { texto: 'Confirmar', payload: PAYLOAD_BOTOES.CONFIRMAR },
   REMARCAR: { texto: 'Preciso remarcar', payload: PAYLOAD_BOTOES.REMARCAR },
   CANCELAR: { texto: 'Não vou poder ir', payload: PAYLOAD_BOTOES.CANCELAR },
   CIENTE_DO_ATRASO: { texto: 'Tudo bem, eu vou', payload: PAYLOAD_BOTOES.CIENTE_DO_ATRASO },
-  QUERO_VAGA: { texto: 'Quero essa vaga', payload: PAYLOAD_BOTOES.QUERO_VAGA },
-  /*
-   * Os três abaixo são o texto dos templates que JÁ ESTÃO no ar. Texto de botão só muda com
-   * reaprovação da Meta, então eles ficam como foram submetidos até a virada.
-   */
   CONFIRMAR_PRESENCA: { texto: 'Confirmar presença', payload: PAYLOAD_BOTOES.CONFIRMAR },
   QUERO_ESTE_HORARIO: { texto: 'Quero este horário', payload: PAYLOAD_BOTOES.QUERO_VAGA },
 } as const satisfies Record<string, BotaoDeRespostaRapida>;
 
 /**
- * Os templates, por chave de código.
+ * Os templates, por chave de código. CINCO, e são os cinco nomes que já existem.
  *
- * Os cinco primeiros são a régua nova, com `fliqo_` no nome e parâmetros de verdade. Os
- * dois últimos (`aviso_de_atraso`, `atraso_normalizou`) mantêm o nome sem prefixo porque
- * já estão descritos para submissão em docs/TEMPLATES.md e renomeá-los custaria uma
- * reaprovação da Meta sem comprar nada.
+ * Nome novo na Meta não é de graça: cada template conta contra o limite da conta, e um
+ * conjunto novo ao lado do antigo deixa metade órfã — aprovada, consumindo cota, e sem
+ * código que a envie. Então o que mudou foi o CORPO de dois deles, não o nome de nenhum.
+ *
+ * A consequência disso tem data marcada e está no fim do docs/TEMPLATES.md: com o mesmo
+ * nome, código e Meta mudam JUNTOS. Não existe janela em que o corpo novo esteja aprovado
+ * e o código antigo ainda funcione — submeter primeiro, esperar a aprovação, mesclar depois.
  */
 export const TEMPLATES_META = {
   /**
    * Primeiro pedido de confirmação, `confirm_hours_before` antes da consulta (2 a 72 h,
-   * migração 0001). O corpo não diz "amanhã" porque com 72 h de antecedência seria mentira:
-   * quem diz o dia é `data_hora`.
+   * migração 0001).
+   *
+   * `data` e `hora` são duas variáveis, não uma. A Meta recusa duas variáveis coladas sem
+   * texto entre elas, e o "às" que as separa é texto aprovado — não concatenação nossa. O
+   * corpo também não pode TERMINAR em variável, e é por isso que a linha da clínica fecha
+   * com uma frase, não com `{{nome_clinica}}`.
+   *
+   * O corpo não diz "amanhã": com 72 h de antecedência seria mentira. Quem diz o dia é
+   * `{{data}}`.
    */
-  confirmacaoConsulta: {
-    nome: 'fliqo_confirmacao_consulta',
+  confirmacao: {
+    nome: 'confirmacao_consulta',
     categoria: 'UTILITY',
     idioma: 'pt_BR',
-    parametros: ['nome_paciente', 'nome_profissional', 'data_hora', 'nome_clinica'],
+    parametros: ['nome_paciente', 'nome_profissional', 'data', 'hora', 'nome_clinica'],
     corpo:
-      'Olá, {{nome_paciente}}. Sua consulta com {{nome_profissional}} está marcada para {{data_hora}}.\n' +
+      'Olá, {{nome_paciente}}. Sua consulta com {{nome_profissional}} está marcada para {{data}}, às {{hora}}.\n' +
       '\n' +
       'Você confirma que vai poder vir? Se precisar de outro horário, a gente remarca por aqui.\n' +
       '\n' +
@@ -100,130 +104,17 @@ export const TEMPLATES_META = {
     exemplos: {
       nome_paciente: 'Maria',
       nome_profissional: 'Dra. Helena',
-      data_hora: 'terça, 14/10, às 14:30',
+      data: 'terça, 14/10',
+      hora: '14:30',
       nome_clinica: 'Clínica Modelo',
     },
-    botoes: [BOTAO.CONFIRMAR, BOTAO.REMARCAR],
-  },
-
-  /**
-   * Lembrete da véspera, para quem ainda não respondeu o primeiro pedido.
-   *
-   * ATENÇÃO: nada na régua agenda este template hoje. `app.action_kind` (0001) tem
-   * `confirmacao`, `lembrete_final`, `marcar_risco` e `expirar_oferta` — não tem véspera.
-   * Ligar este template exige valor novo na enum, linha nova no gatilho
-   * `app.sync_appointment_actions` e um ajuste por clínica de quando enviar: migração, ou
-   * seja, fase própria. Ele está aqui para ser REGISTRADO na Meta agora, porque aprovação
-   * leva dias e é o que bloqueia depois.
-   */
-  lembreteVespera: {
-    nome: 'fliqo_lembrete_vespera',
-    categoria: 'UTILITY',
-    idioma: 'pt_BR',
-    parametros: ['nome_paciente', 'nome_profissional', 'data_hora', 'nome_clinica'],
-    corpo:
-      'Olá, {{nome_paciente}}. Passando para lembrar da sua consulta com {{nome_profissional}}, {{data_hora}}.\n' +
-      '\n' +
-      'Ainda não recebemos sua confirmação. Responder ajuda a organizar a agenda do dia, e se você não puder vir o horário fica livre para outro paciente.\n' +
-      '\n' +
-      'Mensagem da clínica {{nome_clinica}}. Pode responder nesta conversa.',
-    exemplos: {
-      nome_paciente: 'Maria',
-      nome_profissional: 'Dra. Helena',
-      data_hora: 'amanhã, 14/10, às 14:30',
-      nome_clinica: 'Clínica Modelo',
-    },
-    botoes: [BOTAO.CONFIRMAR, BOTAO.REMARCAR],
-  },
-
-  /**
-   * Resposta ao pedido de remarcação.
-   *
-   * Sem botão de propósito: remarcar é escolher dia e hora, e isso não cabe em três botões
-   * de resposta rápida. A conversa segue com a atendente, que já está na janela de 24 h
-   * aberta pela própria mensagem do paciente.
-   *
-   * O corpo afirma que o horário atual continua reservado, e isso é a regra 5 do CLAUDE.md
-   * escrita para o paciente: pedir para remarcar não libera o horário; só libera quem disse
-   * que não vem, ou a recepção.
-   */
-  remarcacao: {
-    nome: 'fliqo_remarcacao',
-    categoria: 'UTILITY',
-    idioma: 'pt_BR',
-    parametros: ['nome_paciente', 'nome_clinica'],
-    corpo:
-      'Olá, {{nome_paciente}}. Recebemos seu pedido para remarcar a consulta.\n' +
-      '\n' +
-      'Me diga nesta conversa quais dias e horários são melhores para você, e eu procuro uma vaga. Seu horário atual continua reservado até a gente combinar o novo.\n' +
-      '\n' +
-      'Mensagem da clínica {{nome_clinica}}. Pode responder nesta conversa.',
-    exemplos: { nome_paciente: 'Maria', nome_clinica: 'Clínica Modelo' },
-    botoes: [],
-  },
-
-  /**
-   * Oferta de vaga para quem está na lista de espera.
-   *
-   * `data_hora` é o que faltava: a versão sem variável dizia "abriu um horário" e dava um
-   * botão que MARCA a consulta, sem o paciente saber se era terça às 8h ou sexta às 19h.
-   */
-  vagaLiberada: {
-    nome: 'fliqo_vaga_liberada',
-    categoria: 'UTILITY',
-    idioma: 'pt_BR',
-    parametros: ['nome_paciente', 'data_hora', 'nome_clinica'],
-    corpo:
-      'Olá, {{nome_paciente}}. Abriu um horário na nossa agenda: {{data_hora}}.\n' +
-      '\n' +
-      'Você está na lista de espera para este atendimento. Quem responder primeiro fica com o horário; se não der para você, não precisa fazer nada.\n' +
-      '\n' +
-      'Mensagem da clínica {{nome_clinica}}. Pode responder nesta conversa.',
-    exemplos: {
-      nome_paciente: 'Maria',
-      data_hora: 'quinta, 16/10, às 09:00',
-      nome_clinica: 'Clínica Modelo',
-    },
-    botoes: [BOTAO.QUERO_VAGA],
-  },
-
-  /**
-   * O confirmação que a régua envia HOJE, sem variável nenhuma.
-   *
-   * Fica no catálogo porque ele está no ar: tirá-lo daqui deixaria o worker mandando um nome
-   * que o catálogo não conhece, e o cliente falso dos testes recusa exatamente isso. Sai no
-   * commit da virada, quando `fliqo_confirmacao_consulta` estiver aprovado — e não antes, ou a
-   * clínica fica sem confirmação enquanto a Meta revisa.
-   *
-   * Três botões, e é por isso que a virada perde um: o novo tem dois.
-   */
-  confirmacaoAtual: {
-    nome: 'confirmacao_consulta',
-    categoria: 'UTILITY',
-    idioma: 'pt_BR',
-    parametros: [],
-    corpo:
-      'Olá! Aqui é da clínica.\n' +
-      '\n' +
-      'Você tem uma consulta marcada com a gente nos próximos dias. Pode nos dizer se vai poder vir?\n' +
-      '\n' +
-      'Se precisar de outro horário, também resolvemos por aqui.',
-    exemplos: {},
+    /**
+     * Três botões, e o terceiro é o que importa: `Não vou poder ir` é o ÚNICO toque que
+     * libera o horário e dispara a lista de espera (`liberar_horario_e_ofertar`). Tirá-lo
+     * obrigaria quem não pode vir a escrever, e a vaga só abriria depois de a IA
+     * interpretar o texto.
+     */
     botoes: [BOTAO.CONFIRMAR_PRESENCA, BOTAO.REMARCAR, BOTAO.CANCELAR],
-  },
-
-  /** A oferta de vaga que a lista de espera envia HOJE, sem dizer qual vaga. Sai na virada. */
-  ofertaDeVagaAtual: {
-    nome: 'oferta_de_vaga',
-    categoria: 'UTILITY',
-    idioma: 'pt_BR',
-    parametros: [],
-    corpo:
-      'Abriu um horário na nossa agenda e você está na lista de espera.\n' +
-      '\n' +
-      'Quem responder primeiro fica com ele. Se não der para você agora, não precisa fazer nada.',
-    exemplos: {},
-    botoes: [BOTAO.QUERO_ESTE_HORARIO],
   },
 
   /** Lembrete do mesmo dia, `final_reminder_minutes` antes (30 a 240 min, migração 0001). */
@@ -241,9 +132,38 @@ export const TEMPLATES_META = {
   },
 
   /**
+   * Oferta de vaga para quem está na lista de espera.
+   *
+   * `data` e `hora` são o que faltava: a versão sem variável dizia "abriu um horário" e dava
+   * um botão que MARCA a consulta, sem o paciente saber se era terça às 8h ou sexta às 19h.
+   */
+  ofertaDeVaga: {
+    nome: 'oferta_de_vaga',
+    categoria: 'UTILITY',
+    idioma: 'pt_BR',
+    parametros: ['nome_paciente', 'data', 'hora', 'nome_clinica'],
+    corpo:
+      'Olá, {{nome_paciente}}. Abriu um horário na nossa agenda: {{data}}, às {{hora}}.\n' +
+      '\n' +
+      'Você está na lista de espera para este atendimento. Quem responder primeiro fica com o horário; se não der para você, não precisa fazer nada.\n' +
+      '\n' +
+      'Mensagem da clínica {{nome_clinica}}. Pode responder nesta conversa.',
+    exemplos: {
+      nome_paciente: 'Maria',
+      data: 'quinta, 16/10',
+      hora: '09:00',
+      nome_clinica: 'Clínica Modelo',
+    },
+    botoes: [BOTAO.QUERO_ESTE_HORARIO],
+  },
+
+  /**
    * Aviso de atraso. "Preciso remarcar" reusa o payload de remarcação: o atraso é da
    * clínica, e quem remarca por causa dele não cancelou — o fluxo de remarcação não cobra
    * taxa de cancelamento.
+   *
+   * Sem `data`: o aviso é sempre do dia corrente, e dizer a data de hoje numa mensagem que
+   * chega hoje é ruído. `novo_horario` é hora, não data e hora colados.
    */
   avisoDeAtraso: {
     nome: 'aviso_de_atraso',
@@ -327,6 +247,7 @@ export function corpoParaMeta(def: DefinicaoDeTemplate): string {
 export type ProblemaDoCorpo =
   | 'parametro_abre_o_corpo'
   | 'parametro_fecha_o_corpo'
+  | 'parametros_colados'
   | 'parametro_repetido'
   | 'parametro_declarado_fora_do_corpo'
   | 'parametro_do_corpo_nao_declarado'
@@ -370,6 +291,13 @@ export function conferirCorpo(def: DefinicaoDeTemplate): ProblemaDoCorpo[] {
 
   if (/^\{\{/.test(corpo)) problemas.push('parametro_abre_o_corpo');
   if (/\}\}$/.test(corpo)) problemas.push('parametro_fecha_o_corpo');
+
+  /*
+   * Duas variáveis sem texto entre elas, a Meta recusa na submissão. É a regra que fez
+   * `data_hora` virar `{{data}}, às {{hora}}`: colar as duas produziria `{{1}}{{2}}`, que
+   * nem chega ao revisor. O espaço sozinho conta como colado — tem de haver texto.
+   */
+  if (/\}\}\s*\{\{/.test(def.corpo)) problemas.push('parametros_colados');
 
   const todasAsOcorrencias = [...def.corpo.matchAll(/\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}/g)].map(
     (a) => a[1],

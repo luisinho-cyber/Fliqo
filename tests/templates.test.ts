@@ -38,7 +38,7 @@ interface LinhaDaTabela {
 
 /** A tabela-resumo do documento, lida como dado. */
 function tabelaDoDoc(): LinhaDaTabela[] {
-  const titulo = '## Os sete templates';
+  const titulo = '## Os cinco templates';
   const de = DOC.indexOf(titulo);
   expect(de, 'a tabela-resumo sumiu do TEMPLATES.md').toBeGreaterThan(0);
   const resto = DOC.slice(de + titulo.length);
@@ -144,9 +144,10 @@ describe('os avisos que o documento existe para dar', () => {
     expect(DOC).toContain('pt_BR');
   });
 
-  it('explica por que existe template registrado que ninguém envia ainda', () => {
-    // Sem isso, a tabela parece lista de código morto e alguém "limpa" os quatro novos.
-    expect(FRASES).toMatch(/aprovação da Meta leva de minutos a dias/);
+  it('avisa que corpo e código têm de mudar juntos, porque o nome é o mesmo', () => {
+    // É o passo que custa caro se for invertido: código novo contra corpo antigo devolve
+    // 132000 em todo envio.
+    expect(FRASES).toMatch(/código e Meta mudam JUNTOS/);
   });
 
   it('diz que as variáveis do script não vão para serviço nenhum do Railway nem para o CI', () => {
