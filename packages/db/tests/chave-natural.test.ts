@@ -140,6 +140,95 @@ describe('remarcar horário cancelado', () => {
   });
 });
 
+describe('o encaixe no horário liberado', () => {
+  /**
+   * A operação mais comum de uma clínica, e a que a lista de espera existe para fazer:
+   * o paciente cancela as 14h de terça, a recepção encaixa OUTRO paciente no mesmo
+   * horário. Duas coisas a liberam, e as duas precisam valer ao mesmo tempo:
+   *
+   *   - a `no_double_booking` exclui `cancelado`, então o intervalo está livre;
+   *   - a chave natural é parcial em `source = 'importado'`, e o encaixe entra como
+   *     `recepcao` ou `lista_espera` — fica fora do índice.
+   *
+   * O caso de remarcação do MESMO paciente já tinha teste acima. Este é o de paciente
+   * diferente, que é o que a clínica faz todo dia, e ele não tinha.
+   */
+  it('outro paciente entra no horário que foi cancelado', async () => {
+    const outro = c.patients[1];
+    if (outro === undefined) throw new Error('o cenário precisa de dois pacientes');
+
+    const cancelada = await marcar({ hora: 14, origem: 'recepcao' });
+    await cancelar(cancelada);
+
+    await expect(
+      marcar({ hora: 14, origem: 'recepcao', paciente: outro }),
+      'o encaixe da recepção no horário liberado foi bloqueado',
+    ).resolves.toBeTruthy();
+
+    const { rows } = await owner.query<{ status: string; patient_id: string }>(
+      `select status, patient_id from app.appointments order by created_at`,
+    );
+    expect(rows.map((l) => l.status)).toEqual(['cancelado', 'agendado']);
+  });
+
+  it('e entra pela lista de espera também, que é o caminho automático', async () => {
+    const outro = c.patients[1];
+    if (outro === undefined) throw new Error('o cenário precisa de dois pacientes');
+    const cancelada = await marcar({ hora: 14, origem: 'recepcao' });
+    await cancelar(cancelada);
+    await expect(
+      marcar({ hora: 14, origem: 'lista_espera', paciente: outro }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('o mesmo vale depois de uma falta', async () => {
+    const outro = c.patients[1];
+    if (outro === undefined) throw new Error('o cenário precisa de dois pacientes');
+    const faltou = await marcar({ hora: 14, origem: 'recepcao' });
+    await owner.query(`update app.appointments set status = 'faltou' where id = $1`, [faltou]);
+    await expect(marcar({ hora: 14, origem: 'recepcao', paciente: outro })).resolves.toBeTruthy();
+  });
+
+  it('e vale até no horário que uma consulta IMPORTADA deixou livre', async () => {
+    // A clínica em modo convidado cancela na Fliqo e encaixa pela lista de espera: a
+    // origem diferente é o que faz passar.
+    const outro = c.patients[1];
+    if (outro === undefined) throw new Error('o cenário precisa de dois pacientes');
+    const importada = await marcar({ hora: 14, origem: 'importado' });
+    await cancelar(importada);
+    await expect(
+      marcar({ hora: 14, origem: 'lista_espera', paciente: outro }),
+    ).resolves.toBeTruthy();
+  });
+
+  /**
+   * Por que o `where` é por ORIGEM e não por status, dito pela função que paga a conta.
+   *
+   * `app.claim_slot_offer` (0001) captura só `exclusion_violation` ao inserir o aceite da
+   * vaga. Um `unique_violation` ali NÃO é tratado: em vez de marcar a oferta como
+   * "preenchida por outro" e seguir, a função estoura e a transação toda vai embora.
+   *
+   * É por isso que a chave natural não pode alcançar o caminho da lista de espera. Copiar
+   * para o índice a cláusula de status da EXCLUDE pareceria equivalente e não é: ela
+   * deixaria a reimportação ressuscitar consulta cancelada, e para cobrir isso o índice
+   * teria de valer para `lista_espera` também — justo o caminho que não sabe tratar o erro.
+   */
+  it('a função da lista de espera só trata conflito de INTERVALO', async () => {
+    const { rows } = await owner.query<{ corpo: string }>(
+      `select pg_get_functiondef(oid) as corpo from pg_proc
+        where proname = 'claim_slot_offer' and pronamespace = 'app'::regnamespace`,
+    );
+    const corpo = rows[0]?.corpo ?? '';
+    expect(corpo, 'claim_slot_offer não existe mais').not.toBe('');
+    expect(corpo).toContain('exclusion_violation');
+    expect(
+      corpo,
+      'se a função passar a tratar unique_violation, a chave natural pode alcançá-la — ' +
+        'até lá, ela não pode',
+    ).not.toContain('unique_violation');
+  });
+});
+
 describe('a chave natural é só das importadas', () => {
   it('o índice é parcial em source = importado', async () => {
     const { rows } = await owner.query<{ definicao: string }>(

@@ -130,10 +130,21 @@ export const JANELA_DO_HISTORICO_DIAS = 90;
 /**
  * A taxa de comparecimento medida da clínica, por grupo.
  *
- * Só consultas com DESFECHO entram: `realizado`, `faltou` ou `cancelado`. Uma consulta de
- * três dias atrás ainda em `agendado` não é uma falta — é uma consulta que a recepção não
- * marcou, e contá-la como não comparecimento rebaixaria a taxa por desleixo de registro em
- * vez de por comportamento de paciente.
+ * O denominador é `realizado` + `faltou`, e NÃO inclui `cancelado`.
+ *
+ * Cancelada não é comparecimento perdido: o horário cancelado com aviso volta para a agenda
+ * e, quando a recepção ou a lista de espera o reencaixa, a consulta que entrou no lugar já
+ * está na amostra — como realizada ou como falta. Contar a cancelada também é contar o
+ * mesmo horário duas vezes, e a segunda contagem é sempre contra a clínica.
+ *
+ * Pior: o erro é maior justamente nas clínicas melhores. Converter falta silenciosa em aviso
+ * antecipado é o que a Fliqo faz — a régua de confirmação existe para isso —, e com a
+ * cancelada no denominador cada aviso antecipado conquistado DERRUBA a taxa medida. A tela
+ * passaria a punir o resultado que o produto entrega.
+ *
+ * Uma consulta de três dias atrás ainda em `agendado` continua fora: não é uma falta, é uma
+ * consulta que a recepção não marcou, e contá-la como não comparecimento rebaixaria a taxa
+ * por desleixo de registro em vez de por comportamento de paciente.
  *
  * O grupo vem de `confirmed_at`, que é o que o banco guarda. Não existe histórico de
  * status, então não há como medir `em_risco` separado de `agendado` — e inventar essa
@@ -156,7 +167,7 @@ export async function historicoDeComparecimento(
       from app.appointments a
      where a.starts_at >= ${de}
        and a.starts_at < ${agora}
-       and a.status in ('realizado', 'faltou', 'cancelado')
+       and a.status in ('realizado', 'faltou')
      group by 1
   `.execute(trx);
 
