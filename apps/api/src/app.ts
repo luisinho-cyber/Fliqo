@@ -64,12 +64,41 @@ export function construirApp(dep: Dependencias): FastifyInstance {
           'token',
           'access_token',
           'refresh_token',
+          // O `detail` de erro do Postgres repete a linha que causou o erro — numa violação
+          // de unicidade, o telefone do paciente: "Key (clinic_id, phone_e164)=(…, +55…)".
+          // A mensagem, o código, a tabela e a coluna bastam para investigar.
+          'err.detail',
         ],
         censor: '[redigido]',
       },
     },
     // A Meta assina o corpo como enviou. Se um proxy reescrever, o hash não bate.
     bodyLimit: 2 * 1024 * 1024,
+  });
+
+  /*
+   * Erro inesperado responde com corpo FIXO; o detalhe vai só para o log.
+   *
+   * O handler padrão do Fastify devolve `error.message` no corpo do 500. No webhook, com o
+   * banco fora, isso entregou host e porta internos a um chamador não autenticado — e
+   * mensagem de erro do Postgres pode carregar valor de linha, inclusive dado de paciente.
+   *
+   * 4xx do próprio Fastify (corpo grande demais, limite de taxa) mantém o código, porque o
+   * código é a informação útil para quem chamou; a mensagem fica de fora pelo mesmo motivo.
+   */
+  app.setErrorHandler((erro, req, reply) => {
+    // `unknown` de propósito: rota pode lançar qualquer coisa, não só Error.
+    const codigo =
+      typeof erro === 'object' && erro !== null && 'statusCode' in erro
+        ? erro.statusCode
+        : undefined;
+    const recusa = typeof codigo === 'number' && codigo >= 400 && codigo < 500;
+    if (recusa) {
+      req.log.info({ err: erro }, 'requisição recusada');
+      return reply.code(codigo).send({ erro: 'requisicao_recusada' });
+    }
+    req.log.error({ err: erro }, 'erro inesperado');
+    return reply.code(500).send({ erro: 'erro_interno' });
   });
 
   // Guarda o corpo bruto ANTES do parse. É este buffer que o HMAC usa.

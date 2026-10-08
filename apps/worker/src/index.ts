@@ -160,6 +160,9 @@ const lacos = Promise.all([laco, lacoDeAtrasos]);
 const saude = servidorDeSaude({
   porta: config.PORT,
   batimentos: { acoes: batimentoDeAcoes, atrasos: batimentoDeAtrasos },
+  aoFalhar: (erro) => {
+    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'servidor de saúde falhou');
+  },
 });
 
 /**
