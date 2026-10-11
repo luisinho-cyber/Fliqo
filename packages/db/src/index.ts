@@ -20,3 +20,4 @@ export * as procedimentos from './repos/procedimentos';
 export * as qualificacao from './repos/qualificacao';
 export * as profissionais from './repos/profissionais';
 export * as acoes from './repos/acoes';
+export * as envios from './repos/envios';

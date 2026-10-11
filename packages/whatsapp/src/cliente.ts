@@ -71,7 +71,13 @@ export type ResultadoEnvio =
  * para marcar o número em erro UMA vez e abrir um alerta que nomeia a causa, em
  * vez de N alertas de ação falhada.
  */
-export type MotivoDeFalha = 'recusado' | 'temporario' | 'credencial';
+/**
+ * `incerto` é o pedido que pode ter sido aceito: a conexão caiu ou o tempo esgotou
+ * depois de o pedido sair, ou a Meta respondeu 2xx sem dar para ler o wamid. Repetir
+ * pode mandar a mesma mensagem duas vezes — e quem vê primeiro é a clínica. Quem chama
+ * NÃO repete: avisa alguém para conferir.
+ */
+export type MotivoDeFalha = 'recusado' | 'temporario' | 'credencial' | 'incerto';
 
 /**
  * Templates da régua de confirmação. Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido na volta.

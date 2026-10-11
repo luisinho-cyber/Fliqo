@@ -21,7 +21,7 @@ export type ResultadoEnvioAtivo =
   | { ok: true; wamid: string }
   | {
       ok: false;
-      motivo: 'sem_consentimento' | 'recusado' | 'temporario' | 'credencial';
+      motivo: 'sem_consentimento' | 'recusado' | 'temporario' | 'credencial' | 'incerto';
       detalhe: string;
     };
 

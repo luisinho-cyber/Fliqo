@@ -143,6 +143,8 @@ export interface TabelaAcoes {
   attempts: ComDefault<number>;
   last_error: ColumnType<string | null, string | null, string | null>;
   created_at: Automatico<Date>;
+  /** Carimbado por `claim_due_actions` (0018). É daqui que o requeue mede "presa". */
+  claimed_at: ColumnType<Date | null, never, Date | null>;
 }
 
 export interface TabelaEspera {
@@ -372,6 +374,19 @@ export interface TabelaAvisosDeOperador {
   sends: ComDefault<number>;
 }
 
+/** Trava de envio (0017). `wamid` e `enviado_em` vazios só enquanto a reserva está aberta. */
+export interface TabelaEnvios {
+  id: ComDefault<string>;
+  clinic_id: string;
+  appointment_id: string;
+  appointment_starts_at: Date;
+  template_name: string;
+  action_id: string | null;
+  wamid: string | null;
+  enviado_em: Date | null;
+  created_at: Automatico<Date>;
+}
+
 export interface Banco {
   'app.clinics': TabelaClinicas;
   'app.clinic_members': TabelaMembros;
@@ -381,6 +396,7 @@ export interface Banco {
   'app.patients': TabelaPacientes;
   'app.appointments': TabelaConsultas;
   'app.scheduled_actions': TabelaAcoes;
+  'app.envios': TabelaEnvios;
   'app.waitlist_entries': TabelaEspera;
   'app.slot_offers': TabelaOfertas;
   'app.conversations': TabelaConversas;
@@ -469,6 +485,17 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     started_at: true,
     finished_at: true,
   },
+  'app.envios': {
+    id: true,
+    clinic_id: true,
+    appointment_id: true,
+    appointment_starts_at: true,
+    template_name: true,
+    action_id: true,
+    wamid: true,
+    enviado_em: true,
+    created_at: true,
+  },
   'app.scheduled_actions': {
     id: true,
     clinic_id: true,
@@ -480,6 +507,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     attempts: true,
     last_error: true,
     created_at: true,
+    claimed_at: true,
   },
   'app.waitlist_entries': {
     id: true,
