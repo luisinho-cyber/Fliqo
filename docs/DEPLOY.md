@@ -204,17 +204,17 @@ Em **Variables**, cole:
 
 <!-- ambiente:api:inicio -->
 
-| Variável                | Obrigatória         | Formato                                                                | De onde vem                                                                                                               |
-| ----------------------- | ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`          | sim                 | postgresql://fliqo_app… (o papel da aplicação, nunca o dono do schema) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4)                                 |
-| `WHATSAPP_APP_SECRET`   | sim                 | —                                                                      | Meta > seu app > Configurações básicas > Chave secreta do app                                                             |
-| `WHATSAPP_VERIFY_TOKEN` | sim                 | —                                                                      | uma frase inventada por você; a MESMA vai no webhook da Meta                                                              |
-| `SUPABASE_JWT_SECRET`   | sim                 | —                                                                      | Supabase > Project Settings > API > JWT Secret                                                                            |
-| `META_APP_ID`           | sim                 | —                                                                      | Meta > seu app > Configurações básicas                                                                                    |
-| `META_APP_SECRET`       | sim                 | —                                                                      | Meta > seu app > Configurações básicas > Chave secreta do app (o mesmo valor de WHATSAPP_APP_SECRET quando é o mesmo app) |
-| `WHATSAPP_TOKEN_KEY`    | sim                 | 32 bytes em base64 (44 caracteres terminando em "=")                   | você gera (DEPLOY.md, logo abaixo da tabela da API)                                                                       |
-| `PORT`                  | não (padrão `3000`) | —                                                                      | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                                                      |
-| `LOG_LEVEL`             | não (padrão `info`) | —                                                                      | `info`                                                                                                                    |
+| Variável                | Obrigatória         | Formato                                                                            | De onde vem                                                                                                               |
+| ----------------------- | ------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | sim                 | postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4)                                 |
+| `WHATSAPP_APP_SECRET`   | sim                 | —                                                                                  | Meta > seu app > Configurações básicas > Chave secreta do app                                                             |
+| `WHATSAPP_VERIFY_TOKEN` | sim                 | —                                                                                  | uma frase inventada por você; a MESMA vai no webhook da Meta                                                              |
+| `SUPABASE_JWT_SECRET`   | sim                 | —                                                                                  | Supabase > Project Settings > API > JWT Secret                                                                            |
+| `META_APP_ID`           | sim                 | —                                                                                  | Meta > seu app > Configurações básicas                                                                                    |
+| `META_APP_SECRET`       | sim                 | —                                                                                  | Meta > seu app > Configurações básicas > Chave secreta do app (o mesmo valor de WHATSAPP_APP_SECRET quando é o mesmo app) |
+| `WHATSAPP_TOKEN_KEY`    | sim                 | 32 bytes em base64 (44 caracteres terminando em "=")                               | você gera (DEPLOY.md, logo abaixo da tabela da API)                                                                       |
+| `PORT`                  | não (padrão `3000`) | —                                                                                  | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                                                      |
+| `LOG_LEVEL`             | não (padrão `info`) | —                                                                                  | `info`                                                                                                                    |
 
 <!-- ambiente:api:fim -->
 
@@ -258,14 +258,14 @@ Em **Variables**:
 
 <!-- ambiente:worker:inicio -->
 
-| Variável            | Obrigatória                     | Formato                                                                | De onde vem                                                                               |
-| ------------------- | ------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `DATABASE_URL`      | sim                             | postgresql://fliqo_app… (o papel da aplicação, nunca o dono do schema) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4) |
-| `WHATSAPP_TOKEN`    | sim                             | —                                                                      | Meta > WhatsApp > API Setup (token de usuário de sistema, para não expirar em 24 h)       |
-| `ANTHROPIC_API_KEY` | sim                             | —                                                                      | painel do provedor do modelo; cole direto no Railway, e em nenhum outro lugar             |
-| `ANTHROPIC_MODEL`   | não (padrão `claude-haiku-4-5`) | —                                                                      | opcional                                                                                  |
-| `PORT`              | não (padrão `3100`)             | —                                                                      | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                      |
-| `LOG_LEVEL`         | não (padrão `info`)             | —                                                                      | `info`                                                                                    |
+| Variável            | Obrigatória                     | Formato                                                                            | De onde vem                                                                               |
+| ------------------- | ------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `DATABASE_URL`      | sim                             | postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4) |
+| `WHATSAPP_TOKEN`    | sim                             | —                                                                                  | Meta > WhatsApp > API Setup (token de usuário de sistema, para não expirar em 24 h)       |
+| `ANTHROPIC_API_KEY` | sim                             | —                                                                                  | painel do provedor do modelo; cole direto no Railway, e em nenhum outro lugar             |
+| `ANTHROPIC_MODEL`   | não (padrão `claude-haiku-4-5`) | —                                                                                  | opcional                                                                                  |
+| `PORT`              | não (padrão `3100`)             | —                                                                                  | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                      |
+| `LOG_LEVEL`         | não (padrão `info`)             | —                                                                                  | `info`                                                                                    |
 
 <!-- ambiente:worker:fim -->
 
@@ -299,10 +299,9 @@ Em **Variables**:
 | `API_URL`           | sim                        | https://… (a barra no fim é tolerada e removida por quem lê) | o domínio da api, sem barra no fim              |
 | `SUPABASE_URL`      | sim                        | —                                                            | Supabase > Project Settings > API > Project URL |
 | `SUPABASE_ANON_KEY` | sim                        | —                                                            | Supabase > Project Settings > API > anon public |
-| `META_APP_ID`       | sim                        | —                                                            | Meta > seu app > Configurações básicas          |
+| `META_APP_ID`       | não                        | —                                                            | Meta > seu app > Configurações básicas          |
 | `META_CONFIG_ID`    | não                        | —                                                            | Meta > seu app > WhatsApp > Embedded Signup     |
 | `NODE_ENV`          | não (padrão `development`) | —                                                            | `production` no Railway                         |
-| `LOG_LEVEL`         | não (padrão `info`)        | —                                                            | `info`                                          |
 
 <!-- ambiente:painel:fim -->
 
@@ -339,7 +338,7 @@ variáveis daquele serviço.
 | `META_APP_SECRET`           |  ✓  |   —    |   —    | só a api: é o que torna o código do navegador útil                                          |
 | `WHATSAPP_TOKEN_KEY`        |  ✓  |   —    |   —    | a api cifra o token que a clínica conecta; o worker passa a decifrar na fase de resiliência |
 | `PORT`                      |  ✓  |   ✓    |   —    | a porta em que o serviço escuta, e a mesma que o health check consulta                      |
-| `LOG_LEVEL`                 |  ✓  |   ✓    |   ✓    | nível do logger                                                                             |
+| `LOG_LEVEL`                 |  ✓  |   ✓    |   —    | nível do logger                                                                             |
 | `WHATSAPP_TOKEN`            |  —  |   ✓    |   —    | quem envia mensagem é o worker                                                              |
 | `ANTHROPIC_API_KEY`         |  —  |   ✓    |   —    | só o worker chama o modelo                                                                  |
 | `ANTHROPIC_MODEL`           |  —  |   ✓    |   —    | o modelo é configuração, não código: trocar não exige publicar de novo                      |

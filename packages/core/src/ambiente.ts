@@ -56,19 +56,73 @@ export interface VariavelDeAmbiente {
  * caminho de start; aqui o que se confere é o papel DENTRO da própria `DATABASE_URL`.
  */
 export const URL_DA_APLICACAO: FormatoDaVariavel = {
-  descricao: 'postgresql://fliqo_app… (o papel da aplicação, nunca o dono do schema)',
+  descricao: 'postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono)',
   conferir: (valor) => {
     if (!/^postgres(ql)?:\/\//.test(valor)) return 'não parece uma conexão postgresql://';
-    const usuario = /^postgres(?:ql)?:\/\/([^:@/]+)/.exec(valor)?.[1];
+
+    const partes = /^postgres(?:ql)?:\/\/([^:@/]+)(?::([^@]*))?@([^/?]+)(?:\/([^?]*))?/.exec(valor);
+    if (partes === null) return 'não dá para separar usuário, host e banco';
+    const [, usuario, senha, hostEPorta, banco] = partes;
     if (usuario === undefined) return 'sem usuário na conexão';
+
     // O pooler do Supabase usa `papel.ref-do-projeto`; o papel é o que vem antes do ponto.
     const papel = usuario.split('.')[0];
     if (papel !== 'fliqo_app') {
       return `conecta como "${papel ?? '?'}", e a aplicação conecta como fliqo_app — o dono do schema não passa pela RLS`;
     }
-    return undefined;
+
+    /*
+     * O espaço reservado colado é conferido ANTES de qualquer tentativa de conexão: sem isto
+     * ele vira "host não encontrado" no start, que é a mesma mensagem de rede ruim — e foram
+     * quatro deploys até alguém olhar o valor.
+     */
+    return (
+      caixaAltaOndeNaoCabe(hostEPorta ?? '', 'host') ??
+      caixaAltaOndeNaoCabe(banco ?? 'postgres', 'nome do banco') ??
+      espacoReservado(senha ?? '', 'senha') ??
+      espacoReservado(usuario, 'usuário')
+    );
   },
 };
+
+/**
+ * Espaço reservado colado literalmente, que é falha de configuração e não de valor.
+ *
+ * Quatro deploys seguidos da api caíram porque a `DATABASE_URL` levava o texto
+ * `HOST_DO_POOLER` — um espaço reservado escrito num passo a passo e colado inteiro. O
+ * formato da conexão não via nada de errado: o papel era `fliqo_app`, o esquema era
+ * `postgresql://`, e só o host era inventado. O Postgres respondia "host não encontrado", que
+ * é a mesma mensagem de uma rede ruim.
+ *
+ * As três formas que um espaço reservado toma: `<entre-sinais>`, `[ENTRE_COLCHETES]` e
+ * `CAIXA_ALTA_COM_SUBLINHADO` solta. A última é a arriscada de detectar — senha de verdade
+ * pode ser maiúscula —, então ela só vale onde não cabe: no HOST e no NOME DO BANCO, que são
+ * minúsculos e com ponto ou hífen. Senha é conferida só pelas duas primeiras formas, porque
+ * `SENHA_MUITO_FORTE_2026` é uma senha plausível e recusá-la seria pior.
+ */
+function espacoReservado(valor: string, onde: string): string | undefined {
+  if (/[<>]/.test(valor)) {
+    return `"${onde}" tem < ou >: isso é um espaço reservado, não um valor`;
+  }
+  // O hífen entra porque `[YOUR-PASSWORD]` é o espaço reservado do próprio Supabase, e é o
+  // mais provável de ser colado inteiro. Exigir letra no começo deixa passar `[::1]`, que é
+  // host IPv6 de verdade.
+  if (/\[[A-Za-z][A-Za-z0-9_-]*\]/.test(valor)) {
+    return `"${onde}" está entre colchetes: isso é um espaço reservado, não um valor`;
+  }
+  return undefined;
+}
+
+/** Em host e nome de banco, uma palavra em CAIXA_ALTA com sublinhado nunca é valor real. */
+function caixaAltaOndeNaoCabe(valor: string, onde: string): string | undefined {
+  const reservado = espacoReservado(valor, onde);
+  if (reservado !== undefined) return reservado;
+  const segmentos = valor.split(/[.\-/:]/);
+  const gritando = segmentos.find((s) => /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s));
+  return gritando === undefined
+    ? undefined
+    : `"${onde}" contém "${gritando}": isso é um espaço reservado, não um valor`;
+}
 
 /** Chave de 32 bytes em base64: é o tamanho que o AES-256-GCM do cofre exige. */
 export const CHAVE_BASE64_32: FormatoDaVariavel = {
@@ -92,8 +146,11 @@ export function minimoDeCaracteres(minimo: number): FormatoDaVariavel {
 /** Endereço http(s) sem barra no fim: quem monta o caminho depois é quem chama. */
 export const ENDERECO_HTTP: FormatoDaVariavel = {
   descricao: 'https://… (a barra no fim é tolerada e removida por quem lê)',
-  conferir: (valor) =>
-    /^https?:\/\/[^\s]+$/.test(valor) ? undefined : 'não parece um endereço http(s)',
+  conferir: (valor) => {
+    if (!/^https?:\/\/[^\s]+$/.test(valor)) return 'não parece um endereço http(s)';
+    const host = /^https?:\/\/([^/?#]+)/.exec(valor)?.[1] ?? '';
+    return caixaAltaOndeNaoCabe(host, 'host');
+  },
 };
 
 export const FUSO_IANA: FormatoDaVariavel = {
@@ -260,7 +317,21 @@ export const AMBIENTE_DO_PAINEL = [
     origem: 'Supabase > Project Settings > API > anon public',
     porque: 'idem',
   },
-  META_APP_ID,
+  /*
+   * No painel as duas do Embedded Signup são OPCIONAIS, e na api a `META_APP_ID` é
+   * obrigatória. Não é descuido: quem troca o código por token é a api, e sem isso ela não
+   * tem o que fazer. No painel, faltar significa uma clínica cujo ambiente ainda não foi
+   * configurado, e `configDoSignup` devolve `undefined` para a tela escrever isso em
+   * português — marcar como obrigatória aqui faria o esquema prometer uma recusa que leitor
+   * nenhum aplica, que é a divergência que este arquivo existe para acabar.
+   */
+  {
+    nome: 'META_APP_ID',
+    tipo: 'texto',
+    obrigatoria: false,
+    origem: 'Meta > seu app > Configurações básicas',
+    porque: 'o painel abre a janela do Embedded Signup; sem ela a tela explica que falta',
+  },
   {
     nome: 'META_CONFIG_ID',
     tipo: 'texto',
@@ -276,7 +347,8 @@ export const AMBIENTE_DO_PAINEL = [
     origem: '`production` no Railway',
     porque: 'é o que faz o cookie de sessão sair como Secure',
   },
-  LOG_LEVEL,
+  // LOG_LEVEL fica FORA: nenhum código do painel a lê. Declarar variável que o serviço não
+  // usa ensina a quem configura que ela é necessária, e daí ela aparece no Railway.
 ] as const satisfies readonly VariavelDeAmbiente[];
 
 /**

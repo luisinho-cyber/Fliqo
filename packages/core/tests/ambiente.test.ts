@@ -5,6 +5,7 @@ import {
   AMBIENTE_DO_WORKER,
   apenas,
   CHAVE_BASE64_32,
+  ENDERECO_HTTP,
   exigirAmbiente,
   lerAmbiente,
   minimoDeCaracteres,
@@ -118,6 +119,78 @@ describe('o formato da conexão da aplicação', () => {
 
   it('o que não é conexão postgres é recusado', () => {
     expect(URL_DA_APLICACAO.conferir('fliqo_app@banco')).toContain('postgresql://');
+  });
+});
+
+describe('espaço reservado colado é recusado antes de virar erro de rede', () => {
+  /*
+   * Quatro deploys seguidos da api caíram com a `DATABASE_URL` levando o texto
+   * `HOST_DO_POOLER`. Tudo o mais na conexão estava certo — papel, esquema, porta — e o
+   * Postgres respondia "host não encontrado", que é a mesma mensagem de rede ruim.
+   */
+  const caso = (url: string): string | undefined => URL_DA_APLICACAO.conferir(url);
+
+  it('o caso de ontem: HOST_DO_POOLER no lugar do host', () => {
+    const motivo = caso('postgresql://fliqo_app.ref:senha-falsa@HOST_DO_POOLER:6543/postgres');
+    expect(motivo).toContain('HOST_DO_POOLER');
+    expect(motivo).toContain('espaço reservado');
+  });
+
+  it('entre sinais de menor e maior, em qualquer posição', () => {
+    expect(caso('postgresql://fliqo_app.ref:senha-falsa@<host-do-pooler>:6543/postgres')).toContain(
+      'espaço reservado',
+    );
+    expect(caso('postgresql://fliqo_app.ref:<senha>@pooler.exemplo:6543/postgres')).toContain(
+      'espaço reservado',
+    );
+  });
+
+  it('[YOUR-PASSWORD], que é o espaço reservado do próprio Supabase', () => {
+    // O mais provável de ser colado inteiro: é o que a string do Supabase já traz.
+    expect(
+      caso('postgresql://fliqo_app.ref:[YOUR-PASSWORD]@pooler.exemplo:6543/postgres'),
+    ).toContain('espaço reservado');
+  });
+
+  it('NOME_DO_BANCO no lugar do banco', () => {
+    expect(caso('postgresql://fliqo_app:senha-falsa@pooler.exemplo:6543/NOME_DO_BANCO')).toContain(
+      'espaço reservado',
+    );
+  });
+
+  it('a mensagem diz QUAL parte é o espaço reservado', () => {
+    expect(caso('postgresql://fliqo_app.ref:senha-falsa@HOST_DO_POOLER:6543/postgres')).toContain(
+      '"host"',
+    );
+    expect(
+      caso('postgresql://fliqo_app.ref:[YOUR-PASSWORD]@pooler.exemplo:6543/postgres'),
+    ).toContain('"senha"');
+  });
+
+  it('senha em CAIXA_ALTA com sublinhado PASSA: é senha plausível', () => {
+    // Recusar aqui seria pior que o problema: o dono escolheria uma senha e o serviço não
+    // subiria. Caixa alta só é espaço reservado onde não cabe — host e nome do banco.
+    expect(
+      caso('postgresql://fliqo_app:SENHA_MUITO_FORTE_2026@pooler.exemplo:6543/postgres'),
+    ).toBeUndefined();
+  });
+
+  it('host IPv6 de verdade passa, e ele vem entre colchetes', () => {
+    expect(caso('postgresql://fliqo_app:senha-falsa@[::1]:5432/postgres')).toBeUndefined();
+  });
+
+  it('a conexão de verdade passa inteira', () => {
+    expect(
+      caso(
+        'postgresql://fliqo_app.abcdefgh:T0k3n-f4ls0@aws-0-sa-east-1.pooler.supabase.com:6543/postgres',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('endereço http com espaço reservado no host também é recusado', () => {
+    expect(ENDERECO_HTTP.conferir('https://DOMINIO_DA_API')).toContain('espaço reservado');
+    expect(ENDERECO_HTTP.conferir('https://<o-dominio>')).toContain('espaço reservado');
+    expect(ENDERECO_HTTP.conferir('https://fliqo-api.up.railway.app')).toBeUndefined();
   });
 });
 
