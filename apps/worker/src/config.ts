@@ -1,24 +1,19 @@
-import { z } from 'zod';
+import {
+  AMBIENTE_DO_WORKER,
+  exigirAmbiente,
+  type AmbienteConhecido,
+  type ConfigDoEsquema,
+} from '@fliqo/core';
 
-const Ambiente = z.object({
-  DATABASE_URL: z.string().min(1),
-  WHATSAPP_TOKEN: z.string().min(1),
-  ANTHROPIC_API_KEY: z.string().min(1),
-  // O modelo é configuração, não código: trocar não exige publicar de novo.
-  ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-4-5'),
-  // O worker atende HTTP numa rota só, /health. O Railway injeta a porta.
-  PORT: z.coerce.number().int().positive().default(3100),
-  LOG_LEVEL: z.string().default('info'),
-});
+/**
+ * A configuração do worker vem do esquema único (packages/core/src/ambiente.ts).
+ *
+ * Lá estão a obrigatoriedade, o formato e a origem de cada variável — e é de lá que saem
+ * também o tipo abaixo e a tabela do DEPLOY.md. Falha no start com a lista completa do que
+ * falta, não uma variável por deploy.
+ */
+export type ConfigWorker = ConfigDoEsquema<typeof AMBIENTE_DO_WORKER>;
 
-export type ConfigWorker = z.infer<typeof Ambiente>;
-
-export function lerConfigWorker(env: NodeJS.ProcessEnv = process.env): ConfigWorker {
-  const r = Ambiente.safeParse(env);
-  if (!r.success) {
-    throw new Error(
-      `configuração inválida: ${r.error.issues.map((i) => i.path.join('.')).join(', ')}`,
-    );
-  }
-  return r.data;
+export function lerConfigWorker(env: AmbienteConhecido = process.env): ConfigWorker {
+  return exigirAmbiente('o worker', AMBIENTE_DO_WORKER, env);
 }
