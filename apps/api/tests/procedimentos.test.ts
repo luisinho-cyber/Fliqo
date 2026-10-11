@@ -360,20 +360,28 @@ describe('preço novo não reescreve o passado', () => {
     const paciente = c.patients[0];
     if (paciente === undefined) throw new Error('o cenário não tem paciente');
 
-    // Uma consulta realizada no mês passado, pelo preço da época.
-    await owner.query(
+    /*
+     * Uma consulta realizada no mês passado, pelo preço da época.
+     *
+     * A JANELA SAI DA PRÓPRIA LINHA, e não de uma segunda conta sobre `now()`. A primeira
+     * versão inseria em `date_trunc('month', now()) - 10 dias` e procurava no mês de
+     * `now() - 10 dias`: dois jeitos de dizer "mês passado" que só concordam até o dia 10.
+     * Do dia 11 em diante a consulta caía em setembro e a busca ia em outubro, e o teste
+     * falhava por cenário vazio — sem nada a ver com o que ele mede.
+     */
+    const { rows } = await owner.query<{ mes: string }>(
       `insert into app.appointments
          (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
           price_cents, status, confirmed_at)
        values ($1,$2,$3,$4,
                date_trunc('month', now()) - interval '10 days',
                date_trunc('month', now()) - interval '10 days' + interval '1 hour',
-               25000, 'realizado', now() - interval '40 days')`,
+               25000, 'realizado', now() - interval '40 days')
+       returning to_char(starts_at, 'YYYY-MM') as mes`,
       [c.clinicA, c.profA, paciente, c.procEletivo],
     );
-
-    const dia = new Date(Date.now() - 86_400_000 * 10);
-    const mesFechado = `${String(dia.getUTCFullYear())}-${String(dia.getUTCMonth() + 1).padStart(2, '0')}`;
+    const mesFechado = rows[0]?.mes;
+    if (mesFechado === undefined) throw new Error('o insert da consulta não devolveu o mês');
     const de = `${mesFechado}-01`;
     const ate = `${mesFechado}-28`;
 
