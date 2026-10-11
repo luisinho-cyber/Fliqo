@@ -1,3 +1,4 @@
+import { lerEnderecoDaApi } from './ambiente';
 /**
  * O cliente da nossa API.
  *
@@ -27,10 +28,14 @@ export interface Chamada {
   sinal?: AbortSignal;
 }
 
+/**
+ * O endereço da api, pelo esquema único (packages/core/src/ambiente.ts).
+ *
+ * A barra no fim sai aqui, e não no esquema: quem monta o caminho é quem chama, e recusar a
+ * barra transformaria um detalhe de digitação em tela de erro no meio do expediente.
+ */
 export function enderecoDaApi(env: NodeJS.ProcessEnv = process.env): string {
-  const url = env.API_URL;
-  if (!url) throw new Error('configuração inválida: API_URL é obrigatório');
-  return url.replace(/\/$/, '');
+  return lerEnderecoDaApi(env).replace(/\/$/, '');
 }
 
 export async function chamarApi<T>(
