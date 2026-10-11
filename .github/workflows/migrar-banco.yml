@@ -1,8 +1,23 @@
 name: Migrar banco
 
-# Só na mão. Migração não acontece sozinha junto com o deploy: se dois
-# contêineres subissem ao mesmo tempo, os dois tentariam mudar o banco.
-on: workflow_dispatch
+# Roda a cada push na main, e continua disparável à mão.
+#
+# A migração ANTES do código novo no ar: o Railway tem "Wait for CI" ligado nos
+# três serviços e só publica depois que este workflow termina verde (docs/DEPLOY.md,
+# "Quando publicar de novo"). Se ele falhar, o deploy é pulado e o código velho
+# continua no ar sobre o esquema velho.
+#
+# Isto NÃO é "migrar na subida da aplicação", que continua proibido: ali cada
+# contêiner que sobe tentaria mudar o banco, dois ao mesmo tempo, com um papel que
+# nem tem esse direito. Aqui é UM workflow por push, com a fila de concorrência
+# abaixo, conectando como dono — o mesmo de quando era só na mão.
+#
+# Só funciona porque migração só acrescenta (CLAUDE.md, regra 12): o esquema novo
+# convive com o código velho durante os minutos entre a migração e o deploy.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 # Duas execuções ao mesmo tempo esperam a vez, em vez de disputar o banco.
 concurrency: migrar-banco
