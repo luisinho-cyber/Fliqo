@@ -112,7 +112,13 @@ async function perguntar(
   rota: '/estado' | '/health',
   agora: () => number = Date.now,
 ): Promise<{ status: number; corpo: Record<string, unknown> }> {
-  const servidor = servidorDeSaude({ porta: 0, sinais, tokenDoEstado: TOKEN, agora });
+  const servidor = servidorDeSaude({
+    porta: 0,
+    sinais,
+    tokenDoEstado: TOKEN,
+    agora,
+    aoFalhar: () => undefined,
+  });
   try {
     await new Promise((resolve) => servidor.once('listening', resolve));
     const { port } = servidor.address() as AddressInfo;

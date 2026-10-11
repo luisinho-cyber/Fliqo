@@ -202,16 +202,21 @@ O `apps/api/railway.json` já traz o comando de start, o health check em
 
 Em **Variables**, cole:
 
-| Variável                | De onde vem                                                 |
-| ----------------------- | ----------------------------------------------------------- |
-| `DATABASE_URL`          | passo 4                                                     |
-| `SUPABASE_JWT_SECRET`   | Supabase > Project Settings > API > JWT Secret              |
-| `WHATSAPP_APP_SECRET`   | Meta > seu app > Configurações básicas > Chave secreta      |
-| `WHATSAPP_VERIFY_TOKEN` | uma frase inventada por você; a mesma vai na Meta (passo 8) |
-| `META_APP_ID`           | Meta > seu app > Configurações básicas                      |
-| `META_APP_SECRET`       | Meta > seu app > Configurações básicas                      |
-| `WHATSAPP_TOKEN_KEY`    | gere como está logo abaixo da tabela                        |
-| `LOG_LEVEL`             | `info`                                                      |
+<!-- ambiente:api:inicio -->
+
+| Variável                | Obrigatória         | Formato                                                                            | De onde vem                                                                                                               |
+| ----------------------- | ------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | sim                 | postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4)                                 |
+| `WHATSAPP_APP_SECRET`   | sim                 | —                                                                                  | Meta > seu app > Configurações básicas > Chave secreta do app                                                             |
+| `WHATSAPP_VERIFY_TOKEN` | sim                 | —                                                                                  | uma frase inventada por você; a MESMA vai no webhook da Meta                                                              |
+| `SUPABASE_JWT_SECRET`   | sim                 | —                                                                                  | Supabase > Project Settings > API > JWT Secret                                                                            |
+| `META_APP_ID`           | sim                 | —                                                                                  | Meta > seu app > Configurações básicas                                                                                    |
+| `META_APP_SECRET`       | sim                 | —                                                                                  | Meta > seu app > Configurações básicas > Chave secreta do app (o mesmo valor de WHATSAPP_APP_SECRET quando é o mesmo app) |
+| `WHATSAPP_TOKEN_KEY`    | sim                 | 32 bytes em base64 (44 caracteres terminando em "=")                               | você gera (DEPLOY.md, logo abaixo da tabela da API)                                                                       |
+| `PORT`                  | não (padrão `3000`) | —                                                                                  | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                                                      |
+| `LOG_LEVEL`             | não (padrão `info`) | —                                                                                  | `info`                                                                                                                    |
+
+<!-- ambiente:api:fim -->
 
 **Como gerar a `WHATSAPP_TOKEN_KEY`:** ela não é uma senha comum — precisa ser
 exatamente 32 bytes em base64, e o gerador do gerenciador de senhas não garante
@@ -261,16 +266,24 @@ de operador.
 
 Em **Variables**:
 
-| Variável             | De onde vem                                                                   |
-| -------------------- | ----------------------------------------------------------------------------- |
-| `DATABASE_URL`       | passo 4, o mesmo da API                                                       |
-| `WHATSAPP_TOKEN_KEY` | **o mesmo valor que está na api** — é a chave que decifra os tokens           |
-| `ANTHROPIC_API_KEY`  | do painel do provedor; **cole direto aqui, e em nenhum outro lugar**          |
-| `EMAIL_API_KEY`      | do painel do serviço de e-mail; **cole direto aqui, e em nenhum outro lugar** |
-| `EMAIL_REMETENTE`    | um remetente verificado no serviço, ex. `avisos@suaclinica.com.br`            |
-| `OPERADOR_EMAIL`     | o seu e-mail: é quem recebe o aviso                                           |
-| `ESTADO_TOKEN`       | `openssl rand -base64 32` no **seu** terminal; **cole direto aqui**           |
-| `LOG_LEVEL`          | `info`                                                                        |
+<!-- ambiente:worker:inicio -->
+
+| Variável             | Obrigatória                                  | Formato                                                                            | De onde vem                                                                               |
+| -------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | sim                                          | postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4) |
+| `WHATSAPP_TOKEN_KEY` | sim                                          | 32 bytes em base64 (44 caracteres terminando em "=")                               | você gera (DEPLOY.md, logo abaixo da tabela da API)                                       |
+| `ANTHROPIC_API_KEY`  | sim                                          | —                                                                                  | painel do provedor do modelo; cole direto no Railway, e em nenhum outro lugar             |
+| `ANTHROPIC_MODEL`    | não (padrão `claude-haiku-4-5`)              | —                                                                                  | opcional                                                                                  |
+| `EMAIL_API_KEY`      | sim                                          | —                                                                                  | painel do provedor de e-mail; cole direto no serviço worker do Railway                    |
+| `EMAIL_REMETENTE`    | sim                                          | —                                                                                  | um endereço do domínio verificado no provedor de e-mail                                   |
+| `OPERADOR_EMAIL`     | sim                                          | —                                                                                  | o seu endereço                                                                            |
+| `EMAIL_API_URL`      | não (padrão `https://api.resend.com/emails`) | https://… (a barra no fim é tolerada e removida por quem lê)                       | opcional                                                                                  |
+| `OPERADOR_FUSO`      | não (padrão `America/Sao_Paulo`)             | fuso IANA, ex. America/Sao_Paulo                                                   | opcional                                                                                  |
+| `ESTADO_TOKEN`       | não                                          | pelo menos 32 caracteres                                                           | você gera: `openssl rand -base64 32` no seu terminal, e cola só no worker                 |
+| `PORT`               | não (padrão `3100`)                          | —                                                                                  | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                      |
+| `LOG_LEVEL`          | não (padrão `info`)                          | —                                                                                  | `info`                                                                                    |
+
+<!-- ambiente:worker:fim -->
 
 **As três de e-mail são do vigia de operador** (migração 0015). Ele roda de 15 em 15
 minutos em horário comercial e avisa quando uma clínica fica com o WhatsApp fora por
@@ -320,14 +333,18 @@ que a clínica abre.
 
 Em **Variables**:
 
-| Variável            | De onde vem                                                 |
-| ------------------- | ----------------------------------------------------------- |
-| `API_URL`           | o domínio do passo 5, sem barra no fim                      |
-| `SUPABASE_URL`      | Supabase > Project Settings > API > Project URL             |
-| `SUPABASE_ANON_KEY` | Supabase > Project Settings > API > anon public             |
-| `META_APP_ID`       | Meta > seu app > Configurações básicas                      |
-| `META_CONFIG_ID`    | Meta > seu app > WhatsApp > Embedded Signup, a configuração |
-| `NODE_ENV`          | `production`                                                |
+<!-- ambiente:painel:inicio -->
+
+| Variável            | Obrigatória                | Formato                                                      | De onde vem                                     |
+| ------------------- | -------------------------- | ------------------------------------------------------------ | ----------------------------------------------- |
+| `API_URL`           | sim                        | https://… (a barra no fim é tolerada e removida por quem lê) | o domínio da api, sem barra no fim              |
+| `SUPABASE_URL`      | sim                        | —                                                            | Supabase > Project Settings > API > Project URL |
+| `SUPABASE_ANON_KEY` | sim                        | —                                                            | Supabase > Project Settings > API > anon public |
+| `META_APP_ID`       | não                        | —                                                            | Meta > seu app > Configurações básicas          |
+| `META_CONFIG_ID`    | não                        | —                                                            | Meta > seu app > WhatsApp > Embedded Signup     |
+| `NODE_ENV`          | não (padrão `development`) | —                                                            | `production` no Railway                         |
+
+<!-- ambiente:painel:fim -->
 
 `META_APP_ID` e `META_CONFIG_ID` são identificadores públicos: o painel os passa
 como prop para abrir a janela da Meta, que roda no navegador. **O
@@ -350,30 +367,41 @@ serviço?". Configurar um segredo num serviço que não o usa não é inofensivo
 lugar a mais de onde ele vaza no dia em que alguém ganhar acesso de leitura às
 variáveis daquele serviço.
 
-| Variável                | api | worker | web | Por quê                                                      |
-| ----------------------- | :-: | :----: | :-: | ------------------------------------------------------------ |
-| `DATABASE_URL`          |  ✓  |   ✓    |  —  | o painel não fala com o banco (CLAUDE.md, regra 10)          |
-| `DATABASE_ADMIN_URL`    |  —  |   —    |  —  | **em nenhum**, ver abaixo                                    |
-| `SUPABASE_JWT_SECRET`   |  ✓  |   —    |  —  | quem verifica o token do painel é a api                      |
-| `SUPABASE_URL`          |  —  |   —    |  ✓  | só para autenticar, no servidor do painel                    |
-| `SUPABASE_ANON_KEY`     |  —  |   —    |  ✓  | idem                                                         |
-| `API_URL`               |  —  |   —    |  ✓  | quem chama a api é o servidor do painel                      |
-| `EMAIL_API_KEY`         |  —  |   ✓    |  —  | **só o worker**: é ele que manda o aviso de operador         |
-| `EMAIL_REMETENTE`       |  —  |   ✓    |  —  | idem                                                         |
-| `OPERADOR_EMAIL`        |  —  |   ✓    |  —  | idem                                                         |
-| `ESTADO_TOKEN`          |  —  |   ✓    |  —  | **só o worker**: é ele quem responde o `/estado`             |
-| `WHATSAPP_APP_SECRET`   |  ✓  |   —    |  —  | valida a assinatura do webhook, que chega na api             |
-| `WHATSAPP_VERIFY_TOKEN` |  ✓  |   —    |  —  | idem                                                         |
-| `WHATSAPP_TOKEN_KEY`    |  ✓  |   ✓    |  —  | a api cifra o token da clínica; o worker decifra para enviar |
-| `META_APP_ID`           |  ✓  |   —    |  ✓  | a api troca o código; o painel abre a janela                 |
-| `META_APP_SECRET`       |  ✓  |   —    |  —  | **só a api**: é o que torna o código do navegador útil       |
-| `META_CONFIG_ID`        |  —  |   —    |  ✓  | identificador público do Embedded Signup                     |
-| `ANTHROPIC_API_KEY`     |  —  |   ✓    |  —  | **só o worker** chama o modelo                               |
-| `ANTHROPIC_MODEL`       |  —  |   ✓    |  —  | opcional; padrão `claude-haiku-4-5`                          |
-| `NODE_ENV`              |  —  |   —    |  ✓  | `production`, para o cookie sair `Secure`                    |
-| `LOG_LEVEL`             |  ✓  |   ✓    |  ✓  | `info`                                                       |
-| `PORT`                  |  —  |   —    |  —  | o Railway injeta nos três; não crie à mão                    |
-| `FLIQO_APP_PASSWORD`    |  —  |   —    |  —  | só na sua máquina, ao rodar o script do papel                |
+<!-- ambiente:cruzada:inicio -->
+
+| Variável                    | api | worker | painel | Por quê                                                                      |
+| --------------------------- | :-: | :----: | :----: | ---------------------------------------------------------------------------- |
+| `DATABASE_URL`              |  ✓  |   ✓    |   —    | o painel não fala com o banco (CLAUDE.md, regra 10)                          |
+| `WHATSAPP_APP_SECRET`       |  ✓  |   —    |   —    | valida a assinatura do webhook, que chega na api                             |
+| `WHATSAPP_VERIFY_TOKEN`     |  ✓  |   —    |   —    | a Meta a devolve na verificação do webhook                                   |
+| `SUPABASE_JWT_SECRET`       |  ✓  |   —    |   —    | quem verifica o token do painel é a api                                      |
+| `META_APP_ID`               |  ✓  |   —    |   ✓    | a api troca o código do Embedded Signup; o painel abre a janela              |
+| `META_APP_SECRET`           |  ✓  |   —    |   —    | só a api: é o que torna o código do navegador útil                           |
+| `WHATSAPP_TOKEN_KEY`        |  ✓  |   ✓    |   —    | a api cifra o token que a clínica conecta, e o worker decifra para enviar    |
+| `PORT`                      |  ✓  |   ✓    |   —    | a porta em que o serviço escuta, e a mesma que o health check consulta       |
+| `LOG_LEVEL`                 |  ✓  |   ✓    |   —    | nível do logger                                                              |
+| `ANTHROPIC_API_KEY`         |  —  |   ✓    |   —    | só o worker chama o modelo                                                   |
+| `ANTHROPIC_MODEL`           |  —  |   ✓    |   —    | o modelo é configuração, não código: trocar não exige publicar de novo       |
+| `EMAIL_API_KEY`             |  —  |   ✓    |   —    | o vigia de operador avisa por e-mail quando uma clínica fica muda            |
+| `EMAIL_REMETENTE`           |  —  |   ✓    |   —    | remetente não verificado vira spam, e aviso em spam não é aviso              |
+| `OPERADOR_EMAIL`            |  —  |   ✓    |   —    | é a caixa de entrada que toca quando uma clínica para de responder           |
+| `EMAIL_API_URL`             |  —  |   ✓    |   —    | o caminho comum não precisa de configuração; trocar de provedor não é código |
+| `OPERADOR_FUSO`             |  —  |   ✓    |   —    | o fuso de QUEM RECEBE, para o vigia não mandar e-mail às três da manhã       |
+| `ESTADO_TOKEN`              |  —  |   ✓    |   —    | o /estado conta o veredito da fila; o /health continua público e sem token   |
+| `API_URL`                   |  —  |   —    |   ✓    | quem chama a api é o servidor do painel                                      |
+| `SUPABASE_URL`              |  —  |   —    |   ✓    | autenticação, no servidor do painel                                          |
+| `SUPABASE_ANON_KEY`         |  —  |   —    |   ✓    | idem                                                                         |
+| `META_CONFIG_ID`            |  —  |   —    |   ✓    | sem ela a tela de conexão explica que falta configurar, em vez de estourar   |
+| `NODE_ENV`                  |  —  |   —    |   ✓    | é o que faz o cookie de sessão sair como Secure                              |
+| `DATABASE_ADMIN_URL`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `FLIQO_APP_PASSWORD`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `SUPABASE_REGION`           |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `WHATSAPP_TOKEN_KEY_ANTIGA` |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `WHATSAPP_WABA_ID`          |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `CHROMIUM_EXECUTAVEL`       |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `CI`                        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+
+<!-- ambiente:cruzada:fim -->
 
 ### `DATABASE_ADMIN_URL` não vai para o Railway em hipótese nenhuma
 

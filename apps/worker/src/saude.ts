@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 /**
  * As duas rotas HTTP do worker, e o que cada uma faz de fato.
@@ -267,6 +267,11 @@ export interface ConfigSaude {
   tokenDoEstado: string | undefined;
   janelaMs?: number;
   agora?: () => number;
+  /**
+   * Para onde vai o erro de dentro do handler. Obrigatório: o corpo da resposta é genérico,
+   * então sem isto o erro sumiria sem deixar rastro.
+   */
+  aoFalhar: (erro: unknown) => void;
 }
 
 /** Resumo de tamanho fixo: `timingSafeEqual` exige buffers iguais e lança com os diferentes. */
@@ -309,7 +314,7 @@ function naoEncontrado(res: ServerResponse): void {
  */
 export function servidorDeSaude(cfg: ConfigSaude): Server {
   const agora = cfg.agora ?? Date.now;
-  return createServer((req, res) => {
+  const responder = (req: IncomingMessage, res: ServerResponse): void => {
     if (req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{"ok":true}');
@@ -328,5 +333,20 @@ export function servidorDeSaude(cfg: ConfigSaude): Server {
     );
     res.writeHead(CODIGO_POR_ESTADO[veredito.estado], { 'content-type': 'application/json' });
     res.end(JSON.stringify(veredito));
+  };
+
+  /*
+   * `node:http` não tem rede de proteção: exceção dentro do handler vira exceção não tratada
+   * do PROCESSO, e o worker cai inteiro — os laços de ações e de atrasos junto, e o que estava
+   * em `executando` espera o requeue. Um bug numa rota de diagnóstico não pode parar a régua.
+   */
+  return createServer((req, res) => {
+    try {
+      responder(req, res);
+    } catch (erro) {
+      cfg.aoFalhar(erro);
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+      res.end('{"erro":"erro_interno"}');
+    }
   }).listen(cfg.porta, '0.0.0.0');
 }

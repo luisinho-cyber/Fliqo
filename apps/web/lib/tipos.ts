@@ -10,9 +10,49 @@ export interface ClinicaNaTela {
   nome: string;
 }
 
+/** Mesma lista do `check` de clinic_members. App não importa app, então ela se repete aqui. */
+export type PapelNaClinica = 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+
 export interface ClinicaDaPessoa extends ClinicaNaTela {
   /** Papel na clínica. Serve para não oferecer o que a API vai negar com 403. */
-  papel: 'dono' | 'recepcao' | 'profissional' | 'financeiro';
+  papel: PapelNaClinica;
+  /** Modo convidado: a agenda vive em outro sistema e a Fliqo opera sobre ela. */
+  modoConvidado: boolean;
+}
+
+/** O mapeamento de colunas que a clínica escolhe na tela de importação. */
+export interface MapaDeColunas {
+  paciente: number;
+  telefone: number;
+  profissional: number;
+  inicio: number;
+  procedimento: number;
+}
+
+export interface RecusaNaTela {
+  linha: number;
+  motivo: string;
+  rotulo: string;
+}
+
+export interface RelatorioDaImportacao {
+  id: string;
+  arquivo: string;
+  em: string;
+  total: number;
+  entraram: number;
+  repetidas: number;
+  recusadas: number;
+  recusas: RecusaNaTela[];
+}
+
+export type SaidaDaImportacao =
+  | { ok: true; relatorio: RelatorioDaImportacao }
+  | { ok: false; motivo: 'planilha_sem_linhas' | 'planilha_grande_demais'; maximo: number };
+
+export interface Importacoes {
+  fuso: string;
+  importacoes: Omit<RelatorioDaImportacao, 'recusas'>[];
 }
 
 export type SituacaoDaConsulta = 'finalizada' | 'em_atendimento' | 'aguardando';
@@ -77,6 +117,59 @@ export interface Hoje {
   vagas: VagaDaTela[];
   decisoes: DecisaoDaTela[];
   descartes: DescarteDaTela[];
+  /** Vazio para quem não é dono: só ele pode aplicar o ajuste. */
+  sugestoesDeDuracao: SugestaoDeDuracaoNaTela[];
+}
+
+export interface SugestaoDeDuracaoNaTela {
+  procedimentoId: string;
+  nome: string;
+  cadastradaMin: number;
+  novaDuracaoMin: number;
+  medianaMin: number;
+  amostra: number;
+}
+
+/**
+ * A sugestão como a API a entrega. O `motivo` da recusa chega junto porque a tela
+ * escreve coisas diferentes para "ainda não medimos o bastante" e "o cadastro está
+ * certo" — são notícias diferentes para o dono.
+ */
+export type SugestaoDaApi =
+  | { sugerir: false; motivo: 'amostra_pequena' | 'divergencia_pequena' }
+  | {
+      sugerir: true;
+      cadastradaMin: number;
+      novaDuracaoMin: number;
+      medianaMin: number;
+      amostra: number;
+    };
+
+export interface ProfissionalNaPontualidade {
+  id: string;
+  nome: string;
+  atendimentos: number;
+  noHorario: number;
+  noHorarioPct: number | null;
+  atrasoMedioMin: number;
+}
+
+export interface ProcedimentoNaPontualidade {
+  id: string;
+  nome: string;
+  cadastradaMin: number;
+  medianaMin: number;
+  amostra: number;
+  ajustadaEm: string | null;
+  sugestao: SugestaoDaApi;
+}
+
+export interface Pontualidade {
+  clinica: ClinicaNaTela;
+  de: string;
+  ate: string;
+  profissionais: ProfissionalNaPontualidade[];
+  procedimentos: ProcedimentoNaPontualidade[];
 }
 
 /** Mesma lista do `check` da 0008. App não importa app, então ela se repete aqui. */
@@ -170,4 +263,73 @@ export interface StatusDoWhatsapp {
   conexao: ConexaoDoWhatsapp | null;
   eventos: EventoDeConexao[];
   fuso: string;
+}
+
+// ---------------------------------------------------------------------------
+// Caixa
+// ---------------------------------------------------------------------------
+
+export interface LinhaNaTela {
+  id: string;
+  nome: string;
+  consultas: number;
+  marcadoCents: number;
+  /** `null` quando não há histórico de comparecimento para projetar. */
+  esperadoCents: number | null;
+  realizadoCents: number;
+}
+
+/** De onde veio o esperado. A tela diz isso na frase, não num rodapé. */
+export type ProcedenciaDoEsperado =
+  | { ha: true; amostra: number; janelaDias: number; porGrupo: Record<string, number> }
+  | { ha: false; motivo: 'sem_historico'; amostra: number; minimo: number };
+
+export interface ProcedimentoSemPreco {
+  id: string;
+  nome: string;
+}
+
+export interface Caixa {
+  clinica: ClinicaNaTela;
+  de: string;
+  ate: string;
+  consultas: number;
+  marcadoCents: number;
+  esperadoCents: number | null;
+  realizadoCents: number;
+  procedencia: ProcedenciaDoEsperado;
+  /** A frase vem montada do servidor: é a mesma conta das tabelas, e não pode divergir. */
+  manchete: string;
+  faltas: { quantidade: number; valorCents: number };
+  semPreco: { consultas: number; procedimentos: ProcedimentoSemPreco[] };
+  porProfissional: LinhaNaTela[];
+  porProcedimento: LinhaNaTela[];
+}
+
+// ---------------------------------------------------------------------------
+// Cadastro de procedimentos
+// ---------------------------------------------------------------------------
+
+export interface ProcedimentoNaTela {
+  id: string;
+  nome: string;
+  duracaoMinutos: number;
+  precoCents: number;
+  ativo: boolean;
+  /**
+   * Pede retorno, e em quantos dias. União e não par de campos: "pede retorno em nada" é um
+   * estado que a tela não teria como mostrar, e aqui ele não se escreve.
+   */
+  retorno: { exige: false } | { exige: true; emDias: number };
+  /** Veio da importação de agenda do outro sistema. */
+  daImportacao: boolean;
+  /** Preço que ninguém cadastrou. Não é cortesia — é a mesma pergunta do Caixa. */
+  semPreco: boolean;
+  consultas: number;
+}
+
+export interface Procedimentos {
+  podeEditar: boolean;
+  procedimentos: ProcedimentoNaTela[];
+  semPreco: number;
 }

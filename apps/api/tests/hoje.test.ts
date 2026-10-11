@@ -299,10 +299,16 @@ describe('isolamento entre clínicas na tela Hoje', () => {
 
   it('minhas-clinicas devolve só as clínicas da pessoa', async () => {
     const daA = await chamar('/api/minhas-clinicas', { userId: DONA_DA_A });
-    expect(daA.json()).toEqual([{ id: c.clinicA, nome: 'Clínica A', papel: 'dono' }]);
+    // `modoConvidado` entrou na 0012: o painel precisa dele para não oferecer aba
+    // de prontuário nem de financeiro à clínica cuja agenda vive em outro sistema.
+    expect(daA.json()).toEqual([
+      { id: c.clinicA, nome: 'Clínica A', papel: 'dono', modoConvidado: false },
+    ]);
 
     const daB = await chamar('/api/minhas-clinicas', { userId: DONA_DA_B });
-    expect(daB.json()).toEqual([{ id: c.clinicB, nome: 'Clínica B', papel: 'dono' }]);
+    expect(daB.json()).toEqual([
+      { id: c.clinicB, nome: 'Clínica B', papel: 'dono', modoConvidado: false },
+    ]);
 
     const nenhuma = await chamar('/api/minhas-clinicas', { userId: DE_NENHUMA });
     expect(nenhuma.json()).toEqual([]);

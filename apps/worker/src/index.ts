@@ -187,6 +187,9 @@ const saude = servidorDeSaude({
   porta: config.PORT,
   sinais,
   tokenDoEstado: config.ESTADO_TOKEN,
+  aoFalhar: (erro) => {
+    log.error({ erro: erro instanceof Error ? erro.message : erro }, 'servidor de saúde falhou');
+  },
 });
 
 /**

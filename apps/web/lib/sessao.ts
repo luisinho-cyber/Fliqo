@@ -1,3 +1,4 @@
+import { lerSupabase } from './ambiente';
 import { createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -58,12 +59,8 @@ export interface ConfigSupabase {
 }
 
 export function lerConfigSupabase(env: NodeJS.ProcessEnv = process.env): ConfigSupabase {
-  const url = env.SUPABASE_URL;
-  const chaveAnonima = env.SUPABASE_ANON_KEY;
-  if (!url || !chaveAnonima) {
-    throw new Error('configuração inválida: SUPABASE_URL e SUPABASE_ANON_KEY são obrigatórios');
-  }
-  return { url, chaveAnonima };
+  const config = lerSupabase(env);
+  return { url: config.SUPABASE_URL, chaveAnonima: config.SUPABASE_ANON_KEY };
 }
 
 export interface CofreDeCookies {

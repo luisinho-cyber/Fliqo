@@ -27,6 +27,18 @@ um instrumento: uma linha do tempo, uma manchete, uma lista de decisões.
    cheia é o que deve entrar de verdade. A distância entre as duas é o problema que a
    Fliqo resolve, e aparece com esse nome.
 
+**O par tracejado/sólido é um só, e atravessa as telas — pela FORMA, não pela cor.**
+Tracejado é sempre o que foi planejado; sólido é sempre o que aconteceu. Na faixa do dia
+são o horário marcado e o bloco deslocado; no caixa, o marcado e o esperado; na
+Pontualidade, a duração que o cadastro reserva e a que o procedimento leva.
+
+O que atravessa é a forma. A **cor não** atravessa: a faixa do dia é âmbar porque ali a
+distância entre os dois É o atraso acontecendo agora. Nas outras telas o par é neutro
+(`ink-3`), porque a mesma pergunta sobre o passado medido não é este minuto. Tirar o âmbar
+não tira legibilidade nenhuma — vazado contra cheio é a diferença, e ela não depende de
+matiz, que é a regra geral desta paleta aplicada até o fim. Há teste amarrando a forma nos
+dois lugares e exigindo que só a faixa use âmbar.
+
 ## Tokens
 
 Valores em `apps/web/app/tokens.css`. Todo token é definido no tema claro e tem o valor
@@ -139,7 +151,11 @@ calculado, porque o valor final não está em token nenhum. Passado é quieto, n
 
 ## Regras que valem em toda tela
 
-- **`agora` só significa este minuto ou atraso.** Não usar em botão, link ou destaque.
+- **`agora` só significa este minuto ou o atraso em curso.** Não usar em botão, link ou
+  destaque, e **não** usar na causa medida do atraso: a comparação entre duração
+  cadastrada e duração real é passado medido, não este minuto, e ela já tem elemento
+  próprio — o par vazado/cheio. Três significados num âmbar e ele deixa de ser legível de
+  relance, que é a única coisa que ele existe para fazer.
 - **Ausência se desenha com hachura**, nunca com vazio branco.
 - **Monoespaçada só para medida**: hora, dinheiro, contagem, id. Texto corrido nunca.
 - **`fio` separa linhas de uma mesma lista; não desenha caixa.** Painel é `paper` sobre

@@ -96,6 +96,73 @@ Para ligar o número de cada clínica sem pedir senha a ninguém, use o **Embedd
 
 Uma clínica com `is_demo = true`, populada por um seed com 60 dias de agenda, faltas, fila e caixa. Nela o simulador de WhatsApp roda ao vivo na reunião: você marca, o prospect vê a agenda mudar e o caixa se mexer. Um botão "resetar demo" recria tudo.
 
+## Modo convidado (a Fliqo sobre a agenda de outro sistema)
+
+Clínica com `guest_mode = true` (0012) não marca na Fliqo: a agenda dela vive no sistema
+que ela já usa, e a Fliqo opera sobre essa agenda — confirma, chama a lista de espera,
+avisa atraso e atende pelo WhatsApp. É a porta estreita para quem não vai trocar de
+sistema hoje e ainda assim perde horário por falta de confirmação.
+
+A agenda entra por importação de CSV com **mapeamento de colunas feito na tela**: nenhum
+formato fixo, porque cada sistema exporta de um jeito e exigir um cabeçalho nosso seria
+pedir que a clínica editasse a planilha antes de nos entregar.
+
+Três decisões que não são óbvias:
+
+- **A chave natural é `(clinic_id, professional_id, starts_at, patient_id)`**, num índice
+  único **parcial em `source = 'importado'`**. O telefone entra por `patient_id` porque a
+  deduplicação por número normalizado acontece antes, em
+  `pacientes.acharOuCriarPorTelefone` — o paciente já é a forma canônica do telefone.
+  Reimportar o mesmo arquivo conta as linhas como repetidas e não duplica nada; reimportar
+  o arquivo de ontem **não ressuscita** o que a recepção cancelou hoje.
+
+  O **parcial por origem** é a parte que não é óbvia, e as duas alternativas são bugs. Um
+  índice sobre toda consulta discordaria da `no_double_booking` (0001), que exclui
+  `cancelado` e `faltou` — como tem de excluir, senão ninguém remarcaria horário
+  cancelado, que é a operação mais comum de uma clínica e o caminho da lista de espera:
+  paciente cancela as 9h com a Dra. X e remarca as 9h com a Dra. X, a EXCLUDE libera e o
+  índice recusa. Copiar a cláusula de status da EXCLUDE trocaria um bug por outro: a
+  reimportação deixaria de achar a cancelada e a consulta ressuscitaria. As duas operações
+  são "inserir linha cuja chave casa com uma cancelada", e o que as separa não é o status,
+  é a **origem**. `packages/db/tests/chave-natural.test.ts` fixa as duas direções.
+
+- **`on conflict` com alvo explícito, nunca `do nothing` puro.** No Postgres o `do nothing`
+  sem alvo engole também violação de EXCLUDE, e aí "esta consulta já estava aqui" e "este
+  horário é de outro paciente" viram o mesmo silêncio. Uma é reimportação; a outra é
+  recusa com motivo. Cada linha vai num savepoint, porque violação de constraint aborta a
+  transação inteira — sem ele, uma linha conflitante no meio levaria embora as que já
+  entraram, e o relatório diria que elas entraram.
+- **O horário da planilha é local, e quem converte é o Postgres.** `core` devolve
+  `AAAA-MM-DD HH:MM` sem fuso, e o insert faz `at time zone` com o fuso cadastrado da
+  clínica. Exato, sem biblioteca de fuso, e mantém o módulo puro.
+
+**O que a flag desliga** está enumerado em `RECURSOS_DO_MODO_PROPRIO`
+(`packages/core/src/importacao.ts`): `prontuario` e `financeiro`. Não é plano nem
+permissão — é uma afirmação sobre ONDE está a verdade. Prontuário e caixa parciais são
+pior do que ausentes: um número que não fecha com o outro sistema faz a clínica
+desconfiar dos números que estão certos, e aí a agenda perde crédito junto.
+
+Nenhuma das duas telas existe hoje. A lista e a guarda `comRecurso` existem **antes**
+delas de propósito, para que nasçam cobertas em vez de nascerem abertas e alguém lembrar
+depois. Rota nova de prontuário ou de financeiro passa por `comRecurso` ou não passa por
+nada, e há teste exigindo os dois na lista.
+
+### Duas condições da fase do financeiro
+
+1. **`/api/caixa` passa por `comRecurso('financeiro', …)`**, e o teste é clínica em modo
+   convidado recebendo 403 (ou 404) **na rota** — não tela escondida. Aba invisível com
+   rota aberta é uma porta sem tranca atrás de um cartaz.
+2. **Procedimento com `source = 'importado'` tem preço que ninguém cadastrou.** A
+   importação cria o que não existe no cadastro com preço zero, e hoje isso não aparece
+   porque o financeiro está desligado. No dia em que uma clínica desligar a flag, somar
+   esses zeros faria o Caixa dizer "esperado = R$ 0" com cara de verde, que é a pior forma
+   de errar um número de dinheiro. O Caixa tem de **contar**: "N procedimentos sem preço
+   cadastrado". A origem existe para essa pergunta ser possível — preço zero sozinho não
+   distingue o gratuito de verdade do não cadastrado.
+
+O resto do sistema não muda. Consulta importada entra com `source = 'importado'` e recebe
+a régua de confirmação da clínica pelo mesmo gatilho das outras — há teste.
+
 ## LGPD e dados de saúde
 
 - Dado de saúde é **dado sensível**. A clínica é a controladora e o Fliqo é o operador: tenha contrato (DPA) com cada clínica.

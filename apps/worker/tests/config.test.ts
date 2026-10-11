@@ -1,10 +1,18 @@
+import type { AmbienteConhecido } from '@fliqo/core';
 import { describe, expect, it } from 'vitest';
 import { lerConfigWorker } from '../src/config';
 
-/** O mínimo para o worker subir. Tudo falso: nenhum destes valores abre coisa alguma. */
-const BASE = {
-  DATABASE_URL: 'postgresql://falso@localhost:5432/falso',
-  WHATSAPP_TOKEN_KEY: 'chave-falsa',
+/**
+ * O mínimo para o worker subir. Tudo falso: nenhum destes valores abre coisa alguma.
+ *
+ * Falso mas com o FORMATO certo, e isso não é zelo: o esquema único cobra formato
+ * (`DATABASE_URL` conectando como `fliqo_app`, chave de 32 bytes em base64). Com a base
+ * inválida, o caso do token curto passava porque o start falhava por OUTRA variável — teste
+ * verde pelo motivo errado, que é o que esta base existe para não ser.
+ */
+const BASE: AmbienteConhecido = {
+  DATABASE_URL: 'postgresql://fliqo_app.ref-falso:senha-falsa@pooler.exemplo:6543/postgres',
+  WHATSAPP_TOKEN_KEY: Buffer.alloc(32, 7).toString('base64'),
   ANTHROPIC_API_KEY: 'chave-falsa',
   EMAIL_API_KEY: 'chave-falsa',
   EMAIL_REMETENTE: 'avisos@sua-clinica.com.br',
@@ -26,5 +34,9 @@ describe('ESTADO_TOKEN', () => {
     const curto = 'senha123';
     expect(() => lerConfigWorker({ ...BASE, ESTADO_TOKEN: curto })).toThrow(/ESTADO_TOKEN/);
     expect(() => lerConfigWorker({ ...BASE, ESTADO_TOKEN: curto })).not.toThrow(/senha123/);
+    // E é SÓ o token: com a base válida, o erro tem uma variável, não quatro.
+    expect(() => lerConfigWorker({ ...BASE, ESTADO_TOKEN: curto })).toThrow(
+      /1 variável de ambiente com problema/,
+    );
   });
 });

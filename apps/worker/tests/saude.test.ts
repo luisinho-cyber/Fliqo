@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -146,6 +147,7 @@ describe('o servidor', () => {
       sinais: sinaisCom(ultimasBatidas, entrega),
       tokenDoEstado: TOKEN,
       agora: () => agoraMs,
+      aoFalhar: () => undefined,
     });
     fechar = () => servidor.close();
     await new Promise((resolve) => servidor.once('listening', resolve));
@@ -234,6 +236,7 @@ describe('o /health é liveness e não sabe nada de entrega', () => {
       sinais: sinaisCom({ acoes: 0 }, entrega),
       tokenDoEstado: TOKEN,
       agora: () => agora,
+      aoFalhar: () => undefined,
     });
     fechar = () => servidor.close();
     await new Promise((resolve) => servidor.once('listening', resolve));
@@ -393,6 +396,7 @@ describe('o código HTTP de cada estado', () => {
       sinais: sinaisCom({ acoes: agoraMs }, entrega),
       tokenDoEstado: TOKEN,
       agora: () => agoraMs,
+      aoFalhar: () => undefined,
     });
     fechar = () => servidor.close();
     await new Promise((resolve) => servidor.once('listening', resolve));
@@ -454,6 +458,7 @@ describe('o /estado exige ESTADO_TOKEN, o /health não', () => {
       sinais,
       tokenDoEstado: token,
       agora: () => 1_000,
+      aoFalhar: () => undefined,
     });
     fechar = () => servidor.close();
     await new Promise((resolve) => servidor.once('listening', resolve));
@@ -526,4 +531,91 @@ describe('o /estado exige ESTADO_TOKEN, o /health não', () => {
       fechar = undefined;
     }
   });
+});
+
+/**
+ * Exceção dentro do handler.
+ *
+ * A exceção é provocada no `/estado`, que é quem lê o relógio: o `/health` não toca em
+ * batimento, entrega nem relógio, e por isso não tem de onde explodir.
+ *
+ * O servidor é `node:http` puro, sem a rede de proteção que o Fastify tem: sem o `try/catch`,
+ * a exceção vira exceção não tratada do processo e o worker cai inteiro — os laços de ações e
+ * de atrasos junto. Medido antes da correção: o cliente recebia "other side closed" e o
+ * processo saía com código 1.
+ */
+describe('exceção dentro do handler', () => {
+  it('responde 500 com corpo genérico, e o erro vai para aoFalhar', async () => {
+    const erros: unknown[] = [];
+    const servidor = servidorDeSaude({
+      porta: 0,
+      sinais: sinaisCom({ acoes: 0 }, criarEntrega()),
+      tokenDoEstado: TOKEN,
+      agora: () => {
+        throw new Error('explodiu com detalhe interno');
+      },
+      aoFalhar: (erro) => erros.push(erro),
+    });
+    try {
+      await new Promise((resolve) => servidor.once('listening', resolve));
+      const { port } = servidor.address() as AddressInfo;
+      // No `/estado`, porque é ele que lê o relógio: o `/health` não toca em nada.
+      const r = await fetch(`http://127.0.0.1:${String(port)}/estado`, COM_TOKEN);
+      expect(r.status).toBe(500);
+      const corpo = await r.text();
+      expect(JSON.parse(corpo)).toEqual({ erro: 'erro_interno' });
+      expect(corpo).not.toContain('explodiu');
+      expect(erros).toHaveLength(1);
+      expect(erros[0]).toBeInstanceOf(Error);
+    } finally {
+      servidor.close();
+    }
+  });
+
+  it('e o PROCESSO continua de pé: responde de novo depois da exceção', async () => {
+    const fixture = new URL('./servidor-que-explode.ts', import.meta.url).pathname;
+    const filho = spawn(process.execPath, ['--import', 'tsx', fixture], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let saida = '';
+    filho.stdout.on('data', (pedaco: Buffer) => {
+      saida += pedaco.toString();
+    });
+    try {
+      const porta = await new Promise<string>((resolve, reject) => {
+        filho.stdout.on('data', () => {
+          const m = /PORTA (\d+)/.exec(saida);
+          if (m?.[1] !== undefined) resolve(m[1]);
+        });
+        filho.once('exit', (codigo) => {
+          reject(new Error(`o processo saiu antes de escutar (código ${String(codigo)})`));
+        });
+      });
+      const base = `http://127.0.0.1:${porta}`;
+
+      const doFixture = /TOKEN (\S+)/.exec(saida)?.[1];
+      if (doFixture === undefined) throw new Error('o fixture não disse o token');
+      const comToken = {
+        headers: { authorization: `Bearer ${doFixture}` },
+        signal: AbortSignal.timeout(5_000),
+      };
+
+      // Duas exceções seguidas e duas rotas que não explodem: o processo responde às quatro.
+      for (let i = 0; i < 2; i++) {
+        const r = await fetch(`${base}/estado`, comToken);
+        expect(r.status).toBe(500);
+        expect(await r.json()).toEqual({ erro: 'erro_interno' });
+      }
+      // O `/health` não lê relógio, então atravessa o mesmo processo sem explodir.
+      const vivo = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5_000) });
+      expect(vivo.status).toBe(200);
+      const r = await fetch(`${base}/qualquer`, { signal: AbortSignal.timeout(5_000) });
+      expect(r.status).toBe(404);
+
+      expect(filho.exitCode).toBeNull();
+      expect(saida).toContain('FALHOU explodiu dentro do handler');
+    } finally {
+      filho.kill();
+    }
+  }, 20_000);
 });
