@@ -117,7 +117,8 @@ export default tseslint.config(
 
   {
     // O migrador é uma ferramenta de linha de comando: a saída dele é o produto.
-    files: ['packages/db/scripts/**'],
+    // O gerador da tabela de ambiente (packages/core/scripts) é do mesmo tipo.
+    files: ['packages/db/scripts/**', 'packages/core/scripts/**'],
     rules: { 'no-console': 'off' },
   },
 
