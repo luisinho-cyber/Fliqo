@@ -21,9 +21,11 @@ export type LinhaRecusada = Selectable<TabelaLinhasRecusadas>;
  *    e aí "esta consulta já estava aqui" e "este horário é de outro paciente"
  *    viram a mesma coisa em silêncio. Uma é reimportação (correta, nada mudou), a
  *    outra é recusa com motivo.
- * 3. **Cada linha num savepoint.** Violação de constraint aborta a transação
- *    inteira no Postgres; sem savepoint, uma linha conflitante levaria embora as
- *    quinhentas que já tinham entrado.
+ * 3. **Cada linha num savepoint, do primeiro passo ao último.** Violação de
+ *    constraint aborta a transação inteira no Postgres; sem savepoint, uma linha
+ *    conflitante levaria embora as quinhentas que já tinham entrado. E o savepoint
+ *    precisa abrir ANTES do primeiro passo da linha, não antes do insert da consulta:
+ *    achar ou criar paciente e procedimento também viola constraint.
  */
 
 export interface ResultadoDaLinha {
@@ -64,45 +66,127 @@ async function profissionalPorNome(trx: Trx, clinicId: string, nome: string): Pr
   return criado.id;
 }
 
+/** O procedimento como o índice único o vê: `(clinic_id, lower(name))`. */
+interface ProcedimentoDaLinha {
+  id: string;
+  duracaoMin: number;
+  precoCents: string;
+}
+
+type LinhaDeProcedimento = { id: string; duration_minutes: number; price_cents: string };
+
+const doBanco = (l: LinhaDeProcedimento): ProcedimentoDaLinha => ({
+  id: l.id,
+  duracaoMin: l.duration_minutes,
+  precoCents: l.price_cents,
+});
+
+/**
+ * A busca é pela CHAVE DO ÍNDICE, `lower(name)`, e não por `name`.
+ *
+ * Procurar por `name = $1` com índice único em `lower(name)` é procurar por uma chave e
+ * gravar por outra: planilha com "limpeza" numa clínica que já tem "Limpeza" não acha
+ * nada, insere, e o banco recusa com 23505. O índice está certo — "Limpeza" e "limpeza"
+ * são o mesmo procedimento para a clínica — e quem estava errada era a busca.
+ */
+async function porChaveDoIndice(trx: Trx, nome: string): Promise<ProcedimentoDaLinha | undefined> {
+  const r = await sql<LinhaDeProcedimento>`
+    select id, duration_minutes, price_cents
+      from app.procedures
+     where lower(name) = lower(${nome})
+     limit 1
+  `.execute(trx);
+  const linha = r.rows[0];
+  return linha === undefined ? undefined : doBanco(linha);
+}
+
 async function procedimentoPorNome(
   trx: Trx,
   clinicId: string,
   nome: string,
-): Promise<{ id: string; duracaoMin: number; precoCents: string }> {
-  const existente = await trx
-    .selectFrom('app.procedures')
-    .select(['id', 'duration_minutes', 'price_cents'])
-    .where('name', '=', nome)
-    .executeTakeFirst();
-  if (existente !== undefined) {
-    return {
-      id: existente.id,
-      duracaoMin: existente.duration_minutes,
-      precoCents: existente.price_cents,
-    };
-  }
+): Promise<ProcedimentoDaLinha> {
+  const existente = await porChaveDoIndice(trx, nome);
+  if (existente !== undefined) return existente;
 
-  const criado = await trx
-    .insertInto('app.procedures')
-    .values({
-      clinic_id: clinicId,
-      name: nome,
-      duration_minutes: DURACAO_PADRAO_MIN,
-      price_cents: 0,
-      // A origem marcada: o preço zero não foi cadastrado por ninguém, e o Caixa
-      // precisa poder contar esses procedimentos em vez de somá-los. Sem isto, no dia
-      // em que a clínica desligar o modo convidado, a tela de dinheiro mente verde.
-      source: 'importado',
-    })
-    .returning(['id', 'duration_minutes', 'price_cents'])
-    .executeTakeFirstOrThrow();
-  return { id: criado.id, duracaoMin: criado.duration_minutes, precoCents: criado.price_cents };
+  // `on conflict do nothing` porque a busca acima não é promessa: entre ela e este
+  // insert a recepção pode cadastrar o mesmo nome pela tela. Quem perde a corrida não
+  // recebe linha de volta e lê o cadastro de quem ganhou, em vez de estourar 23505 e
+  // derrubar a planilha inteira.
+  const criado = await sql<LinhaDeProcedimento>`
+    insert into app.procedures
+      (clinic_id, name, duration_minutes, price_cents, source)
+    values
+      -- A origem marcada: o preço zero não foi cadastrado por ninguém, e o Caixa
+      -- precisa poder contar esses procedimentos em vez de somá-los. Sem isto, no dia
+      -- em que a clínica desligar o modo convidado, a tela de dinheiro mente verde.
+      (${clinicId}, ${nome}, ${DURACAO_PADRAO_MIN}, 0, 'importado')
+    on conflict (clinic_id, lower(name)) do nothing
+    returning id, duration_minutes, price_cents
+  `.execute(trx);
+
+  const linha = criado.rows[0];
+  if (linha !== undefined) return doBanco(linha);
+
+  const deQuemGanhou = await porChaveDoIndice(trx, nome);
+  if (deQuemGanhou === undefined) {
+    // Não existe caminho para cair aqui: o insert não gravou porque o nome já existia.
+    throw new Error('o procedimento não entrou nem foi achado pela chave do índice');
+  }
+  return deQuemGanhou;
 }
 
-/** O código do Postgres para violação de constraint de exclusão: horário ocupado. */
+/** Conflito de constraint de exclusão: o horário é de outro paciente. */
 const CONFLITO_DE_AGENDA = '23P01';
 
+/**
+ * Chave única violada. É erro ESPERADO desta rota desde que o nome do procedimento
+ * passou a ser único por clínica (migração 0013) e o telefone do paciente é único
+ * (`patients_clinic_id_phone_e164_key`): o cadastro pode mudar embaixo da planilha,
+ * pela tela ou pelo WhatsApp, enquanto ela sobe.
+ */
+const CHAVE_DUPLICADA = '23505';
+
+function codigoDoPostgres(erro: unknown): string | undefined {
+  if (typeof erro !== 'object' || erro === null) return undefined;
+  const codigo = (erro as { code?: unknown }).code;
+  return typeof codigo === 'string' ? codigo : undefined;
+}
+
+/**
+ * Uma linha da planilha, inteira, dentro do savepoint.
+ *
+ * O SAVEPOINT COBRE TUDO QUE A LINHA FAZ, e antes não cobria: paciente, profissional e
+ * procedimento eram achados ou criados ANTES dele. Violação de constraint aborta a
+ * transação inteira no Postgres, então qualquer erro naqueles três passos escapava de
+ * `gravarLinha` fora de savepoint nenhum e levava embora a importação toda — não a
+ * linha. Nada precisa ficar de fora: não há passo da linha que deva sobreviver à
+ * recusa dela.
+ */
 export async function gravarLinha(
+  trx: Trx,
+  clinicId: string,
+  linha: LinhaDaAgenda,
+  fuso: string,
+): Promise<ResultadoDaLinha> {
+  await trx.executeQuery(sql`savepoint linha_da_planilha`.compile(trx));
+  try {
+    const r = await gravarDentroDoSavepoint(trx, clinicId, linha, fuso);
+    await trx.executeQuery(sql`release savepoint linha_da_planilha`.compile(trx));
+    return r;
+  } catch (erro) {
+    await trx.executeQuery(sql`rollback to savepoint linha_da_planilha`.compile(trx));
+    const codigo = codigoDoPostgres(erro);
+    if (codigo === CONFLITO_DE_AGENDA) {
+      return { entrou: false, repetida: false, motivo: 'horario_ocupado' };
+    }
+    if (codigo === CHAVE_DUPLICADA) {
+      return { entrou: false, repetida: false, motivo: 'cadastro_em_conflito' };
+    }
+    throw erro;
+  }
+}
+
+async function gravarDentroDoSavepoint(
   trx: Trx,
   clinicId: string,
   linha: LinhaDaAgenda,
@@ -126,45 +210,31 @@ export async function gravarLinha(
   const profissionalId = await profissionalPorNome(trx, clinicId, linha.profissional);
   const proc = await procedimentoPorNome(trx, clinicId, linha.procedimento);
 
-  await trx.executeQuery(sql`savepoint linha_da_planilha`.compile(trx));
-  try {
-    // O horário local vira instante AQUI, com o fuso cadastrado da clínica:
-    // "14:00" na planilha é 14h na clínica, e é o Postgres que sabe aplicar o
-    // horário de verão daquela data sem biblioteca nenhuma.
-    const r = await sql<{ id: string }>`
-      insert into app.appointments
-        (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
-         price_cents, source)
-      values (
-        ${clinicId}, ${profissionalId}, ${achado.paciente.id}, ${proc.id},
-        (${linha.inicioLocal}::timestamp at time zone ${fuso}),
-        (${linha.inicioLocal}::timestamp at time zone ${fuso}) + make_interval(mins => ${proc.duracaoMin}),
-        ${proc.precoCents}, 'importado')
-      -- O predicado do índice vai no alvo porque ele é PARCIAL: sem ele o Postgres
-      -- não infere qual índice usar. E o alvo é explícito porque "do nothing" sem
-      -- alvo engole violação de EXCLUDE junto, misturando "já estava aqui" com
-      -- "este horário é de outro paciente".
-      on conflict (clinic_id, professional_id, starts_at, patient_id)
-        where (source = 'importado') do nothing
-      returning id
-    `.execute(trx);
+  // O horário local vira instante AQUI, com o fuso cadastrado da clínica:
+  // "14:00" na planilha é 14h na clínica, e é o Postgres que sabe aplicar o
+  // horário de verão daquela data sem biblioteca nenhuma.
+  const r = await sql<{ id: string }>`
+    insert into app.appointments
+      (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at,
+       price_cents, source)
+    values (
+      ${clinicId}, ${profissionalId}, ${achado.paciente.id}, ${proc.id},
+      (${linha.inicioLocal}::timestamp at time zone ${fuso}),
+      (${linha.inicioLocal}::timestamp at time zone ${fuso}) + make_interval(mins => ${proc.duracaoMin}),
+      ${proc.precoCents}, 'importado')
+    -- O predicado do índice vai no alvo porque ele é PARCIAL: sem ele o Postgres
+    -- não infere qual índice usar. E o alvo é explícito porque "do nothing" sem
+    -- alvo engole violação de EXCLUDE junto, misturando "já estava aqui" com
+    -- "este horário é de outro paciente".
+    on conflict (clinic_id, professional_id, starts_at, patient_id)
+      where (source = 'importado') do nothing
+    returning id
+  `.execute(trx);
 
-    await trx.executeQuery(sql`release savepoint linha_da_planilha`.compile(trx));
-    // Nenhuma linha devolvida: a chave natural já existia. Reimportação, nada mudou.
-    return r.rows.length === 0
-      ? { entrou: false, repetida: true }
-      : { entrou: true, repetida: false };
-  } catch (erro) {
-    await trx.executeQuery(sql`rollback to savepoint linha_da_planilha`.compile(trx));
-    if (
-      typeof erro === 'object' &&
-      erro !== null &&
-      (erro as { code?: string }).code === CONFLITO_DE_AGENDA
-    ) {
-      return { entrou: false, repetida: false, motivo: 'horario_ocupado' };
-    }
-    throw erro;
-  }
+  // Nenhuma linha devolvida: a chave natural já existia. Reimportação, nada mudou.
+  return r.rows.length === 0
+    ? { entrou: false, repetida: true }
+    : { entrou: true, repetida: false };
 }
 
 export interface Contas {

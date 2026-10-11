@@ -12,7 +12,7 @@ import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fas
 import { SignJWT } from 'jose';
 import type { PgBoss } from 'pg-boss';
 import type pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { construirApp } from '../src/app';
 import type { Config } from '../src/config';
 import { comRecurso } from '../src/rotas/contexto';
@@ -502,5 +502,108 @@ describe('o modo convidado desliga o que não é nosso', () => {
       Number(rows[0]?.acoes),
       'consulta importada ficou sem confirmação: o modo convidado não serve para nada assim',
     ).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * O procedimento é achado pela CHAVE DO ÍNDICE.
+ *
+ * A migração 0013 tornou o nome único por clínica em `(clinic_id, lower(name))`, e a
+ * busca da importação era por `name = $1`. Chave de busca diferente da chave de
+ * gravação: planilha com "limpeza" numa clínica que já tem "Limpeza" não achava nada,
+ * tentava inserir, e o banco recusava com 23505.
+ *
+ * E a recusa não custava a linha: a busca do procedimento roda antes do insert da
+ * consulta, e o savepoint abria só depois dela. O erro escapava de `gravarLinha` sem
+ * savepoint nenhum e levava a importação inteira.
+ */
+describe('o procedimento vem pela chave do índice, não pela caixa das letras', () => {
+  it('"limpeza" na planilha reaproveita a "Limpeza" cadastrada, com o preço dela', async () => {
+    const r = relatorioDe(
+      await importar(['Caixa Baixa;11933110001;Dra. Ana;05/10/2026 09:00;limpeza']),
+    );
+    expect(r).toMatchObject({ total: 1, entraram: 1, recusadas: 0 });
+
+    const { rows } = await owner.query<{ preco: string; minutos: string; nome: string }>(
+      `select a.price_cents as preco,
+              extract(epoch from (a.ends_at - a.starts_at)) / 60 as minutos,
+              p.name as nome
+         from app.appointments a join app.procedures p on p.id = a.procedure_id
+        where a.clinic_id = $1`,
+      [c.clinicA],
+    );
+    // O cadastro da clínica, não um procedimento novo de 30 minutos e preço zero.
+    expect(rows[0]?.nome).toBe('Limpeza');
+    expect(rows[0]?.preco).toBe('25000');
+    expect(Number(rows[0]?.minutos)).toBe(60);
+  });
+
+  it('e não cria sombra: continua existindo um só procedimento com esse nome', async () => {
+    await importar([
+      'Um;11933110002;Dra. Ana;05/10/2026 09:00;limpeza',
+      'Dois;11933110003;Dra. Ana;05/10/2026 10:00;LIMPEZA',
+      'Três;11933110004;Dra. Ana;05/10/2026 11:00;Limpeza',
+    ]);
+    const { rows } = await owner.query<{ n: string }>(
+      `select count(*) as n from app.procedures
+        where clinic_id = $1 and lower(name) = 'limpeza'`,
+      [c.clinicA],
+    );
+    expect(rows[0]?.n, 'a importação cadastrou uma sombra do procedimento').toBe('1');
+  });
+
+  it('caixa diferente no meio do arquivo não leva embora as linhas que já entraram', async () => {
+    const r = relatorioDe(
+      await importar([
+        'Antes;11933110005;Dra. Ana;05/10/2026 09:00;Limpeza',
+        'Caixa;11933110006;Dra. Ana;05/10/2026 10:00;limpeza',
+        'Depois;11933110007;Dra. Ana;05/10/2026 11:00;Implante',
+      ]),
+    );
+    expect(r).toMatchObject({ total: 3, entraram: 3, repetidas: 0, recusadas: 0 });
+    expect(await quantasConsultas()).toBe(3);
+  });
+});
+
+/**
+ * Chave duplicada em QUALQUER passo da linha custa a linha, não o arquivo.
+ *
+ * O savepoint cobre tudo que a linha faz — paciente, profissional, procedimento e
+ * consulta —, e não só o insert da consulta. O gatilho abaixo força `unique_violation`
+ * no primeiro passo, o do paciente, que é o passo que antes rodava fora do savepoint:
+ * é o telefone que tem índice único (`patients_clinic_id_phone_e164_key`) e é o
+ * WhatsApp que pode cadastrar o mesmo número enquanto a planilha sobe.
+ */
+describe('23505 no cadastro recusa a linha, não a importação', () => {
+  beforeEach(async () => {
+    await owner.query(`
+      create or replace function app.sabotar_paciente() returns trigger as $$
+      begin
+        if new.name = 'Sabota' then
+          raise exception 'cadastro mudou embaixo da planilha' using errcode = '23505';
+        end if;
+        return new;
+      end $$ language plpgsql`);
+    await owner.query(`
+      create trigger sabotar_paciente before insert on app.patients
+        for each row execute function app.sabotar_paciente()`);
+  });
+
+  afterEach(async () => {
+    await owner.query('drop trigger if exists sabotar_paciente on app.patients');
+    await owner.query('drop function if exists app.sabotar_paciente()');
+  });
+
+  it('a linha vem recusada com motivo e as outras entram', async () => {
+    const r = relatorioDe(
+      await importar([
+        'Primeira;11933220011;Dra. Ana;05/10/2026 09:00;Limpeza',
+        'Sabota;11933220012;Dra. Ana;05/10/2026 10:00;Limpeza',
+        'Terceira;11933220013;Dra. Ana;05/10/2026 11:00;Limpeza',
+      ]),
+    );
+    expect(r).toMatchObject({ total: 3, entraram: 2, repetidas: 0, recusadas: 1 });
+    expect(r.recusas[0]).toMatchObject({ linha: 3, motivo: 'cadastro_em_conflito' });
+    expect(await quantasConsultas(), 'a importação inteira morreu com uma linha').toBe(2);
   });
 });

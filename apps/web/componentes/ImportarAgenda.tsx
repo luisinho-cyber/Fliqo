@@ -239,6 +239,8 @@ const MOTIVOS: Record<string, string> = {
   data_invalida: 'data ou hora que não deu para ler',
   sem_procedimento: 'sem procedimento',
   horario_ocupado: 'esse horário já é de outro paciente na Fliqo',
+  cadastro_em_conflito:
+    'o cadastro de paciente ou procedimento mudou enquanto a planilha subia; importe o arquivo de novo',
 };
 
 function Relatorio({
