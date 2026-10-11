@@ -1,0 +1,91 @@
+{
+  "sobre": "Catálogo inicial de procedimentos, para a clínica não começar numa tela vazia. Preço e duração são ponto de partida de mercado, não recomendação: a clínica edita tudo na tela /procedimentos. Preço em centavos inteiros.",
+  "odontologia": [
+    {
+      "nome": "Consulta de avaliação",
+      "duracaoMinutos": 30,
+      "precoCents": 15000,
+      "retorno": { "exige": false }
+    },
+    {
+      "nome": "Limpeza e profilaxia",
+      "duracaoMinutos": 45,
+      "precoCents": 18000,
+      "retorno": { "exige": true, "emDias": 180 }
+    },
+    {
+      "nome": "Restauração em resina",
+      "duracaoMinutos": 60,
+      "precoCents": 28000,
+      "retorno": { "exige": false }
+    },
+    {
+      "nome": "Extração de dente",
+      "duracaoMinutos": 45,
+      "precoCents": 35000,
+      "retorno": { "exige": true, "emDias": 7 }
+    },
+    {
+      "nome": "Tratamento de canal",
+      "duracaoMinutos": 90,
+      "precoCents": 90000,
+      "retorno": { "exige": true, "emDias": 15 }
+    },
+    {
+      "nome": "Clareamento em consultório",
+      "duracaoMinutos": 60,
+      "precoCents": 85000,
+      "retorno": { "exige": false }
+    },
+    {
+      "nome": "Coroa de porcelana",
+      "duracaoMinutos": 60,
+      "precoCents": 180000,
+      "retorno": { "exige": true, "emDias": 15 }
+    },
+    {
+      "nome": "Implante unitário",
+      "duracaoMinutos": 90,
+      "precoCents": 350000,
+      "retorno": { "exige": true, "emDias": 10 }
+    }
+  ],
+  "estetica": [
+    {
+      "nome": "Toxina botulínica — terço superior",
+      "duracaoMinutos": 45,
+      "precoCents": 120000,
+      "retorno": { "exige": true, "emDias": 21 }
+    },
+    {
+      "nome": "Preenchimento labial",
+      "duracaoMinutos": 60,
+      "precoCents": 150000,
+      "retorno": { "exige": true, "emDias": 30 }
+    },
+    {
+      "nome": "Harmonização de mandíbula",
+      "duracaoMinutos": 75,
+      "precoCents": 280000,
+      "retorno": { "exige": true, "emDias": 30 }
+    },
+    {
+      "nome": "Bioestimulador de colágeno",
+      "duracaoMinutos": 60,
+      "precoCents": 190000,
+      "retorno": { "exige": true, "emDias": 45 }
+    },
+    {
+      "nome": "Peeling químico",
+      "duracaoMinutos": 45,
+      "precoCents": 45000,
+      "retorno": { "exige": true, "emDias": 15 }
+    },
+    {
+      "nome": "Microagulhamento",
+      "duracaoMinutos": 60,
+      "precoCents": 60000,
+      "retorno": { "exige": true, "emDias": 30 }
+    }
+  ]
+}

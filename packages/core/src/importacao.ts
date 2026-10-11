@@ -210,8 +210,8 @@ export function adivinharMapa(cabecalho: readonly string[]): Partial<MapaDeColun
  * tem de escrever a frase dele — motivo sem frase vira "erro desconhecido", que não
  * ajuda ninguém a consertar a planilha.
  *
- * `horario_ocupado` é o único que não nasce aqui: ele vem do banco, que é quem
- * decide conflito de agenda.
+ * `horario_ocupado` e `cadastro_em_conflito` são os dois que não nascem aqui: vêm do
+ * banco, que é quem decide conflito de agenda e unicidade de cadastro.
  */
 export const MOTIVOS_DE_RECUSA = [
   'colunas_de_menos',
@@ -221,6 +221,7 @@ export const MOTIVOS_DE_RECUSA = [
   'data_invalida',
   'sem_procedimento',
   'horario_ocupado',
+  'cadastro_em_conflito',
 ] as const;
 export type MotivoDeRecusa = (typeof MOTIVOS_DE_RECUSA)[number];
 
