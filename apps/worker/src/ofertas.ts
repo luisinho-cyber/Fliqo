@@ -2,7 +2,8 @@ import { planejarOferta, type ConfigFila } from '@fliqo/core';
 import { agenda, alertas, fila, ia, numeros, pacientes, type Trx } from '@fliqo/db';
 import { PerfilClinicaSchema } from '@fliqo/ai';
 import { sql } from 'kysely';
-import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
+import { TEMPLATES, TEMPLATES_META, valoresDoCorpo, type ClienteWhatsApp } from '@fliqo/whatsapp';
+import { dadosDaMensagem } from './dados-da-mensagem';
 import { enviarAtivo } from './envio';
 
 /**
@@ -28,8 +29,17 @@ const MAX_OFERTAS_PADRAO = 3;
 
 export interface ResultadoDaRodada {
   ofertados: number;
-  /** Quem estava na vez mas não recebeu, e por quê. Vira log, não alerta. */
-  pulados: { pacienteId: string; motivo: 'sem_consentimento' | 'teto_do_dia' }[];
+  /**
+   * Quem estava na vez mas não recebeu, e por quê. Vira log, não alerta.
+   *
+   * `sem_dados_da_mensagem` é cadastro incompleto — paciente ou profissional que a consulta
+   * aponta e que não existe mais, ou nome em branco. Um valor só para os dois casos porque a
+   * conduta é a mesma: não oferta, registra, e a próxima pessoa da fila é chamada.
+   */
+  pulados: {
+    pacienteId: string;
+    motivo: 'sem_consentimento' | 'teto_do_dia' | 'sem_dados_da_mensagem';
+  }[];
   motivo?: 'em_cima_da_hora' | 'sem_tempo_para_resposta' | 'fila_vazia' | 'sem_numero';
 }
 
@@ -165,11 +175,40 @@ export async function abrirRodada(
       plano.expiraEm,
     );
 
+    /*
+     * A vaga agora é DITA na mensagem. Antes o paciente recebia "abriu um horário" e um
+     * botão que marca a consulta, sem saber se era terça às 8h ou sexta às 19h — e o dado
+     * estava aqui, em `vaga.inicio`, desde sempre.
+     */
+    const dados = await dadosDaMensagem(trx, clinicId, {
+      patient_id: candidato.patient_id,
+      professional_id: vaga.profissionalId,
+      starts_at: vaga.inicio,
+    });
+    if (!dados.ok) {
+      await fila.expirarOferta(trx, oferta.id);
+      saida.pulados.push({ pacienteId: candidato.patient_id, motivo: 'sem_dados_da_mensagem' });
+      continue;
+    }
+
+    const corpo = valoresDoCorpo(TEMPLATES_META.ofertaDeVaga, {
+      nome_paciente: dados.dados.pacienteNome,
+      data: dados.dados.data,
+      hora: dados.dados.hora,
+      nome_clinica: dados.dados.clinicaNome,
+    });
+    if (!corpo.ok) {
+      await fila.expirarOferta(trx, oferta.id);
+      saida.pulados.push({ pacienteId: candidato.patient_id, motivo: 'sem_dados_da_mensagem' });
+      continue;
+    }
+
     const envio = await enviarAtivo(trx, cliente, {
       clinicId,
       pacienteId: candidato.patient_id,
       phoneNumberId,
       template: TEMPLATES.ofertaDeVaga.nome,
+      variaveis: corpo.valores,
       botoes: [...TEMPLATES.ofertaDeVaga.botoes],
     });
 

@@ -3,9 +3,9 @@ import type {
   EnvioDeDigitando,
   EnvioDeTemplate,
   EnvioDeTexto,
-  MotivoDeFalha,
   ResultadoEnvio,
 } from './cliente';
+import { classificarFalha } from './erros-meta';
 import { LimitadorPorNumero, RELOGIO_REAL, type Relogio } from './limite';
 
 /** Quanto esperar antes de cada nova tentativa. Só para falha temporária. */
@@ -101,8 +101,9 @@ export class ClienteMeta implements ClienteWhatsApp {
   }
 
   async #postar(phoneNumberId: string, corpo: unknown): Promise<ResultadoEnvio> {
-    let ultimo: { motivo: MotivoDeFalha; detalhe: string } = {
+    let ultimo: Omit<Extract<ResultadoEnvio, { ok: false }>, 'ok'> = {
       motivo: 'temporario',
+      falha: 'instabilidade_da_meta',
       detalhe: 'sem tentativa',
     };
 
@@ -114,7 +115,7 @@ export class ClienteMeta implements ClienteWhatsApp {
       if (r.ok) return r;
       // Recusa definitiva não melhora com repetição.
       if (r.motivo === 'recusado') return r;
-      ultimo = { motivo: r.motivo, detalhe: r.detalhe };
+      ultimo = { motivo: r.motivo, falha: r.falha, detalhe: r.detalhe };
     }
 
     return { ok: false, ...ultimo };
@@ -139,19 +140,26 @@ export class ClienteMeta implements ClienteWhatsApp {
       if (resposta.ok) {
         const wamid = dados.messages?.[0]?.id;
         return wamid === undefined
-          ? { ok: false, motivo: 'temporario', detalhe: 'resposta sem wamid' }
+          ? {
+              ok: false,
+              motivo: 'temporario',
+              falha: 'instabilidade_da_meta',
+              detalhe: 'resposta sem wamid',
+            }
           : { ok: true, wamid };
       }
 
-      const detalhe = dados.error?.message ?? `http ${resposta.status}`;
-      const motivo: MotivoDeFalha =
-        resposta.status === 429 || resposta.status >= 500 ? 'temporario' : 'recusado';
-      return { ok: false, motivo, detalhe };
+      const { falha, motivo, conduta } = classificarFalha(resposta.status, dados.error?.code);
+      const daMeta = dados.error?.message ?? `http ${resposta.status}`;
+      // A conduta entra no detalhe porque é ela que o alerta e o log carregam: a frase da
+      // Meta diz o que aconteceu, e só a nossa diz o que fazer a respeito.
+      return { ok: false, motivo, falha, detalhe: `${daMeta} — ${conduta}` };
     } catch (erro) {
       // Rede caiu: vale tentar de novo.
       return {
         ok: false,
         motivo: 'temporario',
+        falha: 'instabilidade_da_meta',
         detalhe: erro instanceof Error ? erro.message : 'falha de rede',
       };
     }

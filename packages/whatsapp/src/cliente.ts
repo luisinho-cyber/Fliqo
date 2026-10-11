@@ -1,4 +1,5 @@
-import { PAYLOAD_BOTOES } from '@fliqo/core';
+import type { FalhaDaMeta } from './erros-meta';
+import { parametrosDoCorpo, TEMPLATES_META, type ChaveDeTemplate } from './templates';
 
 /**
  * O que o worker precisa do WhatsApp. É uma interface e não uma classe porque o
@@ -41,7 +42,8 @@ export interface EnvioDeTexto {
 }
 
 export type ResultadoEnvio =
-  { ok: true; wamid: string } | { ok: false; motivo: MotivoDeFalha; detalhe: string };
+  | { ok: true; wamid: string }
+  | { ok: false; motivo: MotivoDeFalha; falha: FalhaDaMeta; detalhe: string };
 
 /**
  * `recusado` é definitivo (template errado, número inválido): repetir não adianta.
@@ -49,23 +51,35 @@ export type ResultadoEnvio =
  */
 export type MotivoDeFalha = 'recusado' | 'temporario';
 
-/** Templates da régua de confirmação. Os payloads vêm do core: se divergirem, o botão que o paciente aperta não é entendido na volta. */
+/**
+ * Os templates que o worker envia, na forma que o envio precisa: nome, quantas variáveis e os
+ * payloads dos botões, em ordem.
+ *
+ * DERIVADO de `TEMPLATES_META`, não escrito à mão. Antes havia duas listas — esta e o catálogo
+ * — e duas listas da mesma coisa divergem: bastava acrescentar uma variável no corpo e esquecer
+ * de mudar a contagem aqui para todo envio daquele template falhar com erro 132000. Agora a
+ * contagem é CONTADA do corpo e a ordem dos botões é a mesma do registro.
+ */
 export const TEMPLATES = {
-  confirmacao: {
-    nome: 'confirmacao_consulta',
-    botoes: [PAYLOAD_BOTOES.CONFIRMAR, PAYLOAD_BOTOES.REMARCAR, PAYLOAD_BOTOES.CANCELAR],
-  },
-  lembreteFinal: { nome: 'lembrete_final', botoes: [] as string[] },
-  ofertaDeVaga: { nome: 'oferta_de_vaga', botoes: [PAYLOAD_BOTOES.QUERO_VAGA] },
-  /**
-   * Aviso de atraso. "Prefiro remarcar" reusa o payload de remarcação: o atraso
-   * é da clínica, e o fluxo de remarcação não cobra taxa de cancelamento —
-   * quem remarca não cancelou.
-   */
-  atraso: {
-    nome: 'aviso_de_atraso',
-    botoes: [PAYLOAD_BOTOES.CIENTE_DO_ATRASO, PAYLOAD_BOTOES.REMARCAR],
-  },
-  /** O atraso passou: o horário marcado volta a valer. */
-  normalizou: { nome: 'atraso_normalizou', botoes: [] as string[] },
+  confirmacao: paraEnvio('confirmacao'),
+  lembreteFinal: paraEnvio('lembreteFinal'),
+  ofertaDeVaga: paraEnvio('ofertaDeVaga'),
+  atraso: paraEnvio('avisoDeAtraso'),
+  normalizou: paraEnvio('atrasoNormalizou'),
 } as const;
+
+export interface TemplateDeEnvio {
+  readonly nome: string;
+  /** Quantos `{{n}}` o corpo aprovado tem. Contado do corpo, nunca declarado. */
+  readonly variaveis: number;
+  readonly botoes: readonly string[];
+}
+
+function paraEnvio(chave: ChaveDeTemplate): TemplateDeEnvio {
+  const def = TEMPLATES_META[chave];
+  return {
+    nome: def.nome,
+    variaveis: parametrosDoCorpo(def.corpo).length,
+    botoes: def.botoes.map((b) => b.payload),
+  };
+}

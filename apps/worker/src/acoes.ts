@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import { agenda, alertas, numeros, withClinic, type Db, type Trx } from '@fliqo/db';
-import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
+import { TEMPLATES, TEMPLATES_META, valoresDoCorpo, type ClienteWhatsApp } from '@fliqo/whatsapp';
+import { dadosDaMensagem } from './dados-da-mensagem';
 import { enviarAtivo } from './envio';
 import { expirarEPassarAdiante } from './ofertas';
 
@@ -79,11 +80,32 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
+  /*
+   * As variáveis saem do CORPO aprovado, não de um array escrito aqui: `valoresDoCorpo` lê a
+   * ordem de aparição em `TEMPLATES_META` e devolve os valores nessa ordem. Montar o array à
+   * mão aqui seria recriar a chance de trocar data por hora — erro que a Meta aceita calada e
+   * que só o paciente vê.
+   */
+  const dados = await dadosDaMensagem(trx, acao.clinic_id, consulta);
+  if (!dados.ok) return { ok: false, motivo: dados.motivo, definitivo: true };
+
+  const corpo = valoresDoCorpo(TEMPLATES_META.confirmacao, {
+    nome_paciente: dados.dados.pacienteNome,
+    nome_profissional: dados.dados.profissionalNome,
+    data: dados.dados.data,
+    hora: dados.dados.hora,
+    nome_clinica: dados.dados.clinicaNome,
+  });
+  if (!corpo.ok) {
+    return { ok: false, motivo: `${corpo.motivo}: ${corpo.parametro}`, definitivo: true };
+  }
+
   const r = await enviarAtivo(trx, dep.whatsapp, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,
     template: TEMPLATES.confirmacao.nome,
+    variaveis: corpo.valores,
     botoes: [...TEMPLATES.confirmacao.botoes],
     consultaId: consulta.id,
   });

@@ -26,7 +26,8 @@
     "build:web": "npm --prefix apps/web run build",
     "e2e:demo": "npm --prefix apps/demo run e2e",
     "db:papel-app": "node packages/db/scripts/papel-app.mjs",
-    "db:conferir-rls": "node packages/db/scripts/rls-definer.mjs"
+    "db:conferir-rls": "node packages/db/scripts/rls-definer.mjs",
+    "whatsapp:registrar-templates": "tsx packages/whatsapp/scripts/registrar-templates.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

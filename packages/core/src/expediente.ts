@@ -152,3 +152,43 @@ export function semanaNoFuso(
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return { inicio: dias[0]!.inicio, fim: dias[6]!.fim, dias };
 }
+
+/**
+ * A data e a hora como a MENSAGEM do paciente as mostra, separadas.
+ *
+ * Separadas porque o template as recebe em duas variáveis, e isso não é capricho da Meta:
+ * ela recusa duas variáveis coladas sem texto entre elas, e um `{{data}}{{hora}}` sairia
+ * como um carimbo colado no celular de quem lê. Com duas, o corpo diz "para terça, 14/10,
+ * às 14:30" — e o "às" é texto aprovado, não concatenação nossa.
+ *
+ * A formatação mora AQUI e não no template: template é texto aprovado pela Meta, e mudar
+ * "14:30" para "14h30" não pode custar uma rodada de revisão.
+ *
+ * `toLocaleString` com `timeZone` explícito é determinístico para a mesma entrada, então
+ * isto continua sendo função pura — não há relógio escondido.
+ */
+export function dataDaMensagem(instante: Date, fuso: string): string {
+  // "terça-feira, 14/10" encurtado para "terça, 14/10": o paciente lê de relance.
+  const completo = instante.toLocaleDateString('pt-BR', {
+    timeZone: fuso,
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+  });
+  return completo.replace('-feira', '');
+}
+
+/**
+ * A hora, `HH:MM`, no fuso da clínica.
+ *
+ * `HH:MM` e não "14h30" porque `aviso_de_atraso` já manda assim desde o primeiro envio, e
+ * duas grafias de hora entre templates da mesma clínica é o tipo de detalhe que faz o
+ * paciente reler a mensagem.
+ */
+export function horaDaMensagem(instante: Date, fuso: string): string {
+  return instante.toLocaleTimeString('pt-BR', {
+    timeZone: fuso,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
