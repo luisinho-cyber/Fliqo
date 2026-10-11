@@ -1,3 +1,4 @@
+import { AMBIENTE_DA_API, AMBIENTE_DO_WORKER } from '@fliqo/core';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -109,10 +110,19 @@ describe.each(SERVICOS)('$nome', ({ pasta, pacote }) => {
 });
 
 describe('a porta vem do ambiente, nunca fixa no código', () => {
-  it('api e worker leem PORT da configuração', () => {
-    for (const config of ['apps/api/src/config.ts', 'apps/worker/src/config.ts']) {
-      expect(readFileSync(RAIZ + config, 'utf8'), `${config} não lê PORT`).toContain('PORT');
-    }
+  it('api e worker declaram PORT no esquema, com padrões diferentes', () => {
+    /*
+     * Pelo ESQUEMA, não pelo texto do config.ts: a configuração dos dois passou a sair de
+     * packages/core/src/ambiente.ts, e guarda que confere texto de arquivo deixa de ver a
+     * coisa no dia em que ela muda de lugar — foi o que aconteceu com esta.
+     *
+     * Padrões diferentes porque os dois sobem na mesma máquina em desenvolvimento: iguais,
+     * o segundo não escutaria.
+     */
+    const porta = (esquema: readonly { nome: string; padrao?: string | number }[]) =>
+      esquema.find((v) => v.nome === 'PORT');
+    expect(porta(AMBIENTE_DA_API)?.padrao).toBe(3000);
+    expect(porta(AMBIENTE_DO_WORKER)?.padrao).toBe(3100);
   });
 
   it('o painel usa a PORT que o Railway injeta', () => {

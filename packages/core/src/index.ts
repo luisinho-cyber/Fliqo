@@ -10,3 +10,4 @@ export * from './pontualidade';
 export * from './hoje';
 export * from './telefone';
 export * from './importacao';
+export * from './ambiente';
