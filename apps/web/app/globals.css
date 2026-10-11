@@ -247,6 +247,50 @@
     z-index: 1;
   }
 
+  /*
+   * Planejado × real fora da Linha do Dia: o mesmo par, pela FORMA.
+   *
+   * Na faixa do dia, o contorno tracejado é onde a consulta deveria começar e o
+   * bloco sólido é onde ela começa de verdade; lá o par é âmbar porque a distância
+   * entre os dois É o atraso acontecendo agora.
+   *
+   * Aqui a pergunta é a mesma — o que foi planejado contra o que aconteceu — mas o
+   * assunto é passado MEDIDO, não este minuto: a barra vazada é a duração que o
+   * cadastro reserva, a cheia é a que o procedimento leva. Então a forma é a mesma e
+   * a cor NÃO é: âmbar quer dizer este minuto ou o atraso em curso, e um terceiro
+   * significado o deixaria de ser legível de relance, que é a única coisa que ele
+   * existe para fazer.
+   *
+   * `ink-3` é marca não textual com piso de 3:1, que é exatamente este trabalho.
+   * Vazado contra cheio carrega a leitura sozinho — é a regra "nunca só matiz" levada
+   * até o fim, onde não há matiz nenhum. Há teste que amarra a forma nos dois lugares
+   * e exige que só a faixa use âmbar.
+   */
+  .medida {
+    position: relative;
+    display: block;
+    min-width: 140px;
+  }
+  /*
+   * Cada uma com a regra inteira, sem lista compartilhada: é uma declaração que
+   * separa planejado de real, e declaração dividida entre duas regras é a que se
+   * perde num refactor sem quebrar teste nenhum. A guarda lê o corpo de cada
+   * seletor, como faz com os blocos da faixa.
+   */
+  .medida .planejado {
+    display: block;
+    height: 12px;
+    border-radius: var(--radius-sm);
+    border: 1.5px dashed var(--color-ink-3);
+  }
+  .medida .real {
+    display: block;
+    height: 12px;
+    border-radius: var(--radius-sm);
+    margin-top: 3px;
+    background-color: var(--color-ink-3);
+  }
+
   /* Glifo por severidade: quadrado = risco, círculo = atraso, losango = resolvido. */
   .glifo {
     width: 10px;

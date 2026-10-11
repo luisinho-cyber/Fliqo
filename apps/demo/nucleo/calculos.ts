@@ -8,7 +8,7 @@ import {
   projetarDia,
   projetarFluxo,
   sugerirDuracao,
-  TAXAS_PADRAO,
+  TAXAS_DA_DEMONSTRACAO,
   type Aviso,
   type ConsultaDoDia,
   type LancamentoCaixa,
@@ -186,7 +186,7 @@ function agendaDosProximosDias(apartirDe: number, dias: number) {
 export function fluxoProjetado(
   consultas: ConsultaDemo[],
   dias = 45,
-  taxas: TaxasComparecimento = TAXAS_PADRAO,
+  taxas: TaxasComparecimento = TAXAS_DA_DEMONSTRACAO,
 ) {
   const hoje = iso(new Date());
   const agenda = consultas

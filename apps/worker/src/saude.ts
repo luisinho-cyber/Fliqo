@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 /**
  * O health check do worker.
@@ -87,6 +87,11 @@ export interface ConfigSaude {
   batimentos: Record<string, Batimento>;
   janelaMs?: number;
   agora?: () => number;
+  /**
+   * Para onde vai o erro de dentro do handler. Obrigatório: o corpo da resposta é genérico,
+   * então sem isto o erro sumiria sem deixar rastro.
+   */
+  aoFalhar: (erro: unknown) => void;
 }
 
 /**
@@ -95,7 +100,7 @@ export interface ConfigSaude {
  */
 export function servidorDeSaude(cfg: ConfigSaude): Server {
   const agora = cfg.agora ?? Date.now;
-  return createServer((req, res) => {
+  const responder = (req: IncomingMessage, res: ServerResponse): void => {
     if (req.url !== '/health') {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end('{"erro":"nao_encontrado"}');
@@ -104,5 +109,20 @@ export function servidorDeSaude(cfg: ConfigSaude): Server {
     const veredito = vereditoDeSaude(cfg.batimentos, agora(), cfg.janelaMs);
     res.writeHead(veredito.ok ? 200 : 503, { 'content-type': 'application/json' });
     res.end(JSON.stringify(veredito));
+  };
+
+  /*
+   * `node:http` não tem rede de proteção: exceção dentro do handler vira exceção não tratada
+   * do PROCESSO, e o worker cai inteiro — os laços de ações e de atrasos junto, e o que estava
+   * em `executando` espera o requeue. Um bug numa rota de diagnóstico não pode parar a régua.
+   */
+  return createServer((req, res) => {
+    try {
+      responder(req, res);
+    } catch (erro) {
+      cfg.aoFalhar(erro);
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+      res.end('{"erro":"erro_interno"}');
+    }
   }).listen(cfg.porta, '0.0.0.0');
 }

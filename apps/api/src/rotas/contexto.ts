@@ -1,4 +1,5 @@
-import { withClinic, type Db, type Trx } from '@fliqo/db';
+import { recursoLiberado, type RecursoDoModoProprio } from '@fliqo/core';
+import { hoje, withClinic, type Db, type Trx } from '@fliqo/db';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PgBoss } from 'pg-boss';
 import { autenticar, membroDaClinica, type Usuario } from '../auth';
@@ -31,6 +32,39 @@ export type SaidaPainel<T> = { respondido: true } | { respondido: false; valor: 
  * Pedir outra clínica não adianta: a RLS já limitou clinic_members ao tenant da
  * transação, então a consulta não acha a pessoa e o acesso é negado.
  */
+/**
+ * Roda `fn` só se o recurso existir no modo da clínica; 403 em modo convidado.
+ *
+ * Existe como embrulho de `comUsuario`, e não como condição dentro de cada rota,
+ * porque a regra é a mesma para todas e porque a lista de recursos é enumerada num
+ * lugar só (`RECURSOS_DO_MODO_PROPRIO`, em core/importacao.ts). Rota nova de
+ * prontuário ou de financeiro passa por aqui ou não passa por nada — e um teste
+ * exige os dois na lista.
+ *
+ * O 403 diz o motivo, porque a tela precisa escrever "estes dados vivem no outro
+ * sistema" em vez de "acesso negado": não é falta de permissão, é a clínica tendo
+ * dito onde está a verdade.
+ */
+export async function comRecurso<T>(
+  recurso: RecursoDoModoProprio,
+  ctx: ContextoPainel,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  fn: (trx: Trx, usuario: Usuario) => Promise<T>,
+): Promise<SaidaPainel<T>> {
+  const r = await comUsuario(ctx, req, reply, async (trx, usuario) => {
+    const clinica = await hoje.dadosDaClinica(trx, usuario.clinicId);
+    if (!recursoLiberado(recurso, clinica)) return { desligado: true as const };
+    return { desligado: false as const, valor: await fn(trx, usuario) };
+  });
+  if (r.respondido) return { respondido: true };
+  if (r.valor.desligado) {
+    await reply.code(403).send({ erro: 'recurso_do_modo_proprio', recurso });
+    return { respondido: true };
+  }
+  return { respondido: false, valor: r.valor.valor };
+}
+
 export async function comUsuario<T>(
   ctx: ContextoPainel,
   req: FastifyRequest,
