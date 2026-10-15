@@ -117,6 +117,16 @@ describe('proteções de saída', () => {
     expect(checarSaida('Resultado garantido!', []).ok).toBe(false);
     expect(checarSaida('Você tem uma inflamação, pode tomar ibuprofeno.', []).ok).toBe(false);
   });
+  it('bloqueia diagnóstico que começa com palavra acentuada', () => {
+    // O \b do regex só conhece letra sem acento: o diagnóstico escrito do jeito
+    // mais natural ("é provavelmente uma infecção") atravessava a proteção.
+    expect(checarSaida('Isso é provavelmente uma infecção no canal.', []).ok).toBe(false);
+    expect(checarSaida('É com certeza uma cárie.', []).ok).toBe(false);
+  });
+  it('não confunde resposta comum com diagnóstico', () => {
+    expect(checarSaida('Tenho horário terça às 14h, pode ser?', []).ok).toBe(true);
+    expect(checarSaida('Vou ver com a Dra. Ana e te falo.', []).ok).toBe(true);
+  });
 });
 
 describe('expediente no perfil', () => {

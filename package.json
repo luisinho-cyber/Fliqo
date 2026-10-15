@@ -25,6 +25,7 @@
     "typecheck:web": "npm --prefix apps/web run typecheck",
     "build:web": "npm --prefix apps/web run build",
     "e2e:demo": "npm --prefix apps/demo run e2e",
+    "demo:semear": "tsx apps/worker/src/semear-demo.ts",
     "db:papel-app": "node packages/db/scripts/papel-app.mjs",
     "db:conferir-rls": "node packages/db/scripts/rls-definer.mjs",
     "ambiente:tabela": "tsx packages/core/scripts/tabela-de-ambiente.ts && prettier --write docs/DEPLOY.md"
@@ -50,7 +51,7 @@
     "@types/react-dom": "^19.3.0",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
-    "next": "^16.3.5",
+    "next": "^16.4.1",
     "prettier": "^3.9.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

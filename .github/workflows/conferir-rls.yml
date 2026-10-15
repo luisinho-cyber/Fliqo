@@ -18,8 +18,15 @@ jobs:
   conferir:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
+        # O token do checkout não fica no runner: o `npm ci` abaixo roda postinstall
+        # de dependência, e nada aqui usa git depois do checkout.
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

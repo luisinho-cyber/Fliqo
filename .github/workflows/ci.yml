@@ -6,6 +6,14 @@ jobs:
   verificar:
     runs-on: ubuntu-latest
 
+    # Menor privilégio nos três jobs: nenhum deles escreve no repositório, e sem
+    # escrita em contents um postinstall comprometido no `npm ci` não tem token com
+    # que empurrar commit. Sem este bloco vale o padrão da organização, que costuma
+    # ser leitura E escrita. O `persist-credentials: false` do checkout é a outra
+    # metade: é ele que tira o token de .git/config, onde um `cat` alcança.
+    permissions:
+      contents: read
+
     services:
       postgres:
         image: postgres:16
@@ -28,6 +36,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        # O token do checkout não fica no runner: o `npm ci` abaixo roda postinstall
+        # de dependência, e nada aqui usa git depois do checkout.
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -45,8 +57,15 @@ jobs:
   demonstracao:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
+        # O token do checkout não fica no runner: o `npm ci` abaixo roda postinstall
+        # de dependência, e nada aqui usa git depois do checkout.
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -67,8 +86,15 @@ jobs:
   painel:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
+        # O token do checkout não fica no runner: o `npm ci` abaixo roda postinstall
+        # de dependência, e nada aqui usa git depois do checkout.
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

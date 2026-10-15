@@ -364,6 +364,47 @@ describe('a assistente decide passar a conversa para a equipe', () => {
     return rows[0];
   }
 
+  /**
+   * Roda `fn` com a gravação do alerta de transferência falhando de verdade.
+   *
+   * O gatilho é do banco de teste e cai no `finally`: injetar a falha no ponto em
+   * que ela aconteceria em produção prova que a transação toda volta atrás —
+   * coisa que um mock da função não provaria, porque mock não participa da
+   * transação.
+   */
+  async function comAlertaQuebrado(fn: () => Promise<void>): Promise<void> {
+    await owner.query(`create or replace function app.falha_de_teste() returns trigger
+        language plpgsql as $$ begin raise exception 'falha simulada ao gravar o alerta'; end $$`);
+    await owner.query(`create trigger falha_de_teste before insert on app.alerts
+        for each row when (new.kind = 'conversa_assumida') execute function app.falha_de_teste()`);
+    try {
+      await fn();
+    } finally {
+      await owner.query('drop trigger falha_de_teste on app.alerts');
+      await owner.query('drop function app.falha_de_teste()');
+    }
+  }
+
+  /**
+   * Roda `fn` com o UPDATE da conversa sendo descartado em silêncio.
+   *
+   * Um gatilho BEFORE que devolve null pula a linha sem erro — é a forma que a
+   * falha silenciosa tem no Postgres, a mesma de uma política de escrita que não
+   * alcança a linha. Nada no banco acusa; quem precisa acusar é o código.
+   */
+  async function comTrocaDeModoSemEfeito(fn: () => Promise<void>): Promise<void> {
+    await owner.query(`create or replace function app.ignora_de_teste() returns trigger
+        language plpgsql as $$ begin return null; end $$`);
+    await owner.query(`create trigger ignora_de_teste before update on app.conversations
+        for each row execute function app.ignora_de_teste()`);
+    try {
+      await fn();
+    } finally {
+      await owner.query('drop trigger ignora_de_teste on app.conversations');
+      await owner.query('drop function app.ignora_de_teste()');
+    }
+  }
+
   /** Os três motivos que o enunciado pede, cada um com a sua mensagem. */
   const CASOS = [
     {
@@ -464,6 +505,121 @@ describe('a assistente decide passar a conversa para a equipe', () => {
     // Nem token gasto, nem balão novo: a assistente está calada ali.
     expect(llm.pedidos).toHaveLength(pedidosAntes);
     expect(await baloesNaFila()).toEqual(baloesAntes);
+  });
+
+  it('para na volta em que transfere, sem executar o que vinha depois', async () => {
+    // Transferir e continuar trabalhando é o pior dos dois mundos: a conversa
+    // está com a equipe e a assistente ainda mexe na agenda em nome do paciente.
+    const { conversaId } = await conversaCom(['esse dente que tratei voltou a doer']);
+    llm
+      .chama('transferir_para_humano', {
+        motivo: 'duvida_clinica',
+        resumo: 'Dor em dente tratado, quer falar com a equipe.',
+      })
+      // Nada daqui para baixo pode acontecer.
+      .chama('buscar_horarios', {
+        procedimento_id: c.procUrgente,
+        a_partir_de: '2026-11-09',
+        periodo: 'qualquer',
+      })
+      .diz('Encontrei um horário para você.');
+
+    await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+
+    // Uma chamada ao modelo: a da volta que transferiu, e nenhuma depois.
+    expect(llm.pedidos).toHaveLength(1);
+    // As duas respostas restantes do roteiro ficaram sem uso.
+    expect(llm.roteiro).toHaveLength(2);
+    expect(await consultas()).toEqual([]);
+  });
+
+  it('texto clínico escrito junto com a transferência não chega ao paciente', async () => {
+    // O modelo manda a transferência E se despede na mesma volta. A despedida é
+    // texto do modelo como qualquer outro: tem de passar pelas proteções de
+    // saída, senão a assistente dá o diagnóstico no caminho para a equipe — e é
+    // justamente de assunto clínico que a transferência existe para tirá-la.
+    const { conversaId } = await conversaCom(['o dente que tratei mês passado voltou a doer']);
+    llm.responde(
+      {
+        tipo: 'texto',
+        texto: 'Isso é provavelmente uma infecção no canal, mas já avisei a equipe.',
+      },
+      {
+        tipo: 'chamada',
+        id: 'tool_transferencia',
+        nome: 'transferir_para_humano',
+        entrada: { motivo: 'duvida_clinica', resumo: 'Dor em dente tratado mês passado.' },
+      },
+    );
+
+    const r = await atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId });
+
+    expect(r).toMatchObject({ atendida: true, saida: 'transferencia' });
+    expect(await modoDaConversa(conversaId)).toEqual({
+      mode: 'humano',
+      handover_reason: 'duvida_clinica',
+    });
+
+    const baloes = await baloesNaFila();
+    const enviado = baloes.map((b) => b.texto).join(' ');
+    expect(enviado).not.toContain('infecção');
+    // Reprovada a despedida, sai a frase da casa: o paciente não fica no vácuo.
+    expect(enviado).toContain('Já avisei a equipe');
+  });
+
+  /**
+   * O caminho triste: a transferência não consegue ser gravada.
+   *
+   * O alerta é parte da transferência, não um extra — é por ele que a recepção
+   * descobre que tem alguém esperando. Se ele falhar, a escolha é entre deixar a
+   * assistente seguir conversando (o paciente continua falando com a IA sobre o
+   * que ela não pode tratar, e ninguém na clínica fica sabendo) e não deixar nada
+   * acontecer. A volta inteira roda numa transação só, então o que acontece é a
+   * segunda: nada é gravado, nada é enviado, e o job volta para a fila.
+   */
+  it('transferência que falha ao gravar não deixa a assistente responder', async () => {
+    const { conversaId } = await conversaCom(['prefiro tratar disso com alguém da equipe']);
+    llm
+      .chama('transferir_para_humano', {
+        motivo: 'pedido_do_paciente',
+        resumo: 'Paciente pediu atendimento humano.',
+      })
+      .diz('Claro, já avisei a equipe.');
+
+    await comAlertaQuebrado(async () => {
+      await expect(
+        atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId }),
+      ).rejects.toThrow(/falha simulada/);
+    });
+
+    // Nada pela metade: a conversa não virou humano, mas também não recebeu
+    // resposta da IA — é o paciente esperando a equipe, não sendo atendido por
+    // quem não devia.
+    expect(await modoDaConversa(conversaId)).toEqual({ mode: 'ia', handover_reason: null });
+    expect(await alertasDaConversa(conversaId)).toEqual([]);
+    expect(await baloesNaFila()).toEqual([]);
+  });
+
+  it('transferência que não pega, sem erro nenhum, também cala a assistente', async () => {
+    // O caminho triste de verdade: a troca de modo não dá erro, só não acontece.
+    // Aí nada no banco acusa, e seguir em frente é dizer ao paciente "já avisei
+    // a equipe" com a conversa ainda na mão da IA — que volta a responder sobre
+    // o mesmo assunto na próxima mensagem.
+    const { conversaId } = await conversaCom(['esse dente que tratei voltou a doer']);
+    llm.chama('transferir_para_humano', {
+      motivo: 'duvida_clinica',
+      resumo: 'Dor em dente tratado.',
+    });
+
+    await comTrocaDeModoSemEfeito(async () => {
+      await expect(
+        atenderConversa(dependencias(), { clinicId: c.clinicA, conversaId }),
+      ).rejects.toThrow(/modo humano/);
+    });
+
+    expect(await modoDaConversa(conversaId)).toEqual({ mode: 'ia', handover_reason: null });
+    expect(await alertasDaConversa(conversaId)).toEqual([]);
+    expect(await baloesNaFila()).toEqual([]);
   });
 });
 

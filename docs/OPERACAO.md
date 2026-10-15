@@ -74,6 +74,26 @@ Aplica as migrações pendentes em ordem, registra em `public.schema_migrations`
 e prepara as filas do pg-boss. Rodar de novo não reaplica nada. Migração já
 aplicada que foi editada faz o script parar (CLAUDE.md, regra 8).
 
+## Semear a clínica de demonstração
+
+```bash
+export DATABASE_URL="postgresql://fliqo_app:.../fliqo"
+npm run demo:semear
+```
+
+Cria a clínica de demonstração (id fixo `00000000-0000-4000-8000-000000000001`,
+`is_demo = true`) e deixa ativo o perfil de
+`packages/db/seeds/perfil-clinica-demo.json` — a persona, o expediente e as
+políticas que a Assistente Fliqo usa. Sem perfil ativo a conversa não tem o que
+responder.
+
+Rodar de novo não duplica: a clínica tem id fixo e o perfil só vira versão nova
+quando o arquivo muda, caso em que a versão anterior fica guardada e inativa. O
+conteúdo é sintético — nenhum paciente, consulta ou mensagem é criado.
+
+Conecta como a aplicação (`DATABASE_URL`, papel `fliqo_app`) e grava dentro de
+`withClinic`, pela RLS, como a API.
+
 ## Suspender uma clínica
 
 `app.clinics.active` marca a clínica como ativa. É `not null default true`, então
