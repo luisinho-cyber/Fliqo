@@ -363,32 +363,32 @@ variáveis daquele serviço.
 
 <!-- ambiente:cruzada:inicio -->
 
-| Variável                    | api | worker | painel | Por quê                                                                                     |
-| --------------------------- | :-: | :----: | :----: | ------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`              |  ✓  |   ✓    |   —    | o painel não fala com o banco (CLAUDE.md, regra 10)                                         |
-| `WHATSAPP_APP_SECRET`       |  ✓  |   —    |   —    | valida a assinatura do webhook, que chega na api                                            |
-| `WHATSAPP_VERIFY_TOKEN`     |  ✓  |   —    |   —    | a Meta a devolve na verificação do webhook                                                  |
-| `SUPABASE_JWT_SECRET`       |  ✓  |   —    |   —    | quem verifica o token do painel é a api                                                     |
-| `META_APP_ID`               |  ✓  |   —    |   ✓    | a api troca o código do Embedded Signup; o painel abre a janela                             |
-| `META_APP_SECRET`           |  ✓  |   —    |   —    | só a api: é o que torna o código do navegador útil                                          |
-| `WHATSAPP_TOKEN_KEY`        |  ✓  |   —    |   —    | a api cifra o token que a clínica conecta; o worker passa a decifrar na fase de resiliência |
-| `PORT`                      |  ✓  |   ✓    |   —    | a porta em que o serviço escuta, e a mesma que o health check consulta                      |
-| `LOG_LEVEL`                 |  ✓  |   ✓    |   —    | nível do logger                                                                             |
-| `WHATSAPP_TOKEN`            |  —  |   ✓    |   —    | quem envia mensagem é o worker                                                              |
-| `ANTHROPIC_API_KEY`         |  —  |   ✓    |   —    | só o worker chama o modelo                                                                  |
-| `ANTHROPIC_MODEL`           |  —  |   ✓    |   —    | o modelo é configuração, não código: trocar não exige publicar de novo                      |
-| `API_URL`                   |  —  |   —    |   ✓    | quem chama a api é o servidor do painel                                                     |
-| `SUPABASE_URL`              |  —  |   —    |   ✓    | autenticação, no servidor do painel                                                         |
-| `SUPABASE_ANON_KEY`         |  —  |   —    |   ✓    | idem                                                                                        |
-| `META_CONFIG_ID`            |  —  |   —    |   ✓    | sem ela a tela de conexão explica que falta configurar, em vez de estourar                  |
-| `NODE_ENV`                  |  —  |   —    |   ✓    | é o que faz o cookie de sessão sair como Secure                                             |
-| `DATABASE_ADMIN_URL`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `FLIQO_APP_PASSWORD`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `SUPABASE_REGION`           |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `WHATSAPP_TOKEN_KEY_ANTIGA` |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `WHATSAPP_WABA_ID`          |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `CHROMIUM_EXECUTAVEL`       |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `CI`                        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
+| Variável                    | api | worker | painel | Por quê                                                                                                                              |
+| --------------------------- | :-: | :----: | :----: | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`              |  ✓  |   ✓    |   —    | o painel não fala com o banco (CLAUDE.md, regra 10)                                                                                  |
+| `WHATSAPP_APP_SECRET`       |  ✓  |   —    |   —    | valida a assinatura do webhook, que chega na api                                                                                     |
+| `WHATSAPP_VERIFY_TOKEN`     |  ✓  |   —    |   —    | a Meta a devolve na verificação do webhook                                                                                           |
+| `SUPABASE_JWT_SECRET`       |  ✓  |   —    |   —    | quem verifica o token do painel é a api                                                                                              |
+| `META_APP_ID`               |  ✓  |   —    |   ✓    | a api troca o código do Embedded Signup; o painel abre a janela                                                                      |
+| `META_APP_SECRET`           |  ✓  |   —    |   —    | só a api: é o que torna o código do navegador útil                                                                                   |
+| `WHATSAPP_TOKEN_KEY`        |  ✓  |   —    |   —    | a api cifra o token que a clínica conecta; o worker passa a decifrar na fase de resiliência                                          |
+| `PORT`                      |  ✓  |   ✓    |   —    | a porta em que o serviço escuta, e a mesma que o health check consulta                                                               |
+| `LOG_LEVEL`                 |  ✓  |   ✓    |   —    | nível do logger                                                                                                                      |
+| `WHATSAPP_TOKEN`            |  —  |   ✓    |   —    | quem envia mensagem é o worker                                                                                                       |
+| `ANTHROPIC_API_KEY`         |  —  |   ✓    |   —    | só o worker chama o modelo                                                                                                           |
+| `ANTHROPIC_MODEL`           |  —  |   ✓    |   —    | o modelo é configuração, não código: trocar não exige publicar de novo                                                               |
+| `API_URL`                   |  —  |   —    |   ✓    | quem chama a api é o servidor do painel                                                                                              |
+| `SUPABASE_URL`              |  —  |   —    |   ✓    | autenticação, no servidor do painel                                                                                                  |
+| `SUPABASE_ANON_KEY`         |  —  |   —    |   ✓    | idem                                                                                                                                 |
+| `META_CONFIG_ID`            |  —  |   —    |   ✓    | sem ela a tela de conexão explica que falta configurar, em vez de estourar                                                           |
+| `NODE_ENV`                  |  —  |   —    |   ✓    | é o que faz o cookie de sessão sair como Secure                                                                                      |
+| `DATABASE_ADMIN_URL`        |  —  |   —    |   —    | **nunca num serviço**: a conexão do dono do schema, que NÃO passa pela RLS (CLAUDE.md, regra 2): só as migrações e os scripts a usam |
+| `FLIQO_APP_PASSWORD`        |  —  |   —    |   —    | **nunca num serviço**: a senha do papel da aplicação, usada só por scripts/papel-app.mjs ao criar o papel                            |
+| `WHATSAPP_TOKEN_KEY_ANTIGA` |  —  |   —    |   —    | **nunca num serviço**: a chave anterior do cofre, usada só pelo script de rotação; num serviço ela dobra o que um vazamento decifra  |
+| `SUPABASE_REGION`           |  —  |   —    |   —    | ferramenta: região do projeto, para os scripts que montam a URL do pooler                                                            |
+| `WHATSAPP_WABA_ID`          |  —  |   —    |   —    | ferramenta: a conta do WhatsApp Business da Fliqo, para os scripts de catálogo de template                                           |
+| `CHROMIUM_EXECUTAVEL`       |  —  |   —    |   —    | ferramenta: o navegador que o Playwright usa nos testes de ponta a ponta da apps/demo                                                |
+| `CI`                        |  —  |   —    |   —    | ferramenta: o GitHub a injeta; é por ela que script nosso sabe que não há ninguém para perguntar                                     |
 
 <!-- ambiente:cruzada:fim -->
 
@@ -403,11 +403,27 @@ Quem usa essa URL são as migrações e os scripts, que rodam no workflow do Git
 com ela como secret, ou na sua máquina. **Nenhum serviço do Railway.**
 
 Isto não é só documentação: **a api e o worker se recusam a subir** se a variável
-estiver no ambiente deles (`recusarAdminUrl`). A recusa vive no caminho de start e
-não na leitura da configuração, de propósito — o job de testes e o workflow de
-migração têm a variável no ambiente legitimamente, e uma recusa no carregamento do
-schema derrubaria o próprio CI que aplica a regra. Há guarda de teste para as duas
-coisas em `tests/deploy.test.ts`.
+estiver no ambiente deles. É uma das quatro travas de `travarAmbiente`, a primeira
+instrução de cada serviço (`packages/core/src/ambiente.ts`), e ela vive no caminho
+de start e não na leitura da configuração, de propósito — o job de testes e o
+workflow de migração têm a variável no ambiente legitimamente, e uma recusa no
+carregamento do módulo derrubaria o próprio CI que aplica a regra.
+
+### As quatro travas do start
+
+Nenhuma delas é um texto que alguém lê na hora de criar o serviço: todas as quatro
+sobem a api e o worker de verdade em `tests/travas-de-ambiente.test.ts` e exigem que
+o processo morra, antes de qualquer conexão.
+
+| trava        | o que recusa                                                                                                | o que acontece                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `faltando`   | obrigatória ausente ou vazia                                                                                | o log diz TODAS as que faltam, de uma vez |
+| `malformada` | valor que o formato recusa (papel diferente de `fliqo_app`, espaço reservado colado, chave sem 32 bytes)    | idem, na mesma lista                      |
+| `proibida`   | variável de ferramenta num serviço: `DATABASE_ADMIN_URL`, `FLIQO_APP_PASSWORD`, `WHATSAPP_TOKEN_KEY_ANTIGA` | o serviço não sobe                        |
+| `vazada`     | qualquer nome com prefixo `NEXT_PUBLIC_`                                                                    | o serviço não sobe                        |
+
+Se o deploy ficar reiniciando sem parar, é no log do serviço que a lista aparece —
+com o nome de cada variável e o motivo, e nunca com o valor de nenhuma.
 
 ## Teto de conexões: por que os números são estes
 

@@ -1,5 +1,6 @@
 import { ClienteAnthropic } from '@fliqo/ai';
-import { criarDb, recusarAdminUrl, withClinic } from '@fliqo/db';
+import { AMBIENTE_DO_WORKER, travarAmbiente } from '@fliqo/core';
+import { criarDb, withClinic } from '@fliqo/db';
 import {
   criarFila,
   FILA_ATRASOS,
@@ -14,11 +15,19 @@ import { rodarUmaVez } from './acoes';
 import { varrerAtrasos, varrerClinica } from './atrasos';
 import { abrirRodada } from './ofertas';
 import { tratarResposta } from './botao';
-import { lerConfigWorker } from './config';
 import { atenderConversa } from './conversa';
 import { criarParada, rodarLaco } from './parada';
 import { enviarBalao, type BalaoDaResposta } from './resposta';
 import { criarBatimento, servidorDeSaude } from './saude';
+
+/*
+ * As travas do ambiente, antes de qualquer outra coisa.
+ *
+ * Primeira instrução do processo de propósito: um worker que abriu o pool com a
+ * conexão errada e só depois reclamou já fez o que a trava existe para impedir.
+ * As quatro recusas e o porquê de cada uma estão em packages/core/src/ambiente.ts.
+ */
+const config = travarAmbiente('o worker', AMBIENTE_DO_WORKER);
 
 /**
  * Tetos de conexão, explícitos.
@@ -31,9 +40,6 @@ import { criarBatimento, servidorDeSaude } from './saude';
 const POOL_CONSULTAS = 6;
 const POOL_DA_FILA = 5;
 
-const config = lerConfigWorker();
-// Antes de qualquer conexão: o worker não sobe conhecendo a URL de dono do schema.
-recusarAdminUrl('o worker');
 const log = pino({ level: config.LOG_LEVEL });
 const db = criarDb(config.DATABASE_URL, POOL_CONSULTAS);
 const boss = criarFila(config.DATABASE_URL, POOL_DA_FILA);
