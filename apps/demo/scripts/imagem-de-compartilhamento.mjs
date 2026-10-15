@@ -16,7 +16,17 @@ import { chromium } from '@playwright/test';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const raiz = join(aqui, '..');
 
-const tokens = await readFile(join(raiz, 'app', 'tokens.css'), 'utf8');
+/*
+ * Os tokens vêm da mesma fonte que as telas: apps/web/app/tokens.css.
+ *
+ * Lá eles moram num bloco `@theme`, que é a forma que o Tailwind do painel
+ * precisa. Aqui não há Tailwind — a página é escrita à mão e aberta direto no
+ * navegador —, e at-rule desconhecida faz o navegador descartar o bloco inteiro.
+ * Então o `@theme` vira `:root` na hora de montar a página. É só o invólucro que
+ * muda: nenhum valor é copiado para cá.
+ */
+const fonteDosTokens = await readFile(join(raiz, '..', 'web', 'app', 'tokens.css'), 'utf8');
+const tokens = fonteDosTokens.replace(/@theme\s*\{/, ':root {');
 
 const pagina = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8" />
@@ -24,24 +34,24 @@ const pagina = `<!doctype html>
 <style>
 ${tokens}
 * { box-sizing: border-box; }
-body { margin: 0; width: 1200px; height: 630px; background: var(--ground);
-  color: var(--ink); font-family: var(--fonte-texto); display: flex; flex-direction: column;
+body { margin: 0; width: 1200px; height: 630px; background: var(--color-ground);
+  color: var(--color-ink); font-family: var(--font-texto); display: flex; flex-direction: column;
   justify-content: space-between; padding: 60px 72px; }
-.marca { font-family: var(--fonte-titulo); font-weight: 800; font-size: 34px; letter-spacing: -0.04em; }
-.marca i { color: var(--agora); font-style: normal; }
-h1 { font-family: var(--fonte-titulo); font-weight: 700; font-size: 58px; line-height: 1.08;
+.marca { font-family: var(--font-titulo); font-weight: 800; font-size: 34px; letter-spacing: -0.04em; }
+.marca i { color: var(--color-agora); font-style: normal; }
+h1 { font-family: var(--font-titulo); font-weight: 700; font-size: 58px; line-height: 1.08;
   letter-spacing: -0.035em; margin: 26px 0 0; max-width: 19ch; }
-.trilho { position: relative; height: 86px; width: 1034px; border: 1px solid var(--fio);
-  border-radius: 12px; background-color: var(--paper); margin-top: 34px; overflow: hidden;
-  background-image: repeating-linear-gradient(45deg, var(--hachura) 0 1px, transparent 1px 8px); }
+.trilho { position: relative; height: 86px; width: 1034px; border: 1px solid var(--color-fio);
+  border-radius: 12px; background-color: var(--color-paper); margin-top: 34px; overflow: hidden;
+  background-image: repeating-linear-gradient(45deg, var(--color-hachura) 0 1px, transparent 1px 8px); }
 .bloco { position: absolute; top: 18px; height: 50px; border-radius: 8px; padding: 8px 12px;
-  font-size: 15px; font-weight: 600; background: var(--ok-tinta); border: 1.5px solid var(--ok); }
-.bloco.deslocado { background: var(--agora-tinta); border-color: var(--agora); }
-.bloco .h { font-family: var(--fonte-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+  font-size: 15px; font-weight: 600; background: var(--color-ok-tinta); border: 1.5px solid var(--color-ok); }
+.bloco.deslocado { background: var(--color-agora-tinta); border-color: var(--color-agora); }
+.bloco .h { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
 .marcado { position: absolute; top: 18px; height: 50px; border-radius: 8px;
-  border: 1.5px dashed var(--agora); }
-.nota { color: var(--ink-2); font-size: 21px; line-height: 1.45; margin: 26px 0 0; max-width: 62ch; }
-.rodape { color: var(--ink-2); font-size: 19px; display: flex; justify-content: space-between; }
+  border: 1.5px dashed var(--color-agora); }
+.nota { color: var(--color-ink-2); font-size: 21px; line-height: 1.45; margin: 26px 0 0; max-width: 62ch; }
+.rodape { color: var(--color-ink-2); font-size: 19px; display: flex; justify-content: space-between; }
 </style></head>
 <body>
   <div>

@@ -20,6 +20,7 @@ import { hhmm, instanteDe } from '../nucleo/relogio';
 
 const JANELA_MINIMA_MIN = 420;
 const LIMIAR_DE_DESLOCAMENTO_MIN = 10;
+const MINUTOS_PARA_ESCONDER_A_HORA = 25;
 
 interface Props {
   consultas: ConsultaDemo[];
@@ -71,7 +72,14 @@ export function LinhaDoDia({ consultas, inicioDoDia, agora, selecionada, aoSelec
             >
               {horas.map((m) => (
                 <div key={m} className="tick" style={{ left: `${String(pct(m))}%` }}>
-                  <span className="mono">{hhmm(instanteDe(inicioDoDia, m))}</span>
+                  {/*
+                   * A hora cheia colada no cursor do agora sai: as duas etiquetas
+                   * ficam uma em cima da outra e lêem como um horário só. O traço
+                   * da régua continua ali — o que some é o número repetido.
+                   */}
+                  {Math.abs(m - minutoAgora) > MINUTOS_PARA_ESCONDER_A_HORA && (
+                    <span className="mono">{hhmm(instanteDe(inicioDoDia, m))}</span>
+                  )}
                 </div>
               ))}
 

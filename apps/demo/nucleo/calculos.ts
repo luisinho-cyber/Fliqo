@@ -51,6 +51,17 @@ export function paraCore(c: ConsultaDemo, inicioDoDia: Date): ConsultaDoDia {
   };
 }
 
+/**
+ * Quanto tempo a jornada ocupa, do primeiro horário marcado ao fim do último
+ * atendimento. É o que o relógio usa para caber o dia dentro do expediente.
+ */
+export function duracaoDoDiaMin(consultas: ConsultaDemo[]): number {
+  const fins = consultas
+    .filter((c) => c.status !== 'cancelado')
+    .map((c) => c.marcadaEm + duracaoEsperada(c.procedimentoId));
+  return fins.length === 0 ? 0 : Math.max(...fins);
+}
+
 export function consultasDoProfissional(
   consultas: ConsultaDemo[],
   profissionalId: string,

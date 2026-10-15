@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
 /**
@@ -67,6 +69,8 @@ test('os três toques gravam chegada, início e fim', async ({ page }) => {
 });
 
 test('a linha do agora marca este minuto, em âmbar', async ({ page }) => {
+  // Meio-dia: dentro do expediente, então o agora é o relógio de quem olha.
+  await page.clock.install({ time: emPontoDe(12) });
   const erros = await abrir(page);
 
   const agora = page.getByTestId('agora-ana');
@@ -76,18 +80,32 @@ test('a linha do agora marca este minuto, em âmbar', async ({ page }) => {
   const doNavegador = await page.evaluate(() =>
     new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
   );
+  expect(doNavegador).toBe('12:00');
   await expect(agora).toContainText(doNavegador);
 
   const cor = await agora.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const ambar = await page.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue('--agora').trim(),
-  );
-  expect(ambar).not.toBe('');
-  // A cor sai do token: nenhum componente carrega cor literal.
-  expect(cor).toBe(await paraRgb(page, ambar));
+  // O âmbar sai do token, e o token sai do painel: o teste lê o valor do arquivo
+  // que apps/web declara, e não de uma cópia escrita aqui.
+  expect(cor).toBe(await paraRgb(page, tokenDoPainel('--color-agora')));
 
   expect(erros).toEqual([]);
 });
+
+/**
+ * O valor de um token, lido da fonte: apps/web/app/tokens.css.
+ *
+ * É o lado de execução da prova que `tests/tokens-fonte-unica.test.ts` faz por
+ * estrutura — ali se confere que a demonstração importa o arquivo do painel,
+ * aqui se confere que a cor que chega na tela é mesmo a que ele declara.
+ */
+function tokenDoPainel(nome: string): string {
+  const caminho = fileURLToPath(new URL('../../web/app/tokens.css', import.meta.url));
+  const valor = new RegExp(`${nome}:\\s*(#[0-9a-fA-F]{6})\\s*;`).exec(
+    readFileSync(caminho, 'utf8'),
+  )?.[1];
+  expect(valor, `${nome} não existe em apps/web/app/tokens.css`).toBeDefined();
+  return valor ?? '';
+}
 
 async function paraRgb(page: Page, cor: string): Promise<string> {
   return page.evaluate((valor) => {
@@ -229,3 +247,77 @@ test('o que está mockado diz que está, e nenhuma tela rola para o lado', async
 
   expect(erros).toEqual([]);
 });
+
+/**
+ * O dia da clínica tem de ser plausível a qualquer hora.
+ *
+ * O expediente é das 8h às 19h. Quando o relógio de quem abre deixa a jornada
+ * inteira dentro dessa janela, a linha do agora é o relógio de verdade. Quando
+ * não deixa — de madrugada, ou tarde da noite —, quem cede é o relógio: o dia
+ * abre num horário representativo e a tela diz que ali o agora é ilustração.
+ * Deslocar o expediente seria a outra escolha, e ela é pior: o número continuaria
+ * "verdadeiro" e a clínica, impossível.
+ */
+const ABERTURA_H = 8;
+const FECHAMENTO_H = 19;
+
+/** As horas que a régua da faixa desenha, lidas da tela. */
+async function horasDaFaixa(page: Page): Promise<number[]> {
+  const textos = await page.getByTestId('trilho-ana').locator('.tick span').allTextContents();
+  return textos.map((t) => Number.parseInt(t.slice(0, 2), 10));
+}
+
+for (const [rotulo, hora] of [
+  ['às 3h da madrugada', 3],
+  ['às 23h', 23],
+] as const) {
+  test(`abrindo ${rotulo}, o dia continua dentro do expediente`, async ({ page }) => {
+    await page.clock.install({ time: emPontoDe(hora) });
+    const erros = await abrir(page);
+
+    const horas = await horasDaFaixa(page);
+    expect(horas.length, 'a faixa não desenhou régua nenhuma').toBeGreaterThan(0);
+    expect(Math.min(...horas), 'a clínica abriria antes das 8h').toBeGreaterThanOrEqual(ABERTURA_H);
+    expect(Math.max(...horas), 'a clínica fecharia depois das 19h').toBeLessThanOrEqual(
+      FECHAMENTO_H,
+    );
+
+    // O dia não foi deslocado para caber: ele foi ancorado num horário
+    // representativo, e a tela diz isso em vez de fingir que é o relógio.
+    await expect(page.getByTestId('relogio-representativo')).toContainText('ilustração');
+    await expect(page.getByTestId('agora-ana')).toContainText('11:12');
+
+    // E o dia ancorado continua sendo o dia da demonstração: o atraso está lá.
+    await expect(page.getByTestId('bloco-a4')).toHaveClass(/deslocado/);
+    await expect(page.getByTestId('marcado-a4')).toBeAttached();
+
+    expect(erros).toEqual([]);
+  });
+}
+
+test('abrindo dentro do expediente, a linha do agora é o relógio de verdade', async ({ page }) => {
+  await page.clock.install({ time: emPontoDe(12) });
+  const erros = await abrir(page);
+
+  const horas = await horasDaFaixa(page);
+  expect(Math.min(...horas)).toBeGreaterThanOrEqual(ABERTURA_H);
+  expect(Math.max(...horas)).toBeLessThanOrEqual(FECHAMENTO_H);
+
+  // Meio-dia em ponto: o agora é o relógio, e não o horário representativo.
+  await expect(page.getByTestId('agora-ana')).toContainText('12:00');
+  await expect(page.getByTestId('relogio-representativo')).toHaveCount(0);
+
+  expect(erros).toEqual([]);
+});
+
+/**
+ * Uma hora cheia no fuso da clínica.
+ *
+ * O deslocamento vai escrito na string de propósito: o contêiner do CI roda em
+ * UTC e o navegador do teste roda em America/Sao_Paulo (playwright.config.ts).
+ * Montar a hora com `setHours` daria 12h no processo e 9h na tela, e o teste
+ * mediria o fuso em vez da regra.
+ */
+function emPontoDe(hora: number): Date {
+  return new Date(`2026-10-15T${String(hora).padStart(2, '0')}:00:00-03:00`);
+}

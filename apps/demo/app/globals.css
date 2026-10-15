@@ -1,4 +1,29 @@
-@import './tokens.css';
+/*
+ * A fonte dos tokens é o painel: apps/web/app/tokens.css, com a razão de cada
+ * valor no DESIGN.md. A demonstração NÃO tem cópia — paleta duplicada é paleta
+ * que diverge, e a divergência aparece primeiro na frente de um cliente.
+ *
+ * `theme(static)` emite todos os tokens, e não só os que o Tailwind vê usados:
+ * a demonstração desenha com `var()` à mão, e um token que só aparece numa
+ * regra que ele não rastreia sairia vazio.
+ */
+@import '../../web/app/tokens.css' theme(static);
+
+/*
+ * A escala de espaçamento da demonstração, derivada da base 4 que vem do mesmo
+ * arquivo. São apelidos locais, não tokens novos: o valor continua tendo uma
+ * fonte só, e trocar a base lá troca a tela inteira aqui.
+ */
+:root {
+  --e-1: calc(var(--spacing) * 1);
+  --e-2: calc(var(--spacing) * 2);
+  --e-3: calc(var(--spacing) * 3);
+  --e-4: calc(var(--spacing) * 4);
+  --e-5: calc(var(--spacing) * 6);
+  --e-6: calc(var(--spacing) * 8);
+  --e-7: calc(var(--spacing) * 12);
+  --e-8: calc(var(--spacing) * 18);
+}
 
 /*
  * A folha da demonstração. Nenhuma cor literal aqui: tudo sai de tokens.css.
@@ -25,9 +50,9 @@ body {
 }
 
 body {
-  background: var(--ground);
-  color: var(--ink);
-  font-family: var(--fonte-texto);
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-texto);
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -36,7 +61,7 @@ body {
 h1,
 h2,
 h3 {
-  font-family: var(--fonte-titulo);
+  font-family: var(--font-titulo);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
@@ -59,13 +84,26 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--foco);
+  outline: 2px solid var(--color-foco);
   outline-offset: 2px;
+}
+
+/*
+ * O rótulo: 15px, peso 500, caixa normal, em ink-2 (DESIGN.md). Não há etiqueta
+ * em caixa alta — em português ela apaga o acento e a silhueta da palavra, que é
+ * o que se lê de relance.
+ */
+.rotulo {
+  font-size: var(--text-rotulo);
+  line-height: var(--text-rotulo--line-height);
+  font-weight: var(--font-weight-rotulo);
+  letter-spacing: var(--tracking-rotulo);
+  color: var(--color-ink-2);
 }
 
 /* Medida é monoespaçada e tabular: coluna de hora que dança é ruído. */
 .mono {
-  font-family: var(--fonte-mono);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
 }
@@ -82,7 +120,7 @@ button {
 .apoio,
 .vazio,
 .apoio-celula {
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-size: 14px;
 }
 
@@ -104,20 +142,20 @@ button {
   align-items: center;
   gap: var(--e-5);
   padding: var(--e-3) var(--e-5);
-  background: var(--paper);
-  border-bottom: 1px solid var(--fio);
+  background: var(--color-paper);
+  border-bottom: 1px solid var(--color-fio);
 }
 
 /* O ponto âmbar do logotipo é a única aparição de âmbar que não é tempo. */
 .marca {
-  font-family: var(--fonte-titulo);
+  font-family: var(--font-titulo);
   font-weight: 800;
   font-size: 19px;
   letter-spacing: -0.04em;
 }
 
 .marca i {
-  color: var(--agora);
+  color: var(--color-agora);
   font-style: normal;
 }
 
@@ -130,24 +168,24 @@ button {
 
 .aba {
   padding: var(--e-2) var(--e-3);
-  border-radius: var(--r-sm);
-  color: var(--ink-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-2);
   font-size: 14px;
 }
 
 .aba[aria-current='true'] {
-  background: var(--marca-tinta);
-  color: var(--marca-viva);
+  background: var(--color-marca-tinta);
+  color: var(--color-marca-viva);
   font-weight: 600;
 }
 
 .aba:hover:not([aria-current='true']) {
-  color: var(--ink);
+  color: var(--color-ink);
 }
 
 .clinica {
   margin-left: auto;
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-size: 14px;
 }
 
@@ -167,8 +205,8 @@ button {
 
 /* Painel é paper sobre ground, sem borda. */
 .painel {
-  background: var(--paper);
-  border-radius: var(--r-lg);
+  background: var(--color-paper);
+  border-radius: var(--radius-lg);
   padding: var(--e-5);
   display: grid;
   gap: var(--e-5);
@@ -190,9 +228,9 @@ button {
 
 .rodape {
   padding: var(--e-4) var(--e-5);
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-size: 13px;
-  border-top: 1px solid var(--fio);
+  border-top: 1px solid var(--color-fio);
 }
 
 .secao-cab {
@@ -208,25 +246,24 @@ button {
   display: inline-flex;
   align-items: baseline;
   gap: var(--e-2);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-2);
+  font-size: var(--text-rotulo);
+  line-height: var(--text-rotulo--line-height);
+  font-weight: var(--font-weight-rotulo);
+  letter-spacing: var(--tracking-rotulo);
+  color: var(--color-ink-2);
 }
 
 .ilustracao::before {
   content: '';
   width: 10px;
   height: 10px;
-  border: 1.5px dashed var(--ink-3);
-  border-radius: var(--r-sm);
+  border: 1.5px dashed var(--color-ink-3);
+  border-radius: var(--radius-sm);
   align-self: center;
 }
 
 .ilustracao-nota {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 12px;
+  font-weight: 400;
 }
 
 /* ---------- a faixa do dia ---------- */
@@ -244,13 +281,13 @@ button {
 }
 
 .faixa-cab b {
-  font-family: var(--fonte-titulo);
+  font-family: var(--font-titulo);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .faixa-cab span {
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-size: 13px;
 }
 
@@ -262,10 +299,14 @@ button {
 .trilho {
   position: relative;
   height: 92px;
-  border-radius: var(--r-md);
-  background-color: var(--paper);
-  background-image: repeating-linear-gradient(45deg, var(--hachura) 0 1px, transparent 1px 8px);
-  border: 1px solid var(--fio);
+  border-radius: var(--radius-md);
+  background-color: var(--color-paper);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-hachura) 0 1px,
+    transparent 1px 8px
+  );
+  border: 1px solid var(--color-fio);
   overflow: hidden;
 }
 
@@ -273,14 +314,14 @@ button {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid var(--fio-2);
+  border-left: 1px solid var(--color-fio-2);
   padding-left: var(--e-1);
 }
 
 .tick span {
   font-size: 10px;
-  color: var(--ink-2);
-  background: var(--paper);
+  color: var(--color-ink-2);
+  background: var(--color-paper);
   padding-right: 2px;
 }
 
@@ -290,7 +331,7 @@ button {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--agora);
+  background: var(--color-agora);
   z-index: 4;
 }
 
@@ -300,10 +341,10 @@ button {
   left: var(--e-1);
   font-size: 10px;
   font-weight: 500;
-  color: var(--agora);
-  background: var(--paper);
+  color: var(--color-agora);
+  background: var(--color-paper);
   padding: 0 3px;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 
@@ -313,9 +354,9 @@ button {
   height: 40px;
   text-align: left;
   padding: var(--e-1) var(--e-2);
-  border-radius: var(--r-sm);
-  border: 1.5px solid var(--marca);
-  background: var(--marca-tinta);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--color-marca);
+  background: var(--color-marca-tinta);
   font-size: 12px;
   overflow: hidden;
   white-space: nowrap;
@@ -333,7 +374,7 @@ button {
   display: block;
   font-size: 10px;
   line-height: 1.3;
-  color: var(--ink-2);
+  color: var(--color-ink-2);
 }
 
 .bloco-nome {
@@ -345,8 +386,8 @@ button {
 }
 
 .bloco.confirmado {
-  background: var(--ok-tinta);
-  border-color: var(--ok);
+  background: var(--color-ok-tinta);
+  border-color: var(--color-ok);
 }
 
 /*
@@ -355,46 +396,46 @@ button {
  * fazem o par deixar de ser legível.
  */
 .bloco.sem-confirmar {
-  background: var(--marca-tinta);
-  border-color: var(--marca);
+  background: var(--color-marca-tinta);
+  border-color: var(--color-marca);
 }
 
 /* Em atendimento: barra sólida de 4px na borda esquerda. Sem animação. */
 .bloco.atendendo {
-  background: var(--ok-tinta);
-  border-color: var(--ok);
+  background: var(--color-ok-tinta);
+  border-color: var(--color-ok);
   border-left-width: 4px;
 }
 
 /* Passado é quieto, não desbotado: traço neutro e texto ink-2, nunca opacidade. */
 .bloco.finalizada {
-  background: var(--ok-tinta);
-  border-color: var(--ink-3);
-  color: var(--ink-2);
+  background: var(--color-ok-tinta);
+  border-color: var(--color-ink-3);
+  color: var(--color-ink-2);
 }
 
 /* Faltou: o mesmo matiz do risco, mais uma diagonal cruzando o bloco. */
 .bloco.faltou {
-  background: var(--risco-tinta);
-  border-color: var(--risco);
-  color: var(--ink-2);
+  background: var(--color-risco-tinta);
+  border-color: var(--color-risco);
+  color: var(--color-ink-2);
   background-image: linear-gradient(
     to bottom right,
     transparent calc(50% - 1px),
-    var(--risco) calc(50% - 1px),
-    var(--risco) calc(50% + 1px),
+    var(--color-risco) calc(50% - 1px),
+    var(--color-risco) calc(50% + 1px),
     transparent calc(50% + 1px)
   );
 }
 
 /* Deslocado por atraso: o bloco em âmbar, no lugar onde vai começar de verdade. */
 .bloco.deslocado {
-  background: var(--agora-tinta);
-  border-color: var(--agora);
+  background: var(--color-agora-tinta);
+  border-color: var(--color-agora);
 }
 
 .bloco.sel {
-  outline: 2px solid var(--foco);
+  outline: 2px solid var(--color-foco);
   outline-offset: 1px;
 }
 
@@ -406,8 +447,8 @@ button {
   position: absolute;
   top: 30px;
   height: 40px;
-  border: 1.5px dashed var(--agora);
-  border-radius: var(--r-sm);
+  border: 1.5px dashed var(--color-agora);
+  border-radius: var(--radius-sm);
   /*
    * Acima dos blocos, e sem preenchimento: num dia cheio o horário marcado cai
    * em cima do atendimento anterior, e é exatamente isso que está acontecendo.
@@ -426,21 +467,21 @@ button {
 /* ---------- os três toques ---------- */
 
 .toques {
-  border-top: 1px solid var(--fio);
+  border-top: 1px solid var(--color-fio);
   padding-top: var(--e-4);
   display: grid;
   gap: var(--e-3);
 }
 
 .toques-cab b {
-  font-family: var(--fonte-titulo);
+  font-family: var(--font-titulo);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .toques-cab span {
   display: block;
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-size: 13px;
 }
 
@@ -451,10 +492,11 @@ button {
 }
 
 .instantes dt {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-2);
+  font-size: var(--text-rotulo);
+  line-height: var(--text-rotulo--line-height);
+  font-weight: var(--font-weight-rotulo);
+  letter-spacing: var(--tracking-rotulo);
+  color: var(--color-ink-2);
 }
 
 .instantes dd {
@@ -469,27 +511,27 @@ button {
 
 .acao {
   padding: var(--e-2) var(--e-4);
-  border: 1px solid var(--fio);
-  border-radius: var(--r-sm);
-  background: var(--paper);
+  border: 1px solid var(--color-fio);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
   font-size: 14px;
   font-weight: 600;
 }
 
 .acao:hover:not(:disabled) {
-  border-color: var(--marca);
-  color: var(--marca-viva);
+  border-color: var(--color-marca);
+  color: var(--color-marca-viva);
 }
 
 .acao:disabled {
   cursor: default;
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-weight: 400;
-  background: var(--neve);
+  background: var(--color-neve);
 }
 
 .motivo {
-  color: var(--ink-2);
+  color: var(--color-ink-2);
   font-size: 13px;
   max-width: 62ch;
 }
@@ -514,17 +556,17 @@ button {
 
 .tabela th {
   text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-2);
+  font-size: var(--text-rotulo);
+  line-height: var(--text-rotulo--line-height);
+  font-weight: var(--font-weight-rotulo);
+  letter-spacing: var(--tracking-rotulo);
+  color: var(--color-ink-2);
   padding: 0 var(--e-3) var(--e-2) 0;
 }
 
 .tabela td {
   padding: var(--e-3) var(--e-3) var(--e-3) 0;
-  border-top: 1px solid var(--fio);
+  border-top: 1px solid var(--color-fio);
   vertical-align: baseline;
 }
 
@@ -537,17 +579,17 @@ button {
 .linha-abrir {
   text-align: left;
   text-decoration: underline;
-  text-decoration-color: var(--fio);
+  text-decoration-color: var(--color-fio);
   text-underline-offset: 3px;
 }
 
 .linha-abrir:hover {
-  color: var(--marca-viva);
+  color: var(--color-marca-viva);
 }
 
 .tabela tr[aria-current='true'] .linha-abrir {
   font-weight: 600;
-  color: var(--marca-viva);
+  color: var(--color-marca-viva);
 }
 
 /*
@@ -565,12 +607,12 @@ button {
   content: '';
   width: 8px;
   height: 8px;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-pill);
   border: 1.5px solid currentcolor;
 }
 
 .estado.ok {
-  color: var(--ok);
+  color: var(--color-ok);
 }
 
 .estado.ok::before {
@@ -578,31 +620,31 @@ button {
 }
 
 .estado.risco {
-  color: var(--risco);
+  color: var(--color-risco);
 }
 
 .estado.risco::before {
-  border-radius: var(--r-none);
+  border-radius: var(--radius-none);
   background: currentcolor;
 }
 
 .estado.agora {
-  color: var(--agora);
+  color: var(--color-agora);
 }
 
 .estado.neutro {
-  color: var(--ink-2);
+  color: var(--color-ink-2);
 }
 
 .estado.neutro::before {
-  border-color: var(--ink-3);
+  border-color: var(--color-ink-3);
 }
 
 /* ---------- o celular do paciente ---------- */
 
 .celular {
-  background: var(--paper);
-  border-radius: var(--r-lg);
+  background: var(--color-paper);
+  border-radius: var(--radius-lg);
   padding: var(--e-4);
   display: grid;
   gap: var(--e-3);
@@ -612,11 +654,11 @@ button {
   display: grid;
   gap: var(--e-1);
   padding-bottom: var(--e-3);
-  border-bottom: 1px solid var(--fio-2);
+  border-bottom: 1px solid var(--color-fio-2);
 }
 
 .celular-topo b {
-  font-family: var(--fonte-titulo);
+  font-family: var(--font-titulo);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -629,18 +671,18 @@ button {
 .mensagem {
   max-width: 88%;
   padding: var(--e-2) var(--e-3);
-  border-radius: var(--r-md);
+  border-radius: var(--radius-md);
   font-size: 14px;
 }
 
 .mensagem.clinica {
-  background: var(--neve);
-  border: 1px solid var(--fio-2);
+  background: var(--color-neve);
+  border: 1px solid var(--color-fio-2);
   justify-self: start;
 }
 
 .mensagem.paciente {
-  background: var(--marca-tinta);
+  background: var(--color-marca-tinta);
   justify-self: end;
 }
 
@@ -648,7 +690,7 @@ button {
   display: block;
   margin-top: var(--e-1);
   font-size: 10px;
-  color: var(--ink-2);
+  color: var(--color-ink-2);
 }
 
 /* Os botões do template da Meta: resposta vem como payload, não como texto. */
@@ -659,14 +701,14 @@ button {
 
 .botao-template {
   padding: var(--e-2) var(--e-3);
-  border: 1px solid var(--marca);
-  border-radius: var(--r-sm);
-  color: var(--marca-viva);
+  border: 1px solid var(--color-marca);
+  border-radius: var(--radius-sm);
+  color: var(--color-marca-viva);
   font-size: 14px;
   font-weight: 600;
   text-align: center;
 }
 
 .botao-template:hover {
-  background: var(--marca-tinta);
+  background: var(--color-marca-tinta);
 }

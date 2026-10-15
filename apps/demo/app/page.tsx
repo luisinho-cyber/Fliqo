@@ -6,8 +6,9 @@ import { Confirmacao } from '../componentes/Confirmacao';
 import { LinhaDoDia } from '../componentes/LinhaDoDia';
 import { ListaDeEspera } from '../componentes/ListaDeEspera';
 import { TresToques } from '../componentes/TresToques';
-import { efeitoDoBotao, PAYLOAD_BOTOES, planoDaVaga } from '../nucleo/calculos';
-import { CLINICA, type ConsultaDemo } from '../nucleo/dados';
+import { Ilustracao } from '../componentes/Ilustracao';
+import { duracaoDoDiaMin, efeitoDoBotao, PAYLOAD_BOTOES, planoDaVaga } from '../nucleo/calculos';
+import { CLINICA, CONSULTAS, type ConsultaDemo } from '../nucleo/dados';
 import {
   comBotoes,
   comConfirmacao,
@@ -24,7 +25,7 @@ import {
   type Aba,
   type Estado,
 } from '../nucleo/estado';
-import { comecoDoDia, hhmm, instanteDe } from '../nucleo/relogio';
+import { hhmm, instanteDe, relogioDoDia, type RelogioDoDia } from '../nucleo/relogio';
 
 const ABAS: { chave: Aba; rotulo: string }[] = [
   { chave: 'dia', rotulo: 'O dia' },
@@ -35,6 +36,12 @@ const ABAS: { chave: Aba; rotulo: string }[] = [
 /** A linha do agora mostra este minuto, então o relógio precisa andar. */
 const PASSO_DO_RELOGIO_MS = 15_000;
 
+/**
+ * A jornada do seed, em minutos. É constante: o que muda com o uso é quem ocupa
+ * cada horário, não a hora em que a clínica abre e fecha.
+ */
+const DURACAO_DO_DIA_MIN = duracaoDoDiaMin(CONSULTAS);
+
 export default function Pagina() {
   const [estado, setEstado] = useState<Estado>(estadoInicial);
   /*
@@ -43,8 +50,19 @@ export default function Pagina() {
    * quadro — e evita que o servidor e o cliente discordem do relógio.
    */
   const [agora, setAgora] = useState<Date | null>(null);
+  /*
+   * O dia é ancorado na primeira montagem e não muda depois: recalcular a cada
+   * tique faria a agenda inteira deslizar quando o relógio virasse a hora.
+   */
+  const [relogio, setRelogio] = useState<RelogioDoDia | null>(null);
+
   useEffect(() => {
-    setAgora(new Date());
+    const ancorado = relogioDoDia(new Date(), DURACAO_DO_DIA_MIN);
+    setRelogio(ancorado);
+    setAgora(ancorado.agora);
+    // Fora do expediente o agora é um horário representativo, e horário
+    // representativo que anda sozinho seria só um relógio errado.
+    if (!ancorado.doRelogio) return;
     const timer = setInterval(() => {
       setAgora(new Date());
     }, PASSO_DO_RELOGIO_MS);
@@ -53,14 +71,7 @@ export default function Pagina() {
     };
   }, []);
 
-  /*
-   * O começo do dia é fixado na primeira montagem, não recalculado a cada tique:
-   * recalcular faria a agenda inteira deslizar quando o relógio virasse a hora.
-   */
-  const [inicioDoDia, setInicioDoDia] = useState<Date | null>(null);
-  useEffect(() => {
-    setInicioDoDia(comecoDoDia(new Date()));
-  }, []);
+  const inicioDoDia = relogio?.inicioDoDia ?? null;
 
   const minutoDoDia = useMemo(
     () =>
@@ -243,6 +254,14 @@ export default function Pagina() {
             <p className="vazio">Carregando o dia da clínica…</p>
           ) : estado.aba === 'dia' ? (
             <>
+              {!relogio?.doRelogio && (
+                <p data-testid="relogio-representativo">
+                  <Ilustracao>
+                    fora do horário da clínica: o dia abre num horário representativo, e a linha do
+                    agora não é o seu relógio
+                  </Ilustracao>
+                </p>
+              )}
               <LinhaDoDia
                 consultas={estado.consultas}
                 inicioDoDia={inicioDoDia}

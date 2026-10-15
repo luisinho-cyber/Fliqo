@@ -58,9 +58,42 @@
   --color-foco: #14657a;
 
   /* ---------- tipografia ---------- */
-  --font-titulo: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --font-texto: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Spline Sans Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /*
+   * Sora faz o display E o corpo. Uma família só no texto tira a diferença de
+   * largura entre título e parágrafo que vinha de duas famílias desenhadas por
+   * gente diferente; o que separa os dois continua sendo peso e tracking, que é
+   * hierarquia por forma.
+   *
+   * O fallback é uma pilha de verdade, e não um `sans-serif` solto: enquanto a
+   * fonte da rede não chega — ou quando ela não chega —, a tela cai numa
+   * geométrica de sistema parecida, e não na serifada padrão do navegador.
+   */
+  --font-titulo:
+    'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-texto:
+    'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    'DM Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+
+  /*
+   * O rótulo.
+   *
+   * Antes era caixa alta de 11px com letter-spacing largo. Caixa alta custa
+   * legibilidade em português — "CONFIRMAÇÃO" perde o desenho do acento e a
+   * silhueta da palavra, que é o que se lê de relance — e 11px já estava no piso
+   * do que a recepção lê de pé, a um braço de distância da tela.
+   *
+   * O rótulo agora tem o tamanho do texto e se distingue por peso e cor: 15px,
+   * 500, caixa normal, em ink-2. Hierarquia por forma, não por contraste nem por
+   * sacrifício de tamanho.
+   */
+  --text-rotulo: 15px;
+  --text-rotulo--line-height: 1.4;
+  --font-weight-rotulo: 500;
+  --tracking-rotulo: -0.01em;
 
   /* Base 4: a escala do DESIGN.md é 4 · 8 · 12 · 16 · 24 · 32 · 48 · 72 · 104 · 132. */
   --spacing: 4px;

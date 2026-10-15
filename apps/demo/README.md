@@ -32,14 +32,27 @@ Ficaram de fora, de propósito: reativação de paciente em lote, financeiro
 projetado, a assistente respondendo livremente fora da confirmação, e qualquer
 prontuário, ficha ou anamnese.
 
-## O relógio
+## O relógio e o expediente
 
-A linha do agora mostra o minuto de verdade, então o que se ancora é o **dia da
-clínica**, não o relógio: o começo do dia é escolhido na montagem para que o
-minuto atual caia sempre no mesmo ponto da jornada (`nucleo/relogio.ts`). A
-demonstração abre com o mesmo dia às nove da manhã e às dez da noite, e as horas
-que aparecem nos blocos são horas de parede de verdade — não um relógio
-congelado.
+Duas exigências que brigam. A linha do agora tem de mostrar **este** minuto — um
+relógio congelado desenha uma linha que não é o agora de ninguém. E o dia na tela
+tem de ser um dia de clínica: nenhuma clínica atende das 2h às 9h da manhã, e um
+horário desses na frente de um cliente é a demonstração dizendo que não entende o
+negócio dele.
+
+Então o que se ancora é o **dia**, e não o relógio (`nucleo/relogio.ts`). O começo
+do dia é escolhido na montagem para que o minuto atual caia no mesmo ponto da
+jornada **e** o dia inteiro fique entre 8h e 19h. Quando os dois cabem juntos — na
+prática entre 10h e 14h —, a linha do agora é o relógio de quem está olhando, e
+anda sozinha. Quando não cabem, quem cede é o relógio: o dia abre às 9h, o agora
+fica num horário representativo, e a tela escreve "ilustração" dizendo
+exatamente isso.
+
+Deslocar o expediente seria a outra escolha, e é pior: o número na tela
+continuaria "verdadeiro" e a clínica, impossível.
+
+`tests/demonstracao.spec.ts` abre às 3h, às 23h e ao meio-dia, e confere nas três
+que a régua da faixa não sai da janela de 8h-19h.
 
 ## Como rodar
 
@@ -55,14 +68,26 @@ Cada teste em `tests/demonstracao.spec.ts` cobre um dos seis itens acima.
 
 ## Tipografia e tokens
 
-Os tokens vivem em `app/tokens.css` e a razão de cada um mora no DESIGN.md. A
-tipografia é **Sora** (título e corpo) e **DM Mono** (medida: hora e contagem,
-nunca texto corrido). Nenhum componente carrega cor literal.
+A demonstração **não tem tokens próprios**. Ela importa
+`apps/web/app/tokens.css` — a mesma fonte que o painel —, e a razão de cada valor
+mora no DESIGN.md. Paleta duplicada é paleta que diverge, e a divergência
+apareceria primeiro na frente de um cliente;
+`tests/tokens-fonte-unica.test.ts` quebra o CI se uma segunda cópia voltar.
+
+Esse arquivo declara os valores num bloco `@theme`, que é a forma de que o
+Tailwind do painel precisa. A demonstração não usa utilidade nenhuma do Tailwind:
+ela tem o plugin do PostCSS só para compilar esse bloco em `:root`
+(`postcss.config.mjs`), sem preflight e sem reset.
+
+A tipografia é **Sora** (título e corpo) e **DM Mono** (medida: hora e contagem,
+nunca texto corrido). O rótulo é 15px, peso 500, caixa normal — não há etiqueta em
+caixa alta. Nenhum componente carrega cor literal.
 
 ## Imagem de compartilhamento
 
 `public/compartilhar.png` é gerada por `scripts/imagem-de-compartilhamento.mjs`,
-que desenha a faixa do dia com os tokens desta pasta e tira uma foto em 1200×630.
+que desenha a faixa do dia com os tokens da mesma fonte e tira uma foto em
+1200×630.
 Rode de novo quando as cores ou a tipografia mudarem:
 
 ```
