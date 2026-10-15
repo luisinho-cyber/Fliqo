@@ -8,9 +8,7 @@
  * de imprimir.
  */
 
-// A senha já trocada por asteriscos não é segredo, e o comprimento dela é o que
-// permite comparar com o secret. Trocar isso por [removido] apagaria a pista.
-const URL_COM_SENHA = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):(?!\*+@)[^\s@/]+@/gi;
+const URL_COM_SENHA = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi;
 
 export function semSegredos(texto, segredos = []) {
   let limpo = String(texto);

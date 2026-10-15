@@ -92,33 +92,19 @@ export function senhaCodificadaDaUrl(url) {
 }
 
 /**
- * A URL com a senha trocada por asteriscos, mantendo o comprimento.
- *
- * O comprimento é o que permite comparar com o que está no secret sem publicar a
- * senha num log que fica guardado no GitHub.
- */
-export function urlComSenhaOculta(url) {
-  const senha = senhaCodificadaDaUrl(url);
-  if (senha === '') return url;
-  const arroba = url.lastIndexOf(`:${senha}@`);
-  return `${url.slice(0, arroba + 1)}${'*'.repeat(senha.length)}${url.slice(arroba + 1 + senha.length)}`;
-}
-
-/**
  * O que dizer sobre a senha quando o host recusa a credencial, sem dizer a senha.
  *
- * Comprimento, espaço nas pontas e os dois últimos caracteres são o bastante para
- * a pessoa comparar com o gerenciador de senhas dela: espaço invisível colado na
- * cópia e senha truncada são as duas causas que a mensagem do Postgres não conta.
+ * Nenhuma destas três pistas revela caractere da senha: comprimento pega senha
+ * truncada, espaço nas pontas pega o que ninguém vê na cópia, e o aviso de `%XX`
+ * pega a senha que o pg vai decodificar antes de enviar. Os dois últimos
+ * caracteres já estiveram aqui, enquanto a recusa não tinha explicação; saíram
+ * em #41 porque o log do Actions fica guardado.
  */
 export function pistasDaSenha(url) {
   const senha = senhaCodificadaDaUrl(url);
   const pistas = [`comprimento ${String(senha.length)}`];
   if (/^(\s|%20)/.test(senha)) pistas.push('COMEÇA com espaço');
   if (/(\s|%20)$/.test(senha)) pistas.push('TERMINA com espaço');
-  // Dois caracteres não identificam uma senha, e são o que confirma que a cópia
-  // veio inteira. Numa senha curta, dois já são demais.
-  if (senha.length > 4) pistas.push(`termina em "${senha.slice(-2)}"`);
   if (/%[0-9a-f]{2}/i.test(senha)) {
     pistas.push('contém %XX, que o pg decodifica: o que chega ao banco é mais curto');
   }
@@ -132,17 +118,11 @@ export function pistasDaSenha(url) {
  * projeto, que já aparece na URL do painel. A senha e a URL inteira nunca entram
  * aqui: é justamente por não ter esta linha que uma falha de senha parecia falha
  * de normalização.
- *
- * A URL vai junto com a senha em asteriscos, no comprimento dela: é o que mostra,
- * lado a lado com a linha do `antes`, que a normalização não mexeu na senha.
  */
 export function diagnostico(url, motivo) {
   const u = paraUrl(url);
   const porta = u.port === '' ? String(PORTA_SESSAO) : u.port;
-  return (
-    `conexão: host=${u.hostname} porta=${porta} usuario=${decodeURIComponent(u.username)} ` +
-    `url=${urlComSenhaOculta(url)} — ${motivo}`
-  );
+  return `conexão: host=${u.hostname} porta=${porta} usuario=${decodeURIComponent(u.username)} — ${motivo}`;
 }
 
 /**
@@ -230,9 +210,6 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
   const intacta = jaEhSessionPooler(bruta) ? paraUrl(bruta).hostname : undefined;
 
   const motivo = motivoDaNormalizacao(bruta);
-  // O `antes`, para comparar com o `url=` de cada tentativa. Era o que faltava
-  // para saber se a normalização mexia na senha ou se a senha estava errada.
-  registrar(`antes da normalização: url=${urlComSenhaOculta(bruta)}`);
   const candidatos = candidatosDeHost(bruta, regiao);
   const tentados = [];
 
@@ -259,9 +236,7 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
             'confira a senha dentro do secret DATABASE_ADMIN_URL. ' +
             'A mensagem do Postgres cita o usuário "postgres" porque é esse o papel ' +
             `por trás do pooler, mesmo conectando como postgres.${ref}. ` +
-            `Sobre a senha extraída do secret: ${pistasDaSenha(bruta)}. ` +
-            'A senha que foi para o alvo é a mesma, caractere por caractere: ' +
-            `${urlComSenhaOculta(bruta)} virou ${urlComSenhaOculta(url)}.`,
+            `Sobre a senha extraída do secret: ${pistasDaSenha(bruta)}.`,
           { cause: erro },
         );
       }
