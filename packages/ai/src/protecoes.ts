@@ -80,7 +80,10 @@ export function checarSaida(texto: string, precosPermitidosCentavos: number[]): 
     return { ok: false, motivo: 'promessa de resultado' };
   }
   if (
-    /\b(voc[eê] tem|[eé] (provavelmente|com certeza) (uma|um) (infec[cç][aã]o|inflama[cç][aã]o|c[aá]rie|doen[cç]a)|tome \d|pode tomar)\b/i.test(
+    // O \b fica em cada alternativa, não em volta do grupo: \b só conhece
+    // [A-Za-z0-9_], então um \b antes de "é" nunca casa depois de espaço, e
+    // "é provavelmente uma infecção" — o jeito mais natural de dizer — passava.
+    /(\bvoc[eê] tem\b|[eé] (provavelmente|com certeza) (uma|um) (infec[cç][aã]o|inflama[cç][aã]o|c[aá]rie|doen[cç]a)|\btome \d|\bpode tomar\b)/i.test(
       limpo,
     )
   ) {
