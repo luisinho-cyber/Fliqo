@@ -313,7 +313,13 @@ export class Executor {
   }
 
   async #transferir(e: { motivo: string; resumo: string }): Promise<SaidaDaFerramenta> {
-    await conversas.definirModo(this.#trx, this.#ctx.conversaId, 'humano', e.motivo);
+    const passou = await conversas.definirModo(this.#trx, this.#ctx.conversaId, 'humano', e.motivo);
+    // Transferência que não pega é a pior falha da assistente: o paciente ouve
+    // "já avisei a equipe", ninguém é avisado, e a IA volta a responder na
+    // próxima mensagem — sobre o assunto de que ela acabou de sair. Melhor
+    // derrubar a volta inteira (a transação desfaz tudo e o job tenta de novo)
+    // do que seguir como se tivesse dado certo.
+    if (!passou) throw new Error('a conversa não passou para o modo humano');
     await alertas.criar(this.#trx, this.#ctx.clinicId, {
       tipo: 'conversa_assumida',
       gravidade: e.motivo === 'urgencia' ? 'urgente' : 'atencao',

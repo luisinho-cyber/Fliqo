@@ -54,10 +54,17 @@ async function token(userId: string, expiraEm = '1h'): Promise<string> {
 async function chamar(
   metodo: 'GET' | 'POST',
   url: string,
-  opcoes: { userId?: string; clinica?: string; corpo?: unknown; tokenCru?: string } = {},
+  opcoes: {
+    userId?: string;
+    clinica?: string;
+    corpo?: unknown;
+    tokenCru?: string;
+    /** Outra instância da API, para o caso de a fila estar fora do ar. */
+    instancia?: FastifyInstance;
+  } = {},
 ) {
   const jwt = opcoes.tokenCru ?? (opcoes.userId ? await token(opcoes.userId) : undefined);
-  return app.inject({
+  return (opcoes.instancia ?? app).inject({
     method: metodo,
     url,
     headers: {
@@ -566,6 +573,46 @@ describe('cancelar consulta pelo painel', () => {
     expect((await statusDa(id))?.status).toBe('agendado');
   });
 
+  /**
+   * A API com a fila recusando qualquer enfileiramento.
+   *
+   * É o jeito de provar que o cancelamento e a chamada da fila são a mesma
+   * transação. Um `send` que falha é o que acontece de verdade quando o schema
+   * da fila está fora do ar — e o que não pode acontecer é o horário ficar livre
+   * sem ninguém da fila ser chamado, porque ninguém descobriria.
+   */
+  function apiComFilaRecusando(): FastifyInstance {
+    const filaRecusando = new Proxy(boss, {
+      get: (alvo, prop) =>
+        prop === 'send'
+          ? () => Promise.reject(new Error('fila fora do ar'))
+          : Reflect.get(alvo, prop),
+    });
+    return construirApp({ config, db, boss: filaRecusando });
+  }
+
+  it('fila fora do ar: não cancela, em vez de cancelar sem chamar ninguém', async () => {
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[3]!);
+    const semFila = apiComFilaRecusando();
+    await semFila.ready();
+    try {
+      const r = await chamar('POST', `/api/agenda/${id}/cancelar`, {
+        userId: DONA_DA_A,
+        clinica: c.clinicA,
+        corpo: { motivo: 'fila fora do ar' },
+        instancia: semFila,
+      });
+      expect(r.statusCode).toBe(500);
+      expect(r.json()).toEqual({ erro: 'erro_interno' });
+    } finally {
+      await semFila.close();
+    }
+
+    // Ou os dois, ou nenhum: a consulta continua de pé e a recepção vê que o
+    // cancelamento não passou.
+    expect((await statusDa(id))?.status).toBe('agendado');
+  });
+
   it('cancelar abre rodada na lista de espera', async () => {
     // O horário abriu: quem está na fila precisa ser chamado. É a mesma coisa
     // que acontece quando o paciente cancela pelo botão, quando a assistente
@@ -580,6 +627,35 @@ describe('cancelar consulta pelo painel', () => {
     });
     expect(r.statusCode).toBe(200);
     expect(await jobsDeOferta()).toBe(1);
+  });
+
+  it('a rodada é aberta para a vaga que acabou de abrir, e não outra', async () => {
+    // Uma rodada com o horário errado é pior que nenhuma: o paciente da fila
+    // recebe oferta de um horário que não existe e perde a confiança na clínica.
+    await owner.query(`delete from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    const id = await consultaParaCancelar(c.clinicA, c.profA, c.patients[3]!);
+    const { rows: antes } = await owner.query<{ starts_at: Date; ends_at: Date }>(
+      'select starts_at, ends_at from app.appointments where id = $1',
+      [id],
+    );
+
+    await chamar('POST', `/api/agenda/${id}/cancelar`, {
+      userId: DONA_DA_A,
+      clinica: c.clinicA,
+      corpo: { motivo: 'paciente avisou que não vem' },
+    });
+
+    const { rows } = await owner.query<{
+      data: { clinicId: string; profissionalId: string; inicio: string; fim: string };
+    }>(`select data from ${SCHEMA_FILA}.job where name = $1`, [FILA_OFERTA]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.data).toEqual({
+      // O clinicId vem da transação autenticada, nunca do corpo do pedido.
+      clinicId: c.clinicA,
+      profissionalId: c.profA,
+      inicio: antes[0]?.starts_at.toISOString(),
+      fim: antes[0]?.ends_at.toISOString(),
+    });
   });
 });
 
@@ -613,6 +689,86 @@ describe('alertas do painel', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json<{ id: string }[]>().map((a) => a.id)).toEqual([daA]);
     expect(r.body).not.toContain('clínica B');
+  });
+
+  it('cada linha traz o que a tela precisa para decidir', async () => {
+    // A tela Hoje escreve decisão, não dado: para montar "ligue para o paciente
+    // X" ela precisa do tipo, da gravidade, do título, do corpo e de para onde o
+    // toque leva. Faltando um desses, a linha vira aviso sem ação.
+    await owner.query('delete from app.alerts');
+    const { rows: consulta } = await owner.query<{ id: string }>(
+      `insert into app.appointments
+         (clinic_id, professional_id, patient_id, procedure_id, starts_at, ends_at, price_cents)
+       values ($1,$2,$3,$4, now() + interval '30 hours', now() + interval '31 hours', 25000)
+       returning id`,
+      [c.clinicA, c.profA, c.patients[0]!, c.procEletivo],
+    );
+    const consultaId = consulta[0]!.id;
+    const { rows } = await owner.query<{ id: string }>(
+      `insert into app.alerts
+         (clinic_id, kind, severity, title, body, appointment_id, patient_id)
+       values ($1,'consulta_em_risco','urgente',
+               'Consulta de amanhã sem confirmação',
+               'R$ 250,00 em risco. Ninguém respondeu à confirmação.',
+               $2, $3)
+       returning id`,
+      [c.clinicA, consultaId, c.patients[0]!],
+    );
+
+    const r = await chamar('GET', '/api/alertas', { userId: DONA_DA_A, clinica: c.clinicA });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toHaveLength(1);
+    expect(r.json()[0]).toMatchObject({
+      id: rows[0]!.id,
+      clinic_id: c.clinicA,
+      kind: 'consulta_em_risco',
+      severity: 'urgente',
+      title: 'Consulta de amanhã sem confirmação',
+      body: 'R$ 250,00 em risco. Ninguém respondeu à confirmação.',
+      appointment_id: consultaId,
+      patient_id: c.patients[0],
+      conversation_id: null,
+      resolved_at: null,
+    });
+  });
+
+  it('o mais recente primeiro, que é a ordem em que a recepção age', async () => {
+    await owner.query('delete from app.alerts');
+    for (const [titulo, minutos] of [
+      ['Mais antigo', 180],
+      ['Do meio', 60],
+      ['Mais novo', 1],
+    ] as const) {
+      await owner.query(
+        `insert into app.alerts (clinic_id, kind, severity, title, created_at)
+         values ($1,'horario_vago','atencao',$2, now() - make_interval(mins => $3))`,
+        [c.clinicA, titulo, minutos],
+      );
+    }
+
+    const r = await chamar('GET', '/api/alertas', { userId: DONA_DA_A, clinica: c.clinicA });
+    expect(r.json<{ title: string }[]>().map((a) => a.title)).toEqual([
+      'Mais novo',
+      'Do meio',
+      'Mais antigo',
+    ]);
+  });
+
+  it('a lista para em 50, e os 50 são os mais recentes', async () => {
+    // Clínica com a semana acumulada não devolve a tabela inteira para a tela.
+    await owner.query('delete from app.alerts');
+    await owner.query(
+      `insert into app.alerts (clinic_id, kind, severity, title, created_at)
+       select $1, 'horario_vago', 'atencao', 'Alerta ' || n, now() - make_interval(mins => n)
+         from generate_series(1, 60) as n`,
+      [c.clinicA],
+    );
+
+    const r = await chamar('GET', '/api/alertas', { userId: DONA_DA_A, clinica: c.clinicA });
+    const titulos = r.json<{ title: string }[]>().map((a) => a.title);
+    expect(titulos).toHaveLength(50);
+    expect(titulos[0]).toBe('Alerta 1');
+    expect(titulos.at(-1)).toBe('Alerta 50');
   });
 
   it('a dona da B não lê os alertas da A, e o 403 não carrega nada da A', async () => {
