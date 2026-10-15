@@ -25,6 +25,7 @@
     "typecheck:web": "npm --prefix apps/web run typecheck",
     "build:web": "npm --prefix apps/web run build",
     "e2e:demo": "npm --prefix apps/demo run e2e",
+    "demo:semear": "tsx apps/worker/src/semear-demo.ts",
     "db:papel-app": "node packages/db/scripts/papel-app.mjs",
     "db:conferir-rls": "node packages/db/scripts/rls-definer.mjs",
     "ambiente:tabela": "tsx packages/core/scripts/tabela-de-ambiente.ts && prettier --write docs/DEPLOY.md"
