@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
  * clínica esperando. Aqui elas aparecem no CI.
  *
  * Este arquivo mora na raiz porque a pergunta é do repositório inteiro, não de um
- * app — os três serviços saem do mesmo monorepo e disputam o mesmo pooler.
+ * app — os serviços saem do mesmo monorepo, e api e worker disputam o mesmo pooler.
  */
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
@@ -40,7 +40,7 @@ function lerPacote(caminho: string): PacoteNpm {
 }
 
 /**
- * Os três serviços do Railway, enumerados — no formato das outras listas do
+ * Os serviços do Railway, enumerados — no formato das outras listas do
  * projeto (`SEM_FORCE`, `ACOES_QUE_ENVIAM`). Serviço novo entra aqui por decisão,
  * e serviço que sair da lista sem sair do repositório quebra o CI abaixo.
  */
@@ -48,6 +48,7 @@ const SERVICOS = [
   { nome: 'api', pasta: 'apps/api', pacote: '@fliqo/api' },
   { nome: 'worker', pasta: 'apps/worker', pacote: '@fliqo/worker' },
   { nome: 'web', pasta: 'apps/web', pacote: '@fliqo/web' },
+  { nome: 'demo', pasta: 'apps/demo', pacote: '@fliqo/demo' },
 ] as const;
 
 describe('a lista de serviços descreve o repositório', () => {
@@ -90,7 +91,7 @@ describe.each(SERVICOS)('$nome', ({ pasta, pacote }) => {
   });
 
   /**
-   * Health check nos TRÊS, worker incluído. Um worker sem health check morre em
+   * Health check em TODOS, worker incluído. Um worker sem health check morre em
    * silêncio, e silêncio aqui significa nenhuma confirmação enviada e ninguém
    * sabendo — o pior caso deste produto.
    */
