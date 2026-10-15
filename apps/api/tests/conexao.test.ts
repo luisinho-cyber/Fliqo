@@ -287,26 +287,38 @@ describe('conectar', () => {
   });
 });
 
+/*
+ * Recusar é metade; a outra metade é NÃO TER FALADO com a Meta.
+ *
+ * Cada caso aqui confere as duas coisas. O banco limpo já era conferido antes e não
+ * bastava: a troca do código usa o segredo do nosso app, a assinatura de webhooks e o
+ * registro do número mexem na conta de um terceiro, e nada disso é desfeito por um 403
+ * que chega depois. `falsa.chamadas` é a lista do que saiu — ela tem que estar vazia.
+ */
 describe('quem pode conectar', () => {
-  it('recepção não conecta o WhatsApp da clínica', async () => {
-    await montarApp(metaFalsa());
+  it('recepção não conecta o WhatsApp da clínica, e nada sai para a Meta', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
     const r = await chamar('POST', '/api/whatsapp/conectar', {
       userId: RECEPCAO,
       clinica: c.clinicA,
       corpo: pedido,
     });
     expect(r.statusCode).toBe(403);
+    expect(falsa.chamadas).toHaveLength(0);
     expect((await owner.query('select id from app.whatsapp_numbers')).rows).toHaveLength(0);
   });
 
-  it('dona da clínica B não conecta na clínica A', async () => {
-    await montarApp(metaFalsa());
+  it('dona da clínica B não conecta na clínica A, e nada sai para a Meta', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
     const r = await chamar('POST', '/api/whatsapp/conectar', {
       userId: DONA_DA_B,
       clinica: c.clinicA,
       corpo: pedido,
     });
     expect(r.statusCode).toBe(403);
+    expect(falsa.chamadas).toHaveLength(0);
   });
 
   it('sem token, 401', async () => {
@@ -317,6 +329,55 @@ describe('quem pode conectar', () => {
       headers: { 'x-clinica': c.clinicA },
     });
     expect(r.statusCode).toBe(401);
+  });
+
+  // O caso que fazia a rota falar com a Meta para um estranho. META_APP_ID e
+  // META_CONFIG_ID chegam ao navegador por construção (apps/web/lib/signup.ts), então
+  // um código válido do nosso Embedded Signup está ao alcance de quem não é dono de
+  // clínica nenhuma — e era o bastante para assinarmos os webhooks dele.
+  it('sem token, conectar não chega a falar com a Meta', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
+    const r = await oApp().inject({
+      method: 'POST',
+      url: '/api/whatsapp/conectar',
+      headers: { 'x-clinica': c.clinicA, 'content-type': 'application/json' },
+      payload: pedido,
+    });
+    expect(r.statusCode).toBe(401);
+    expect(falsa.chamadas).toHaveLength(0);
+    expect((await owner.query('select id from app.whatsapp_numbers')).rows).toHaveLength(0);
+  });
+
+  it('sem token, reconectar não chega a falar com a Meta', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
+    const r = await oApp().inject({
+      method: 'POST',
+      url: '/api/whatsapp/reconectar',
+      headers: { 'x-clinica': c.clinicA, 'content-type': 'application/json' },
+      payload: pedido,
+    });
+    expect(r.statusCode).toBe(401);
+    expect(falsa.chamadas).toHaveLength(0);
+  });
+
+  // Sem clínica no cabeçalho a recusa é 400, e tem que chegar igualmente antes da Meta:
+  // o pedido não diz em nome de quem seria a conexão.
+  it('sem clínica no cabeçalho, conectar não chega a falar com a Meta', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
+    const r = await oApp().inject({
+      method: 'POST',
+      url: '/api/whatsapp/conectar',
+      headers: {
+        authorization: `Bearer ${await token(DONA)}`,
+        'content-type': 'application/json',
+      },
+      payload: pedido,
+    });
+    expect(r.statusCode).toBe(400);
+    expect(falsa.chamadas).toHaveLength(0);
   });
 });
 
