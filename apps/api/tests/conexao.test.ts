@@ -35,6 +35,15 @@ let boss: PgBoss;
 let owner: pg.Pool;
 let c: Scenario;
 
+/** Corpo de pedido como objeto quando é JSON; como texto quando não é. */
+function comoJson(corpo: string): unknown {
+  try {
+    return JSON.parse(corpo) as unknown;
+  } catch {
+    return corpo;
+  }
+}
+
 /**
  * Meta falsa. Cada chamada que o onboarding faz é atendida por uma resposta
  * roteirizada — conectar de verdade exigiria a Meta do outro lado.
@@ -52,7 +61,10 @@ function metaFalsa(
     const url = entrada instanceof Request ? entrada.url : entrada.toString();
     chamadas.push({
       url,
-      ...(typeof init?.body === 'string' ? { corpo: JSON.parse(init.body) as unknown } : {}),
+      // A troca do código manda form-urlencoded, as outras mandam JSON. Guardar o
+      // texto cru quando não é JSON é o que deixa a guarda do client_secret olhar o
+      // corpo sem a falsa estourar no parse.
+      ...(typeof init?.body === 'string' ? { corpo: comoJson(init.body) } : {}),
     });
 
     const responder = (status: number, corpo: unknown) =>
@@ -60,8 +72,14 @@ function metaFalsa(
 
     if (url.includes('oauth/access_token')) {
       return opcoes.falharNa === 'token'
-        ? // Provedor ecoando a requisição: é assim que o client_secret escaparia.
-          responder(400, { error: { message: `Invalid code. Request was: ${url}` } })
+        ? // Provedor ecoando a requisição: é assim que o client_secret escaparia. O
+          // valor vai escrito aqui, e não colhido da URL, para esta guarda continuar
+          // com dentes agora que a URL não carrega mais o segredo.
+          responder(400, {
+            error: {
+              message: `Invalid code. Request was: ${url} client_secret=segredo-do-app&code=CODIGO-DO-NAVEGADOR`,
+            },
+          })
         : responder(200, { access_token: 'TOKEN-SECRETO-DA-CLINICA' });
     }
     if (url.includes('me/businesses')) return responder(200, { data: [{ id: 'WABA-123' }] });
@@ -511,6 +529,37 @@ describe('o token nunca vai para o log', () => {
       expect(chamada.url).not.toContain('TOKEN-SECRETO-DA-CLINICA');
       expect(chamada.url).not.toContain('access_token=');
     }
+  });
+
+  /*
+   * O segredo do app é pior do que o token de uma clínica: ele troca código por token
+   * de qualquer uma delas. Pela mesma razão do caso acima, ele não vai na URL — e o
+   * código também não, porque é credencial enquanto não expira.
+   */
+  it('o client_secret e o código não vão na URL da troca do código', async () => {
+    const falsa = metaFalsa();
+    await montarApp(falsa);
+    await chamar('POST', '/api/whatsapp/conectar', {
+      userId: DONA,
+      clinica: c.clinicA,
+      corpo: pedido,
+    });
+
+    for (const chamada of falsa.chamadas) {
+      expect(chamada.url).not.toContain('client_secret');
+      expect(chamada.url).not.toContain('segredo-do-app');
+      expect(chamada.url).not.toContain('code=');
+      expect(chamada.url).not.toContain('CODIGO-DO-NAVEGADOR');
+    }
+
+    // E foi de fato enviado: no corpo, por POST. Sem isto a guarda acima passaria
+    // mesmo se alguém deixasse de mandar o segredo.
+    const troca = falsa.chamadas.find((x) => x.url.includes('oauth/access_token'));
+    expect(troca, 'a troca do código não aconteceu').toBeDefined();
+    const corpo = new URLSearchParams(troca?.corpo as string);
+    expect(corpo.get('client_secret')).toBe('segredo-do-app');
+    expect(corpo.get('code')).toBe('CODIGO-DO-NAVEGADOR');
+    expect(corpo.get('client_id')).toBe('app-fliqo');
   });
 });
 
