@@ -28,9 +28,13 @@ const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 
 const DECLARADAS = new Set<string>([
   ...Object.values(ESQUEMAS_DE_AMBIENTE).flatMap((e) => e.map((v) => v.nome)),
-  ...AMBIENTE_DE_FERRAMENTA,
-  // Injetadas pelo ambiente de execução, não por nós.
+  ...AMBIENTE_DE_FERRAMENTA.map((f) => f.nome),
+  // Injetadas pelo ambiente de execução, não por nós. As duas últimas só aparecem em
+  // tests/travas-de-ambiente.test.ts, que monta o ambiente de um subprocesso do zero e
+  // precisa repassar o mínimo para o node e o tsx acharem o que precisam.
   'NODE_ENV',
+  'PATH',
+  'HOME',
 ]);
 
 /** As pastas varridas. `readdirSync` recursivo em vez de biblioteca de glob: é padrão. */

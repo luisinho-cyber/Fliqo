@@ -1,7 +1,17 @@
-import { criarDb, recusarAdminUrl } from '@fliqo/db';
+import { AMBIENTE_DA_API, travarAmbiente } from '@fliqo/core';
+import { criarDb } from '@fliqo/db';
 import { criarFila } from '@fliqo/db/fila';
 import { construirApp } from './app';
-import { lerConfig } from './config';
+
+/*
+ * As travas do ambiente, antes de qualquer outra coisa.
+ *
+ * Primeira instrução do processo de propósito: subir sem o segredo do webhook
+ * seria aceitar qualquer mensagem como se fosse da Meta, e abrir o pool antes de
+ * conferir a conexão seria fazer justamente o que a trava existe para impedir.
+ * As quatro recusas e o porquê de cada uma estão em packages/core/src/ambiente.ts.
+ */
+const config = travarAmbiente('a api', AMBIENTE_DA_API);
 
 /**
  * Tetos de conexão, explícitos.
@@ -15,11 +25,6 @@ import { lerConfig } from './config';
 const POOL_CONSULTAS = 8;
 const POOL_DA_FILA = 2;
 
-// A configuração é validada aqui: subir sem o segredo do webhook seria aceitar
-// qualquer mensagem como se fosse da Meta.
-const config = lerConfig();
-// Antes de qualquer conexão: a api não sobe conhecendo a URL de dono do schema.
-recusarAdminUrl('a api');
 const db = criarDb(config.DATABASE_URL, POOL_CONSULTAS);
 const boss = criarFila(config.DATABASE_URL, POOL_DA_FILA);
 

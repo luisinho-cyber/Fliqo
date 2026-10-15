@@ -7,7 +7,7 @@
  *
  * Daqui saem quatro coisas, e é isso que impede a volta da divergência:
  *
- *   1. a validação na subida (`lerAmbiente`), que diz TODAS as que faltam de uma vez;
+ *   1. as quatro travas do start (`travarAmbiente`), que respondem TODAS de uma vez;
  *   2. o tipo da configuração de cada serviço, por inferência — não há lista repetida;
  *   3. o tipo de `process.env`, que faz `process.env.NAO_DECLARADA` reprovar no typecheck;
  *   4. as tabelas do DEPLOY.md, geradas por script e conferidas por teste.
@@ -52,7 +52,7 @@ export interface VariavelDeAmbiente {
  *
  * O dono não passa pela RLS (CLAUDE.md, regra 2), então uma `DATABASE_URL` de administrador
  * apagaria a separação entre clínicas sem erro nenhum: as consultas funcionariam, e
- * enxergariam tudo. Quem recusa a `DATABASE_ADMIN_URL` no ambiente é `recusarAdminUrl`, no
+ * enxergariam tudo. Quem recusa a `DATABASE_ADMIN_URL` no ambiente é a trava `proibida`, no
  * caminho de start; aqui o que se confere é o papel DENTRO da própria `DATABASE_URL`.
  */
 export const URL_DA_APLICACAO: FormatoDaVariavel = {
@@ -352,21 +352,66 @@ export const AMBIENTE_DO_PAINEL = [
 ] as const satisfies readonly VariavelDeAmbiente[];
 
 /**
- * Variáveis de FERRAMENTA: migração, scripts e CI. Nenhum serviço as lê.
+ * Variável de FERRAMENTA: migração, script ou CI. Nenhum serviço a lê.
  *
- * Elas entram aqui por um motivo só: o tipo de `process.env` sai desta lista mais os três
- * esquemas, e sem elas um script legítimo não compilaria. A `DATABASE_ADMIN_URL` está aqui
- * e em nenhum serviço — é o dono do schema, e `recusarAdminUrl` recusa subir com ela.
+ * `proibidaNoServico` é o que separa "nenhum serviço lê" de "nenhum serviço PODE conhecer".
+ * A `SUPABASE_REGION` num serviço é desperdício; a `DATABASE_ADMIN_URL` num serviço é
+ * vazamento entre clínicas a uma linha de distância. A diferença é dado, não prosa: é dela
+ * que a trava `proibida` sai, e é por isso que ela não é uma segunda lista escrita à mão.
+ */
+export interface VariavelDeFerramenta {
+  readonly nome: string;
+  /** Quem a usa, e — quando proibida — por que um serviço não pode conhecê-la. */
+  readonly porque: string;
+  readonly proibidaNoServico: boolean;
+}
+
+/**
+ * As variáveis de ferramenta, uma vez.
+ *
+ * Elas entram aqui por dois motivos. O tipo de `process.env` sai desta lista mais os três
+ * esquemas, e sem elas um script legítimo não compilaria. E a trava `proibida` do caminho de
+ * start sai do campo `proibidaNoServico` — declarar a variável sem classificá-la não compila.
  */
 export const AMBIENTE_DE_FERRAMENTA = [
-  'DATABASE_ADMIN_URL',
-  'FLIQO_APP_PASSWORD',
-  'SUPABASE_REGION',
-  'WHATSAPP_TOKEN_KEY_ANTIGA',
-  'WHATSAPP_WABA_ID',
-  'CHROMIUM_EXECUTAVEL',
-  'CI',
-] as const;
+  {
+    nome: 'DATABASE_ADMIN_URL',
+    porque:
+      'a conexão do dono do schema, que NÃO passa pela RLS (CLAUDE.md, regra 2): só as migrações e os scripts a usam',
+    proibidaNoServico: true,
+  },
+  {
+    nome: 'FLIQO_APP_PASSWORD',
+    porque: 'a senha do papel da aplicação, usada só por scripts/papel-app.mjs ao criar o papel',
+    proibidaNoServico: true,
+  },
+  {
+    nome: 'WHATSAPP_TOKEN_KEY_ANTIGA',
+    porque:
+      'a chave anterior do cofre, usada só pelo script de rotação; num serviço ela dobra o que um vazamento decifra',
+    proibidaNoServico: true,
+  },
+  {
+    nome: 'SUPABASE_REGION',
+    porque: 'região do projeto, para os scripts que montam a URL do pooler',
+    proibidaNoServico: false,
+  },
+  {
+    nome: 'WHATSAPP_WABA_ID',
+    porque: 'a conta do WhatsApp Business da Fliqo, para os scripts de catálogo de template',
+    proibidaNoServico: false,
+  },
+  {
+    nome: 'CHROMIUM_EXECUTAVEL',
+    porque: 'o navegador que o Playwright usa nos testes de ponta a ponta da apps/demo',
+    proibidaNoServico: false,
+  },
+  {
+    nome: 'CI',
+    porque: 'o GitHub a injeta; é por ela que script nosso sabe que não há ninguém para perguntar',
+    proibidaNoServico: false,
+  },
+] as const satisfies readonly VariavelDeFerramenta[];
 
 export const ESQUEMAS_DE_AMBIENTE = {
   api: AMBIENTE_DA_API,
@@ -402,7 +447,7 @@ export type NomeDeVariavel =
   | (typeof AMBIENTE_DA_API)[number]['nome']
   | (typeof AMBIENTE_DO_WORKER)[number]['nome']
   | (typeof AMBIENTE_DO_PAINEL)[number]['nome']
-  | (typeof AMBIENTE_DE_FERRAMENTA)[number];
+  | (typeof AMBIENTE_DE_FERRAMENTA)[number]['nome'];
 
 /**
  * O ambiente como os leitores de configuração o recebem.
@@ -412,6 +457,19 @@ export type NomeDeVariavel =
  * `undefined` — que é exatamente como um ambiente incompleto chega.
  */
 export type AmbienteConhecido = { [K in NomeDeVariavel]?: string | undefined };
+
+/**
+ * O ambiente como o PROCESSO o recebe: os nomes do esquema, mais tudo o que mais estiver lá.
+ *
+ * Os leitores de configuração recebem o tipo FECHADO, porque ali ler um nome fora do esquema
+ * é bug. O caminho de start é o contrário: o que importa nele é justamente o que ninguém
+ * declarou — a `DATABASE_ADMIN_URL` que alguém cadastrou no serviço errado, o
+ * `NEXT_PUBLIC_` que alguém colou de um passo a passo. Um tipo fechado aqui esconderia
+ * exatamente o que as travas `proibida` e `vazada` existem para achar.
+ */
+export type AmbienteDoProcesso = AmbienteConhecido & {
+  readonly [outro: string]: string | undefined;
+};
 
 /*
  * `process.env` passa a conhecer estes nomes, e é por isso que os leitores de configuração
@@ -439,9 +497,21 @@ declare global {
 // A leitura
 // ---------------------------------------------------------------------------
 
+/**
+ * As quatro travas. Cada uma mata o processo no start, e cada uma por um motivo diferente.
+ *
+ * `faltando` e `malformada` são sobre o que o serviço PRECISA. `proibida` e `vazada` são sobre
+ * o que o serviço NÃO PODE conhecer — e essas duas não podem morar na leitura do esquema de
+ * configuração, porque o job de testes e o workflow de migração têm a `DATABASE_ADMIN_URL` no
+ * ambiente legitimamente: uma recusa no carregamento do esquema derrubaria o próprio CI que
+ * aplica a regra. É por isso que elas moram no CAMINHO DE START, em `travarAmbiente`.
+ */
+export type MotivoDaTrava = 'faltando' | 'malformada' | 'proibida' | 'vazada';
+
 export interface ProblemaDeAmbiente {
-  variavel: string;
-  motivo: string;
+  readonly trava: MotivoDaTrava;
+  readonly variavel: string;
+  readonly motivo: string;
 }
 
 export type LeituraDoAmbiente<T> =
@@ -467,7 +537,7 @@ export function lerAmbiente<E extends readonly VariavelDeAmbiente[]>(
 
     if (vazio) {
       if (v.obrigatoria) {
-        problemas.push({ variavel: v.nome, motivo: `falta — ${v.origem}` });
+        problemas.push({ trava: 'faltando', variavel: v.nome, motivo: v.origem });
         continue;
       }
       config[v.nome] = v.padrao;
@@ -476,14 +546,18 @@ export function lerAmbiente<E extends readonly VariavelDeAmbiente[]>(
 
     const recusa = v.formato?.conferir(bruto);
     if (recusa !== undefined) {
-      problemas.push({ variavel: v.nome, motivo: recusa });
+      problemas.push({ trava: 'malformada', variavel: v.nome, motivo: recusa });
       continue;
     }
 
     if (v.tipo === 'numero') {
       const n = Number(bruto);
       if (!Number.isInteger(n) || n <= 0) {
-        problemas.push({ variavel: v.nome, motivo: 'precisa ser um número inteiro positivo' });
+        problemas.push({
+          trava: 'malformada',
+          variavel: v.nome,
+          motivo: 'precisa ser um número inteiro positivo',
+        });
         continue;
       }
       config[v.nome] = n;
@@ -498,9 +572,26 @@ export function lerAmbiente<E extends readonly VariavelDeAmbiente[]>(
     : { ok: true, config: config as ConfigDoEsquema<E> };
 }
 
+/**
+ * O que cada trava escreve na linha dela.
+ *
+ * `Record` exaustivo de propósito: trava nova sem texto de recusa não compila. É a coerência
+ * que a versão anterior não tinha, quando a mensagem de cada guarda era escrita no lugar onde
+ * a guarda morava.
+ */
+const RECUSA: Record<MotivoDaTrava, string> = {
+  faltando: 'falta',
+  malformada: 'está no ambiente com valor que não serve',
+  proibida: 'está no ambiente e nenhum serviço pode conhecê-la',
+  vazada: 'iria para o navegador',
+};
+
 /** A mensagem de start: uma linha por problema, todas de uma vez, sem nenhum valor. */
-export function mensagemDeAmbiente(servico: string, problemas: ProblemaDeAmbiente[]): string {
-  const linhas = problemas.map((p) => `  - ${p.variavel}: ${p.motivo}`);
+export function mensagemDeAmbiente(
+  servico: string,
+  problemas: readonly ProblemaDeAmbiente[],
+): string {
+  const linhas = problemas.map((p) => `  - ${p.variavel} ${RECUSA[p.trava]}: ${p.motivo}`);
   const quantas = problemas.length === 1 ? '1 variável' : `${String(problemas.length)} variáveis`;
   return [
     `${servico} não sobe: ${quantas} de ambiente com problema.`,
@@ -526,13 +617,107 @@ export function apenas<E extends readonly VariavelDeAmbiente[], N extends E[numb
   );
 }
 
-/** Lê, ou lança com todos os problemas. É o que o caminho de start usa. */
+/** Lê, ou lança com todos os problemas. É o que cada leitor do painel usa. */
 export function exigirAmbiente<E extends readonly VariavelDeAmbiente[]>(
   servico: string,
   esquema: E,
   env: AmbienteConhecido,
 ): ConfigDoEsquema<E> {
   const r = lerAmbiente(esquema, env);
+  if (!r.ok) throw new Error(mensagemDeAmbiente(servico, r.problemas));
+  return r.config;
+}
+
+// ---------------------------------------------------------------------------
+// As travas do caminho de start
+// ---------------------------------------------------------------------------
+
+/** Nenhuma variável de ferramenta proibida no ambiente de um serviço. */
+function proibidasNoAmbiente(env: AmbienteDoProcesso): ProblemaDeAmbiente[] {
+  return AMBIENTE_DE_FERRAMENTA.filter((f) => f.proibidaNoServico)
+    .filter((f) => {
+      const valor = env[f.nome];
+      // Vazia é ausência, não configuração: o Railway grava variável vazia quando alguém
+      // apaga o valor e salva.
+      return valor !== undefined && valor !== '';
+    })
+    .map((f) => ({
+      trava: 'proibida' as const,
+      variavel: f.nome,
+      // A mensagem nomeia a variável e diz o que fazer; o VALOR nunca entra, porque ela sobe
+      // no log do Railway e isso publicaria a senha do dono do schema.
+      motivo: `${f.porque}. Remova a variável deste serviço`,
+    }));
+}
+
+/** O prefixo que o Next.js publica no JavaScript que vai para o navegador. */
+const PREFIXO_DO_NAVEGADOR = 'NEXT_PUBLIC_';
+
+/**
+ * Nada com prefixo `NEXT_PUBLIC_` no ambiente de um serviço.
+ *
+ * É a regra 10 em forma de ambiente: o navegador não fala com o Supabase nem com o banco, e o
+ * `.env.example` já diz "sem prefixo NEXT_PUBLIC_ de propósito". Nem a api nem o worker são
+ * Next.js — o prefixo ali só aparece quando alguém colou uma variável de um passo a passo de
+ * outro projeto, e o nome diz exatamente o que aconteceria com o valor.
+ *
+ * Qualquer nome, não só os declarados: uma trava de segredo que só reconhecesse os nomes que
+ * já conhece deixaria passar `NEXT_PUBLIC_SUPABASE_SERVICE_KEY`, que é o caso que importa.
+ *
+ * O painel fica FORA desta trava porque ele não tem start — cada página é uma renderização de
+ * servidor. Lá quem cobra é o esquema, em `packages/core/tests/ambiente.test.ts`: nenhuma
+ * variável do painel pode ter o prefixo.
+ */
+function vazadasParaONavegador(env: AmbienteDoProcesso): ProblemaDeAmbiente[] {
+  return Object.keys(env)
+    .filter((nome) => nome.startsWith(PREFIXO_DO_NAVEGADOR))
+    .sort()
+    .map((nome) => ({
+      trava: 'vazada' as const,
+      variavel: nome,
+      motivo:
+        'o prefixo NEXT_PUBLIC_ publica o valor no JavaScript do navegador, e este serviço não é o painel',
+    }));
+}
+
+/**
+ * As quatro travas sobre o ambiente de um serviço, de uma vez.
+ *
+ * Uma por vez custou três deploys em sequência — cada subida revelava a seguinte —, e é a
+ * mesma razão de todas as quatro responderem juntas: quem está configurando o Railway vê a
+ * lista completa num log, não a primeira linha de quatro.
+ */
+export function travasDoAmbiente<E extends readonly VariavelDeAmbiente[]>(
+  esquema: E,
+  env: AmbienteDoProcesso,
+): LeituraDoAmbiente<ConfigDoEsquema<E>> {
+  const doEsquema = lerAmbiente(esquema, env);
+  const doProcesso = [...proibidasNoAmbiente(env), ...vazadasParaONavegador(env)];
+
+  if (doEsquema.ok) {
+    return doProcesso.length === 0 ? doEsquema : { ok: false, problemas: doProcesso };
+  }
+  return { ok: false, problemas: [...doEsquema.problemas, ...doProcesso] };
+}
+
+/**
+ * A primeira instrução de um serviço: ou ele tem o ambiente que precisa, ou ele não sobe.
+ *
+ * Lançar aqui, no corpo de um módulo de entrada, mata o processo com código diferente de zero
+ * e a mensagem inteira no stderr — que é o que o Railway mostra no log e o que faz o health
+ * check nunca passar. Chamar isto ANTES de qualquer conexão é o ponto: um serviço que já abriu
+ * o pool com a conexão errada e só depois reclama fez a coisa que a trava existia para impedir.
+ *
+ * O tipo do retorno sai do esquema, então não existe lista de nomes repetida: quem lê um campo
+ * que saiu do esquema deixa de compilar, e é assim que a configuração do serviço e a tabela do
+ * DEPLOY.md não podem divergir.
+ */
+export function travarAmbiente<E extends readonly VariavelDeAmbiente[]>(
+  servico: string,
+  esquema: E,
+  env: AmbienteDoProcesso = process.env,
+): ConfigDoEsquema<E> {
+  const r = travasDoAmbiente(esquema, env);
   if (!r.ok) throw new Error(mensagemDeAmbiente(servico, r.problemas));
   return r.config;
 }
@@ -584,8 +769,8 @@ export function tabelaCruzada(): string {
     )
     .concat(
       AMBIENTE_DE_FERRAMENTA.map(
-        (nome) =>
-          `| \`${nome}\` | — | — | — | ferramenta: migração, script ou CI; nenhum serviço a lê |`,
+        (f) =>
+          `| \`${f.nome}\` | — | — | — | ${f.proibidaNoServico ? '**nunca num serviço**' : 'ferramenta'}: ${celula(f.porque)} |`,
       ),
     );
 

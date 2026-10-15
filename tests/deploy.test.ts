@@ -1,6 +1,12 @@
-import { AMBIENTE_DA_API, AMBIENTE_DO_WORKER } from '@fliqo/core';
+import {
+  AMBIENTE_DA_API,
+  AMBIENTE_DE_FERRAMENTA,
+  AMBIENTE_DO_WORKER,
+  ESQUEMAS_DE_AMBIENTE,
+} from '@fliqo/core';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -132,42 +138,78 @@ describe('a porta vem do ambiente, nunca fixa no código', () => {
 });
 
 /**
- * A recusa do `DATABASE_ADMIN_URL` mora no caminho de START, e só lá.
+ * As travas do ambiente são a PRIMEIRA instrução de cada serviço.
  *
- * Se ela estivesse na leitura do schema de configuração, quebraria o próprio CI:
- * o job de testes e o workflow de migração têm a variável no ambiente
- * legitimamente, porque é com ela que o banco descartável é criado. Esta guarda
- * é o que impede alguém de "melhorar" isso movendo a recusa para o config.
+ * Aqui se confere só a POSIÇÃO, que é estrutura de arquivo e não dá para observar
+ * de fora: um serviço que abriu o pool com a conexão errada e só depois reclamou
+ * já fez o que a trava existe para impedir. Que cada trava mate o processo de
+ * verdade é conferido subindo os dois serviços, em tests/travas-de-ambiente.test.ts.
+ *
+ * A versão anterior desta seção conferia TEXTO — procurava `recusarAdminUrl(` nos
+ * dois `index.ts` e `DATABASE_ADMIN_URL: z.` nos dois `config.ts`. O segundo guard
+ * morreu no #37, quando os configs deixaram de usar Zod: ele passou a aprovar
+ * qualquer coisa, inclusive a declaração que ele existia para proibir. Guarda que
+ * confere texto não vê a coisa mudar de lugar; guarda que sobe o processo, vê.
  */
-describe('a recusa da URL de dono do schema', () => {
-  const CHAMADORES = ['apps/api/src/index.ts', 'apps/worker/src/index.ts'] as const;
+describe('as travas do ambiente vêm antes de qualquer conexão', () => {
+  const ENTRADAS = [
+    { arquivo: 'apps/api/src/index.ts', servico: 'a api' },
+    { arquivo: 'apps/worker/src/index.ts', servico: 'o worker' },
+  ] as const;
 
-  it('é chamada no start dos dois serviços', () => {
-    for (const arquivo of CHAMADORES) {
-      expect(readFileSync(RAIZ + arquivo, 'utf8'), `${arquivo} não recusa a URL de dono`).toContain(
-        'recusarAdminUrl(',
-      );
-    }
+  /*
+   * Pela ÁRVORE SINTÁTICA, e não pelas linhas do arquivo. A primeira tentativa aqui
+   * procurava a primeira linha que não começasse com `import`, e o import de várias
+   * linhas do worker já a enganou na primeira execução — que é a mesma fragilidade
+   * dos guards de texto que esta seção substitui. Comentário não é nó, e import de
+   * seis linhas é um nó só.
+   */
+  it.each(ENTRADAS)('$arquivo trava o ambiente na primeira instrução', ({ arquivo, servico }) => {
+    const fonte = ts.createSourceFile(
+      arquivo,
+      readFileSync(RAIZ + arquivo, 'utf8'),
+      ts.ScriptTarget.ESNext,
+      true,
+    );
+    const primeira = fonte.statements.find((s) => !ts.isImportDeclaration(s));
+
+    expect(primeira, `${arquivo} não tem instrução nenhuma`).toBeDefined();
+    const texto = primeira?.getText(fonte) ?? '';
+    expect(texto, `${arquivo} faz outra coisa antes de travar o ambiente`).toContain(
+      'travarAmbiente(',
+    );
+    expect(texto, `${arquivo} não nomeia o serviço na mensagem de recusa`).toContain(
+      `'${servico}'`,
+    );
   });
 
-  it('não é chamada de nenhum schema de configuração', () => {
-    for (const config of ['apps/api/src/config.ts', 'apps/worker/src/config.ts']) {
-      expect(
-        readFileSync(RAIZ + config, 'utf8'),
-        `${config} recusaria a variável no carregamento e derrubaria o CI`,
-      ).not.toContain('recusarAdminUrl(');
-    }
-  });
-
-  it('nenhum serviço declara DATABASE_ADMIN_URL como configuração sua', () => {
-    // Declarar uma variável que o serviço não usa ensina a quem lê que ela é
-    // necessária — e daí ela acaba configurada no Railway.
+  it('nenhum config.ts tem caminho de leitura próprio', () => {
+    /*
+     * Dois caminhos de validação é a divergência que o esquema único acabou. E a
+     * leitura não pode morar no config: as travas `proibida` e `vazada` recusam a
+     * `DATABASE_ADMIN_URL`, que o job de testes e o workflow de migração têm no
+     * ambiente legitimamente — uma recusa no carregamento do módulo derrubaria o
+     * próprio CI que aplica a regra.
+     */
     for (const config of ['apps/api/src/config.ts', 'apps/worker/src/config.ts']) {
       const fonte = readFileSync(RAIZ + config, 'utf8');
-      // Só a declaração do Zod conta: comentário explicando a ausência pode ficar.
-      expect(fonte, `${config} declara DATABASE_ADMIN_URL no schema`).not.toMatch(
-        /DATABASE_ADMIN_URL:\s*z\./,
+      expect(fonte, `${config} lê o ambiente fora do caminho de start`).not.toMatch(
+        /travarAmbiente\(|exigirAmbiente\(|lerAmbiente\(|process\.env/,
       );
+    }
+  });
+
+  it('nenhum esquema de serviço declara uma variável proibida', () => {
+    // Pelos DADOS, não pelo texto: declarar uma variável que o serviço não usa
+    // ensina a quem lê que ela é necessária, e daí ela acaba no Railway.
+    const proibidas = AMBIENTE_DE_FERRAMENTA.filter((f) => f.proibidaNoServico).map((f) => f.nome);
+    for (const [servico, esquema] of Object.entries(ESQUEMAS_DE_AMBIENTE)) {
+      for (const v of esquema) {
+        expect(
+          proibidas,
+          `${servico} declara ${v.nome}, que nenhum serviço pode conhecer`,
+        ).not.toContain(v.nome);
+      }
     }
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AMBIENTE_DA_API,
+  AMBIENTE_DE_FERRAMENTA,
   AMBIENTE_DO_PAINEL,
   AMBIENTE_DO_WORKER,
   apenas,
@@ -9,6 +10,8 @@ import {
   exigirAmbiente,
   lerAmbiente,
   minimoDeCaracteres,
+  travarAmbiente,
+  travasDoAmbiente,
   URL_DA_APLICACAO,
   type AmbienteConhecido,
 } from '../src/ambiente';
@@ -266,5 +269,147 @@ describe('o pedaço do esquema, para quem não tem start', () => {
   it('e cobra o que falta dentro do pedaço', () => {
     const so = apenas(AMBIENTE_DO_PAINEL, ['API_URL']);
     expect(() => exigirAmbiente('o painel', so, {})).toThrow(/API_URL/);
+  });
+});
+
+/**
+ * As travas do caminho de start, todas num mecanismo só.
+ *
+ * Antes eram guardas espalhadas — uma função em @fliqo/db para a URL de dono, a leitura do
+ * esquema em cada app — e só a primeira matava o processo de verdade. Aqui elas respondem
+ * juntas, pela mesma declaração, e o teste em tests/travas-de-ambiente.test.ts sobe os dois
+ * serviços de verdade para conferir que o processo morre.
+ */
+const URL_DO_DONO = 'postgresql://postgres:Senha-Do-Dono@db.projeto.supabase.co:5432/postgres';
+
+describe('a trava proibida: variável de ferramenta no ambiente de um serviço', () => {
+  it('a URL de dono do schema derruba a api e o worker, nomeando o serviço', () => {
+    for (const [servico, esquema] of [
+      ['a api', AMBIENTE_DA_API],
+      ['o worker', AMBIENTE_DO_WORKER],
+    ] as const) {
+      const env = { ...DA_API, WHATSAPP_TOKEN: 'x', ANTHROPIC_API_KEY: 'y' };
+      expect(() =>
+        travarAmbiente(servico, esquema, { ...env, DATABASE_ADMIN_URL: URL_DO_DONO }),
+      ).toThrow(new RegExp(servico));
+    }
+  });
+
+  it('a mensagem nomeia a variável e diz o que fazer, sem repetir o valor', () => {
+    let mensagem = '';
+    try {
+      travarAmbiente('a api', AMBIENTE_DA_API, { ...DA_API, DATABASE_ADMIN_URL: URL_DO_DONO });
+    } catch (erro) {
+      mensagem = erro instanceof Error ? erro.message : String(erro);
+    }
+    expect(mensagem).toContain('DATABASE_ADMIN_URL');
+    expect(mensagem).toContain('Remova a variável deste serviço');
+    // A mensagem vai para o log do Railway. Repetir a URL ali seria publicar a senha do dono
+    // do schema para resolver um erro de configuração.
+    expect(mensagem).not.toContain('Senha-Do-Dono');
+    expect(mensagem).not.toContain('db.projeto.supabase.co');
+  });
+
+  it('string vazia é ausência, não configuração', () => {
+    // O Railway grava variável vazia quando alguém apaga o valor e salva.
+    expect(() =>
+      travarAmbiente('a api', AMBIENTE_DA_API, { ...DA_API, DATABASE_ADMIN_URL: '' }),
+    ).not.toThrow();
+  });
+
+  it('a senha do papel e a chave antiga do cofre também não entram num serviço', () => {
+    for (const nome of ['FLIQO_APP_PASSWORD', 'WHATSAPP_TOKEN_KEY_ANTIGA'] as const) {
+      expect(() =>
+        travarAmbiente('a api', AMBIENTE_DA_API, { ...DA_API, [nome]: 'valor' }),
+      ).toThrow(new RegExp(nome));
+    }
+  });
+
+  it('ferramenta que não é segredo não derruba o serviço: desperdício não é vazamento', () => {
+    expect(() =>
+      travarAmbiente('a api', AMBIENTE_DA_API, {
+        ...DA_API,
+        CI: 'true',
+        SUPABASE_REGION: 'sa-east-1',
+      }),
+    ).not.toThrow();
+  });
+
+  it('a lista de proibidas sai do mesmo lugar que o tipo de process.env', () => {
+    // Duas listas é a divergência que este arquivo existe para acabar: toda variável de
+    // ferramenta é classificada na declaração, ou não compila.
+    const proibidas = AMBIENTE_DE_FERRAMENTA.filter((f) => f.proibidaNoServico).map((f) => f.nome);
+    expect(proibidas).toContain('DATABASE_ADMIN_URL');
+    for (const f of AMBIENTE_DE_FERRAMENTA) expect(f.porque.length).toBeGreaterThan(10);
+  });
+
+  it('julga o ambiente que recebe, não o global', () => {
+    // É isto que permite testar a trava dentro de um CI que TEM a variável no ambiente: o job
+    // de testes e o workflow de migração precisam dela para criar o banco descartável.
+    expect(() =>
+      travarAmbiente('a api', AMBIENTE_DA_API, { ...DA_API, DATABASE_ADMIN_URL: URL_DO_DONO }),
+    ).toThrow();
+    expect(() => travarAmbiente('a api', AMBIENTE_DA_API, DA_API)).not.toThrow();
+  });
+});
+
+describe('a trava vazada: nada com prefixo do navegador', () => {
+  it('qualquer NEXT_PUBLIC_ derruba o serviço, inclusive um nome que não conhecemos', () => {
+    for (const nome of ['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_SERVICE_KEY']) {
+      expect(() =>
+        travarAmbiente('a api', AMBIENTE_DA_API, { ...DA_API, [nome]: 'valor' }),
+      ).toThrow(new RegExp(nome));
+    }
+  });
+
+  it('a mensagem diz o que o prefixo faz, porque o nome sozinho não explica', () => {
+    try {
+      travarAmbiente('a api', AMBIENTE_DA_API, { ...DA_API, NEXT_PUBLIC_API_URL: 'https://x.y' });
+      throw new Error('devia ter recusado');
+    } catch (erro) {
+      expect(erro instanceof Error ? erro.message : '').toContain('navegador');
+    }
+  });
+});
+
+describe('as quatro travas respondem de uma vez', () => {
+  it('faltando, malformada, proibida e vazada na MESMA mensagem', () => {
+    let mensagem = '';
+    try {
+      travarAmbiente('a api', AMBIENTE_DA_API, {
+        ...DA_API,
+        SUPABASE_JWT_SECRET: undefined,
+        WHATSAPP_TOKEN_KEY: 'curta',
+        DATABASE_ADMIN_URL: URL_DO_DONO,
+        NEXT_PUBLIC_API_URL: 'https://x.y',
+      });
+    } catch (erro) {
+      mensagem = erro instanceof Error ? erro.message : '';
+    }
+    // Uma por vez custou três deploys em sequência: cada subida revelava a seguinte.
+    expect(mensagem).toContain('4 variáveis');
+    for (const nome of [
+      'SUPABASE_JWT_SECRET',
+      'WHATSAPP_TOKEN_KEY',
+      'DATABASE_ADMIN_URL',
+      'NEXT_PUBLIC_API_URL',
+    ]) {
+      expect(mensagem).toContain(nome);
+    }
+  });
+
+  it('cada linha diz qual trava recusou, e não só o nome', () => {
+    const r = travasDoAmbiente(AMBIENTE_DA_API, {
+      ...DA_API,
+      META_APP_ID: undefined,
+      DATABASE_ADMIN_URL: URL_DO_DONO,
+    });
+    if (r.ok) throw new Error('devia ter recusado');
+    expect(r.problemas.map((p) => p.trava)).toEqual(['faltando', 'proibida']);
+  });
+
+  it('com o ambiente certo, devolve a configuração', () => {
+    const config = travarAmbiente('a api', AMBIENTE_DA_API, DA_API);
+    expect(config.PORT).toBe(3000);
   });
 });
