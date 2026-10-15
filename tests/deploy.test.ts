@@ -1,5 +1,5 @@
 import { AMBIENTE_DA_API, AMBIENTE_DO_WORKER } from '@fliqo/core';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -222,5 +222,68 @@ describe('nenhum segredo no repositório', () => {
 
   it('o .env está ignorado pelo git', () => {
     expect(readFileSync(`${RAIZ}.gitignore`, 'utf8')).toMatch(/^\.env$/m);
+  });
+});
+
+/**
+ * As guardas dos fluxos do GitHub Actions.
+ *
+ * Um job sem `permissions:` herda o padrão da organização, que costuma ser leitura E
+ * escrita; e `actions/checkout` sem `persist-credentials: false` deixa esse token em
+ * `.git/config` do runner. Os três fluxos rodam `npm ci` depois do checkout, e `npm ci`
+ * executa postinstall de dependência — a distância entre uma dependência comprometida e
+ * escrita no repositório era um `cat`. No `migrar-banco` o mesmo job recebe
+ * `DATABASE_ADMIN_URL`, a conexão de dono do schema, que não passa pela RLS.
+ *
+ * Fica aqui, e não num fluxo que se confere no olho, porque a regra é a mesma para todo
+ * job e para todo checkout: fluxo novo ou job novo passa por isto ou quebra o CI.
+ */
+const FLUXOS = ['ci.yml', 'migrar-banco.yml', 'conferir-rls.yml'] as const;
+
+function lerFluxo(nome: string): string {
+  return readFileSync(`${RAIZ}.github/workflows/${nome}`, 'utf8');
+}
+
+describe('os fluxos do Actions rodam com o mínimo de privilégio', () => {
+  it('todo fluxo do repositório está enumerado', () => {
+    const noDisco = readdirSync(`${RAIZ}.github/workflows`).filter((f) => f.endsWith('.yml'));
+    expect([...noDisco].sort()).toEqual([...FLUXOS].sort());
+  });
+
+  it('todo job declara permissions com contents: read', () => {
+    for (const nome of FLUXOS) {
+      // Só o que vem DEPOIS de `jobs:`. Antes dele há chaves de dois espaços que não
+      // são job (`push:` e `workflow_dispatch:`, sob `on:`), e contá-las fazia a guarda
+      // acusar o migrar-banco de ter três jobs.
+      const fluxo = lerFluxo(nome).split(/^jobs:$/m)[1] ?? '';
+      // Um job é uma chave de dois espaços sob `jobs:`; `permissions` e `runs-on` vêm
+      // com quatro. Contar os dois e comparar é o que pega o job novo sem o bloco.
+      const jobs = [...fluxo.matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((m) => m[1]);
+      const comPermissao = [...fluxo.matchAll(/^ {4}permissions:\n {6}contents: read$/gm)];
+      expect(jobs.length, `${nome} não tem job`).toBeGreaterThan(0);
+      expect(
+        comPermissao.length,
+        `${nome} tem ${String(jobs.length)} job(s) e ${String(comPermissao.length)} bloco(s) de permissions`,
+      ).toBe(jobs.length);
+    }
+  });
+
+  it('nenhum job pede escrita em contents', () => {
+    for (const nome of FLUXOS) {
+      expect(lerFluxo(nome), `${nome} pede escrita`).not.toMatch(/contents:\s*write/);
+    }
+  });
+
+  it('todo checkout desliga a persistência da credencial', () => {
+    for (const nome of FLUXOS) {
+      const fluxo = lerFluxo(nome);
+      const checkouts = [...fluxo.matchAll(/uses: actions\/checkout@/g)].length;
+      const desligados = [...fluxo.matchAll(/^ {10}persist-credentials: false$/gm)].length;
+      expect(checkouts, `${nome} não faz checkout`).toBeGreaterThan(0);
+      expect(
+        desligados,
+        `${nome} tem ${String(checkouts)} checkout(s) e ${String(desligados)} com persist-credentials: false`,
+      ).toBe(checkouts);
+    }
   });
 });
