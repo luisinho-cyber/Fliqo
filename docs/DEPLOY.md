@@ -10,12 +10,13 @@ projeto, nunca numa conversa, nunca num print.
 
 ## Quem é quem
 
-| Peça                      | Onde roda                         | Conecta ao banco como | Pode mexer no schema   |
-| ------------------------- | --------------------------------- | --------------------- | ---------------------- |
-| Migração (`Migrar banco`) | GitHub Actions, no push da `main` | `postgres` (dono)     | sim, é o trabalho dela |
-| API (`apps/api`)          | Railway                           | `fliqo_app`           | não                    |
-| Worker (`apps/worker`)    | Railway                           | `fliqo_app`           | não                    |
-| Painel (`apps/web`)       | Railway                           | não conecta ao banco  | não                    |
+| Peça                       | Onde roda                         | Conecta ao banco como | Pode mexer no schema   |
+| -------------------------- | --------------------------------- | --------------------- | ---------------------- |
+| Migração (`Migrar banco`)  | GitHub Actions, no push da `main` | `postgres` (dono)     | sim, é o trabalho dela |
+| API (`apps/api`)           | Railway                           | `fliqo_app`           | não                    |
+| Worker (`apps/worker`)     | Railway                           | `fliqo_app`           | não                    |
+| Painel (`apps/web`)        | Railway                           | não conecta ao banco  | não                    |
+| Demonstração (`apps/demo`) | Railway                           | não conecta ao banco  | não                    |
 
 Você não precisa de nada instalado no seu computador: tudo é feito pelo navegador,
 no Supabase, no GitHub e no Railway.
@@ -322,6 +323,37 @@ aponta para `/health`, que é a única rota fora do `proxy.ts` — a raiz manda 
 `/login` com 307, e health check que segue redirecionamento não diz nada sobre o
 serviço estar de pé. Essa rota devolve `{"ok":true}` e mais nada.
 
+## Serviço da demonstração no Railway
+
+Opcional, e fora da cadeia de produção: a demonstração não conecta ao banco, não
+fala com a Meta e não tem variável nenhuma. Ela roda com dado sintético escrito
+no próprio código (`apps/demo/nucleo/dados.ts`), então pode subir antes de o
+resto estar pronto e continuar no ar quando algo mais cair.
+
+**New > GitHub Repo**, o mesmo repositório. Em **Settings**:
+
+- **Service Name**: `demo`
+- **Root Directory**: vazio
+- **Config-as-code file path**: `apps/demo/railway.json`
+
+Gere um domínio em **Settings > Networking > Generate Domain**. É o endereço que
+você manda para quem vai assistir.
+
+Em **Variables**: nada. Nenhuma variável, nenhum segredo. Se um dia a
+demonstração pedir uma, alguma coisa está errada no desenho — ela existe
+justamente para rodar sozinha.
+
+Não crie `PORT`: o `start` serve a pasta exportada na porta que o Railway
+injetar. O health check aponta para `/health`, que o servidor responde sem
+depender do que o `next build` exportou — assim um build vazio aparece como
+serviço reiniciando, e não como página em branco.
+
+O `build` é `next build` com `output: 'export'`: sai uma pasta de arquivos
+estáticos. Não há servidor de Next no ar, e é por isso que este serviço não
+precisa de banco nem de rede.
+
+---
+
 ## Onde cada variável entra, e onde NÃO entra
 
 A tabela existe para responder a pergunta que dá errado: "esta variável, em qual
@@ -467,6 +499,11 @@ O painel: abra o domínio do passo 7. Tem de cair na tela de entrar. Depois de
 entrar com a pessoa que você criou, aparece a linha do dia de hoje. Se aparecer
 "não consegui carregar o dia de hoje", o `API_URL` está errado ou a API está
 fora do ar.
+
+A demonstração: abra o domínio dela. Tem de aparecer a linha do dia com a
+clínica de exemplo, sem pedir login. Se vier "não encontrado", o build não
+exportou — o `/health` dela responde mesmo assim, então é no log do build que
+está a resposta.
 
 ---
 

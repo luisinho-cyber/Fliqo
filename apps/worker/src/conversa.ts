@@ -258,11 +258,19 @@ async function processar(
   if (transferiu) {
     // A ferramenta já mudou o modo e criou o alerta. Falta só não deixar o
     // paciente no vácuo.
+    //
+    // A despedida que o modelo escreveu junto com a transferência é texto do
+    // modelo como qualquer outro, e passa pelas mesmas proteções de saída: sem
+    // isso, a assistente entrega o diagnóstico no caminho para a equipe, que é
+    // justamente o assunto de que a transferência existe para tirá-la. Aqui não
+    // há segunda chance — a conversa já é da equipe — então reprovada a
+    // despedida, sai a frase da casa.
+    const despedida = texto === '' ? undefined : checarSaida(texto, precosPermitidos);
     const baloes = await responderDireto(
       dep,
       trx,
       base,
-      texto === '' ? RESPOSTA_TRANSFERENCIA : texto,
+      despedida?.ok === true && despedida.texto !== '' ? despedida.texto : RESPOSTA_TRANSFERENCIA,
       false,
     );
     return { atendida: true, saida: 'transferencia', baloes, uso };

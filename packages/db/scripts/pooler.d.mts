@@ -12,12 +12,16 @@ export declare function candidatosDeHost(url: string, regiao?: string): string[]
 
 export declare function urlDoSessionPooler(partes: {
   ref: string;
-  senha: string;
+  /** Já na forma em que vai para a URL: sai daqui sem ser codificada de novo. */
+  senhaCodificada: string;
   host: string;
 }): string;
 
-/** A senha da URL, já decodificada. */
-export declare function senhaDaUrl(url: string): string;
+/** A senha exatamente como está escrita na string, sem decodificar nem recodificar. */
+export declare function senhaCodificadaDaUrl(url: string): string;
+
+/** Comprimento, espaço nas pontas e aviso de `%XX` — nunca caractere da senha. */
+export declare function pistasDaSenha(url: string): string;
 
 /** Verdadeiro para erro de host/DNS; falso para credencial errada. */
 export declare function ehHostErrado(erro: unknown): boolean;
@@ -30,6 +34,9 @@ export declare function diagnostico(url: string, motivo: string): string;
 
 /** Devolve a url se ela tiver host de pooler, usuário `postgres.<ref>` e porta de sessão. */
 export declare function conferirAlvo(url: string): string;
+
+/** Verdadeiro quando a string colada já é a do Session pooler e não há o que montar. */
+export declare function jaEhSessionPooler(url: string): boolean;
 
 /** A conexão de migração resolvida, com o host que respondeu ao `select 1`. */
 export declare function resolverAdminUrl(

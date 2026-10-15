@@ -21,6 +21,8 @@ const HOST_SUPABASE = /\.supabase\.(co|com)$/i;
 const HOST_DIRETO = /^db\.([a-z0-9]+)\.supabase\.(co|com)$/i;
 const HOST_POOLER = /\.pooler\.supabase\.com$/i;
 const USUARIO_COM_REF = /^postgres\.([a-z0-9]+)$/i;
+// `scheme://autoridade` — o pedaço onde moram usuário, senha, host e porta.
+const AUTORIDADE = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i;
 
 /** Banco local (docker-compose, CI) não tem pooler nenhum para descobrir. */
 export function ehDoSupabase(url) {
@@ -55,20 +57,58 @@ export function candidatosDeHost(url, regiao = REGIAO_PADRAO) {
   ];
 }
 
-/** A string do Session pooler, montada a partir das partes. */
-export function urlDoSessionPooler({ ref, senha, host }) {
+/**
+ * A string do Session pooler, montada a partir das partes.
+ *
+ * `senhaCodificada` entra já na forma em que vai para a URL e sai daqui sem
+ * passar por `encodeURIComponent`: quem interpreta escape de senha é o pg, na
+ * hora de conectar. Codificar aqui o que já estava codificado, ou decodificar
+ * antes para codificar depois, muda a senha sem ninguém pedir.
+ */
+export function urlDoSessionPooler({ ref, senhaCodificada, host }) {
   const usuario = encodeURIComponent(`postgres.${ref}`);
-  return `postgresql://${usuario}:${encodeURIComponent(senha)}@${host}:${PORTA_SESSAO}/postgres`;
+  return `postgresql://${usuario}:${senhaCodificada}@${host}:${PORTA_SESSAO}/postgres`;
 }
 
-/** A senha, já decodificada. `%` solto na senha não é escape: fica como está. */
-export function senhaDaUrl(url) {
-  const bruta = paraUrl(url).password;
-  try {
-    return decodeURIComponent(bruta);
-  } catch {
-    return bruta;
+/**
+ * A senha exatamente como está escrita na string, caractere por caractere.
+ *
+ * Nem `new URL().password` nem `decodeURIComponent` entram aqui, e isso é o
+ * ponto: `new URL()` devolve a senha RE-CODIFICADA (`100% ok` volta como
+ * `100%%20ok`), e decodificar depois não desfaz isso em todos os casos. Pior,
+ * decodificar uma senha literal a altera em silêncio — `Senha%41bc`, dez
+ * caracteres, viraria `SenhaAbc`, oito. A senha atravessa daqui até o alvo sem
+ * ninguém tocar nela, e o pg vê na string montada o mesmo que veria na original.
+ */
+export function senhaCodificadaDaUrl(url) {
+  // Para a mensagem de "não é uma URL válida" continuar sendo a mesma.
+  paraUrl(url);
+  const autoridade = AUTORIDADE.exec(url)?.[1] ?? '';
+  const arroba = autoridade.lastIndexOf('@');
+  if (arroba === -1) return '';
+  const userinfo = autoridade.slice(0, arroba);
+  const doisPontos = userinfo.indexOf(':');
+  return doisPontos === -1 ? '' : userinfo.slice(doisPontos + 1);
+}
+
+/**
+ * O que dizer sobre a senha quando o host recusa a credencial, sem dizer a senha.
+ *
+ * Nenhuma destas três pistas revela caractere da senha: comprimento pega senha
+ * truncada, espaço nas pontas pega o que ninguém vê na cópia, e o aviso de `%XX`
+ * pega a senha que o pg vai decodificar antes de enviar. Os dois últimos
+ * caracteres já estiveram aqui, enquanto a recusa não tinha explicação; saíram
+ * em #41 porque o log do Actions fica guardado.
+ */
+export function pistasDaSenha(url) {
+  const senha = senhaCodificadaDaUrl(url);
+  const pistas = [`comprimento ${String(senha.length)}`];
+  if (/^(\s|%20)/.test(senha)) pistas.push('COMEÇA com espaço');
+  if (/(\s|%20)$/.test(senha)) pistas.push('TERMINA com espaço');
+  if (/%[0-9a-f]{2}/i.test(senha)) {
+    pistas.push('contém %XX, que o pg decodifica: o que chega ao banco é mais curto');
   }
+  return pistas.join(', ');
 }
 
 /**
@@ -102,6 +142,19 @@ export function conferirAlvo(url) {
     throw new Error(`alvo montado fora da porta de sessão: ${u.port}`);
   }
   return url;
+}
+
+/**
+ * A string colada já é a do Session pooler: host de pooler, usuário
+ * `postgres.<ref>` e porta de sessão. Nesse caso não há o que montar.
+ */
+export function jaEhSessionPooler(url) {
+  try {
+    conferirAlvo(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Senha recusada: o host estava certo, o problema é a credencial. */
@@ -149,8 +202,12 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
     );
   }
 
-  const senha = senhaDaUrl(bruta);
-  if (senha === '') throw new Error('a string de conexão está sem senha');
+  const senhaCodificada = senhaCodificadaDaUrl(bruta);
+  if (senhaCodificada === '') throw new Error('a string de conexão está sem senha');
+
+  // Quando a string já é a do Session pooler, o host dela é o primeiro candidato
+  // e nada é reescrito: conferirAlvo só confirma e devolve a mesma string.
+  const intacta = jaEhSessionPooler(bruta) ? paraUrl(bruta).hostname : undefined;
 
   const motivo = motivoDaNormalizacao(bruta);
   const candidatos = candidatosDeHost(bruta, regiao);
@@ -159,7 +216,10 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
   for (const [i, host] of candidatos.entries()) {
     // Usuário e host saem juntos da mesma montagem, e conferirAlvo não deixa
     // passar um sem o outro.
-    const url = conferirAlvo(urlDoSessionPooler({ ref, senha, host }));
+    const url =
+      host === intacta
+        ? conferirAlvo(bruta)
+        : conferirAlvo(urlDoSessionPooler({ ref, senhaCodificada, host }));
     registrar(
       diagnostico(url, `${motivo} (tentativa ${String(i + 1)} de ${String(candidatos.length)})`),
     );
@@ -175,7 +235,8 @@ export async function resolverAdminUrl(bruta, opcoes = {}) {
           `o host ${host} respondeu e recusou a senha. O host está certo; ` +
             'confira a senha dentro do secret DATABASE_ADMIN_URL. ' +
             'A mensagem do Postgres cita o usuário "postgres" porque é esse o papel ' +
-            `por trás do pooler, mesmo conectando como postgres.${ref}.`,
+            `por trás do pooler, mesmo conectando como postgres.${ref}. ` +
+            `Sobre a senha extraída do secret: ${pistasDaSenha(bruta)}.`,
           { cause: erro },
         );
       }
@@ -194,8 +255,8 @@ function motivoDaNormalizacao(bruta) {
   if (HOST_DIRETO.test(u.hostname)) {
     return 'normalização aplicada: a conexão direta é IPv6 e não chega do GitHub Actions';
   }
-  if (u.port === String(PORTA_SESSAO)) {
-    return 'normalização aplicada: host confirmado a partir da própria string';
+  if (jaEhSessionPooler(bruta)) {
+    return 'normalização só conferiu: host, usuário e porta já são os do Session pooler';
   }
   return 'normalização aplicada: a migração precisa do modo sessão, na porta 5432';
 }

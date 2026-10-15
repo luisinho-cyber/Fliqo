@@ -169,13 +169,23 @@ export class OnboardingMeta {
   async trocarCodigo(
     codigo: string,
   ): Promise<{ ok: true; token: string } | { ok: false; detalhe: string }> {
-    const url =
-      this.#url('oauth/access_token') +
-      `?client_id=${encodeURIComponent(this.#appId)}` +
-      `&client_secret=${encodeURIComponent(this.#appSecret)}` +
-      `&code=${encodeURIComponent(codigo)}`;
+    // No corpo, nunca na query string. Vale aqui a mesma razão que `descobrirWaba`
+    // dá para não pôr o token na URL: URL aparece em log de proxy, em mensagem de
+    // erro e em qualquer depuração de cliente HTTP. E o que vai aqui é pior do que
+    // um token de clínica — é o segredo do nosso app, que troca código por token de
+    // qualquer uma delas. O `code` vai junto porque também é credencial: trocável
+    // por token enquanto não expira.
+    const corpoDoPedido = new URLSearchParams({
+      client_id: this.#appId,
+      client_secret: this.#appSecret,
+      code: codigo,
+    });
 
-    const { corpo: cru } = await this.#json(url);
+    const { corpo: cru } = await this.#json(this.#url('oauth/access_token'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: corpoDoPedido.toString(),
+    });
     const corpo = cru as RespostaToken;
     // O código entra na lista de redação junto com o segredo do app: ele é
     // trocável por token enquanto não expira, então é credencial, não

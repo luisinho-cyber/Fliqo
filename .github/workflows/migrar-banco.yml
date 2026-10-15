@@ -26,6 +26,12 @@ jobs:
   migrar:
     runs-on: ubuntu-latest
 
+    # Este fluxo muda o BANCO, nunca o repositório. E é o job que recebe
+    # DATABASE_ADMIN_URL, a conexão de dono do schema, que não passa pela RLS: é o
+    # último lugar onde se quer um token de escrita sobrando.
+    permissions:
+      contents: read
+
     steps:
       # Falha visível em vez de job pulado: pulado fica verde e parece que rodou.
       - name: Só a branch main
@@ -35,6 +41,10 @@ jobs:
           exit 1
 
       - uses: actions/checkout@v4
+        # O token do checkout não fica no runner: o `npm ci` abaixo roda postinstall
+        # de dependência, e nada aqui usa git depois do checkout.
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:

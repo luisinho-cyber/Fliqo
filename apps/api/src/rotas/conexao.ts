@@ -97,8 +97,18 @@ export function registrarConexao(app: FastifyInstance, ctx: ContextoConexao): vo
       const c = PedidoDeConexao.safeParse(req.body);
       if (!c.success) return reply.code(400).send({ erro: 'pedido_invalido' });
 
+      // Autorizar ANTES de falar com a Meta. A chamada abaixo não é consulta: ela
+      // troca o código usando o segredo do NOSSO app, assina os webhooks da conta e
+      // registra o número com o PIN que veio no corpo. Autorizar depois dela deixava
+      // qualquer um, sem token nenhum, disparar cinco chamadas em nome do nosso app e
+      // mexer na conta de um terceiro — o 401 chegava depois do efeito.
+      const permissao = await comDono(ctx, req, reply, () => Promise.resolve(undefined));
+      if (permissao.respondido) return reply;
+
       // A troca com a Meta acontece FORA da transação: é chamada de rede, e
       // segurar uma transação aberta esperando a internet prende conexão do pool.
+      // É por isso que são duas transações, e não uma: a de cima só confere quem
+      // pediu, e a de baixo grava o que a Meta respondeu.
       const resultado = await ctx.onboarding.conectar({
         codigo: c.data.codigo,
         ...(c.data.wabaId === undefined ? {} : { wabaId: c.data.wabaId }),

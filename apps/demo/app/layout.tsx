@@ -5,14 +5,14 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://demo.fliqo.com.br'),
   title: 'Fliqo — demonstração',
   description:
-    'Agenda que não perde horário, atendimento pelo WhatsApp e caixa ligado à agenda. Ambiente de demonstração com dados fictícios.',
+    'A agenda da clínica em funcionamento: chegada, início e fim do atendimento, o atraso deslocando o dia, a confirmação pelo WhatsApp e a lista de espera reocupando o horário. Dados fictícios.',
   openGraph: {
     type: 'website',
     locale: 'pt_BR',
     siteName: 'Fliqo',
     title: 'Fliqo — demonstração',
     description:
-      'Veja em seis cenas como a clínica para de perder horário: confirmação de véspera, lista de espera, atraso avisado antes de o paciente sair de casa e o caixa que vem da agenda.',
+      'A agenda da clínica em funcionamento, com dados fictícios: os três toques do atendimento, o atraso deslocando o dia, a confirmação pelo WhatsApp e a lista de espera.',
     images: [{ url: '/compartilhar.png', width: 1200, height: 630, alt: 'Fliqo' }],
   },
   twitter: {
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#eef1f0' },
-    { media: '(prefers-color-scheme: dark)', color: '#0b1211' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b1210' },
   ],
 };
 
@@ -37,9 +37,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/*
+          Sora faz título e corpo; DM Mono faz medida. O corpo para em 600: o peso
+          do título é do título (DESIGN.md).
+        */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&family=Schibsted+Grotesk:wght@700;800&family=Spline+Sans+Mono:wght@400;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap"
         />
       </head>
       <body>{children}</body>

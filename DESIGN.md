@@ -3,7 +3,9 @@
 Leia junto com o CLAUDE.md antes de qualquer tela. Referência viva: `docs/referencia/fliqo-demo.html`.
 
 **Este arquivo é a fonte.** Os valores moram em `apps/web/app/tokens.css`, e a razão de
-cada um mora aqui. Se uma regra existe só dentro de um componente, ela sobe para cá —
+cada um mora aqui. Esse arquivo serve os dois apps: `apps/demo` importa dele, e não tem
+cópia própria — paleta duplicada é paleta que diverge, e `tests/tokens-fonte-unica.test.ts`
+quebra o CI se uma segunda cópia aparecer. Se uma regra existe só dentro de um componente, ela sobe para cá —
 regra que vive numa tela só é folclore, e folclore não sobrevive à segunda pessoa que
 mexe na tela.
 
@@ -71,9 +73,15 @@ estado passaria a depender só do texto. Com `ink-3` o contorno existe, continua
 a diferença com `confirmado` segue sendo forma — traço neutro contra traço `ok` — e não
 matiz.
 
-Texto de apoio vai para `ink-2`, **inclusive etiqueta em caixa alta de 11px**. Caixa alta
-com `letter-spacing` já lê como secundária; ela não precisa de contraste menor também.
-Hierarquia por forma, não por contraste — contraste é o canal frágil.
+Texto de apoio vai para `ink-2`, **inclusive o rótulo**. Hierarquia por forma, não por
+contraste — contraste é o canal frágil.
+
+**Não existe etiqueta em caixa alta.** O rótulo (`--text-rotulo`) é 15px, peso 500, caixa
+normal, `letter-spacing` −0,01em, em `ink-2`. A caixa alta de 11px com `letter-spacing`
+largo que havia antes custava duas coisas: em português ela apaga o acento e a silhueta da
+palavra, que é o que se lê de relance, e 11px já estava no piso do que a recepção lê de pé,
+a um braço da tela. O rótulo agora tem o tamanho do texto e se separa dele por peso e cor —
+a mesma regra de hierarquia por forma, aplicada ao próprio rótulo.
 
 ### Fios e ausência
 
@@ -107,9 +115,15 @@ Hierarquia por forma, não por contraste — contraste é o canal frágil.
 
 - **Espaçamento**, base 4: 4 · 8 · 12 · 16 · 24 · 32 · 48 · 72 · 104 · 132.
 - **Raio**: `none` 0 · `sm` 5px · `md` 10px · `lg` 14px · `pill` 980px.
-- **Display**: Schibsted Grotesk 700/800, tracking negativo (−0,02 a −0,04 em).
-- **Corpo**: Public Sans 400/500/600. Não há 700 no corpo: o peso do título é do título.
-- **Mono**: Spline Sans Mono 400/500, **sempre** com `tabular-nums`.
+- **Display**: Sora 700/800, tracking negativo (−0,02 a −0,04 em).
+- **Corpo**: Sora 400/500/600. Não há 700 no corpo: o peso do título é do título.
+- **Rótulo**: Sora 500, 15px, caixa normal, −0,01 em, em `ink-2`.
+- **Mono**: DM Mono 400/500, **sempre** com `tabular-nums`.
+- Display e corpo são a MESMA família de propósito: duas famílias desenhadas por gente
+  diferente deixam título e parágrafo com larguras que não conversam, e o que separa os
+  dois já é peso e tracking. Cada família declara uma pilha de fallback de verdade, e não
+  um `sans-serif` solto — enquanto a fonte da rede não chega, a tela cai numa geométrica
+  de sistema, e não na serifada padrão do navegador.
 - O logotipo é "fliqo" em minúsculas, peso 800, com um ponto âmbar: o "agora". É a única
   aparição de âmbar que não é tempo, e é a que dá nome à regra.
 
@@ -200,5 +214,6 @@ calculado, porque o valor final não está em token nenhum. Passado é quieto, n
 ## Proibido
 
 Gradiente roxo ou azul, emoji como ícone, sombra pesada em tudo, grade de quatro cards de
-KPI no topo, etiqueta colorida para cada estado, Inter como fonte, texto de exemplo,
+KPI no topo, etiqueta colorida para cada estado, etiqueta em caixa alta, Inter como fonte,
+texto de exemplo,
 **cor literal dentro de componente**, **`opacity` para indicar estado**.
