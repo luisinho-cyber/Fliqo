@@ -1,158 +1,201 @@
 import {
+  CONFIRMACOES,
   CONSULTAS,
   LISTA_DE_ESPERA,
+  PROCEDIMENTOS,
+  type ConfirmacaoDemo,
   type ConsultaDemo,
   type EsperaDemo,
-  type StatusConsulta,
 } from './dados';
 
-export type Aba = 'dia' | 'conversas' | 'fila' | 'caixa' | 'pontualidade';
-export type Dia = 'hoje' | 'amanha';
+export type Aba = 'dia' | 'confirmacao' | 'espera';
 
 export interface Mensagem {
-  de: 'clinica' | 'paciente' | 'sistema';
+  de: 'clinica' | 'paciente';
   texto: string;
-  hora?: string;
+  quando: string;
 }
 
-export interface BotaoDaMensagem {
+/** Um botão do template da Meta, do lado do paciente. */
+export interface BotaoDoTemplate {
   rotulo: string;
-  aoTocar: (api: ApiDeCena) => void | Promise<void>;
+  payload: string;
 }
 
 export interface Conversa {
+  consultaId: string;
   paciente: string;
-  contexto: string;
-  modo: 'assistente' | 'humano';
   mensagens: Mensagem[];
-  botoes: BotaoDaMensagem[];
+  botoes: BotaoDoTemplate[];
 }
 
-export type Severidade = 'risk' | 'late' | 'ok' | 'info';
-
-export interface Decisao {
-  id: string;
-  severidade: Severidade;
-  titulo: string;
-  detalhe: string;
-  acao?: string;
+export interface Oferta {
+  consultaId: string;
+  expiraEm: Date;
+  quantos: number;
 }
 
 export interface Estado {
   aba: Aba;
-  dia: Dia;
   consultas: ConsultaDemo[];
+  confirmacoes: ConfirmacaoDemo[];
   fila: EsperaDemo[];
   conversas: Record<string, Conversa>;
   conversaAtiva: string;
-  decisoes: Decisao[];
   selecionada: string | null;
-  recuperadoCentavos: number;
-  cena: number;
-  tocando: boolean;
-  apresentadorEscondido: boolean;
-  aviso: string | null;
-}
-
-/** O que uma cena pode fazer. Cena nenhuma toca no DOM direto. */
-export interface ApiDeCena {
-  ajustar: (f: (e: Estado) => Estado) => void;
-  esperar: (ms: number) => Promise<void>;
-  avisar: (texto: string) => void;
+  oferta: Oferta | null;
 }
 
 export function estadoInicial(): Estado {
   return {
     aba: 'dia',
-    dia: 'hoje',
     consultas: CONSULTAS.map((c) => ({ ...c })),
+    confirmacoes: CONFIRMACOES.map((c) => ({ ...c })),
     fila: LISTA_DE_ESPERA.map((w) => ({ ...w })),
-    conversas: {
-      carla: {
-        paciente: 'Carla Mendes',
-        contexto: 'Toxina botulínica · amanhã 14:00',
-        modo: 'assistente',
-        mensagens: [],
-        botoes: [],
-      },
-      mariana: {
-        paciente: 'Mariana Teixeira',
-        contexto: 'Lista de espera · toxina botulínica',
-        modo: 'assistente',
-        mensagens: [],
-        botoes: [],
-      },
-      rodrigo: {
-        paciente: 'Rodrigo Sales',
-        contexto: 'Paciente novo',
-        modo: 'assistente',
-        mensagens: [],
-        botoes: [],
-      },
-      lucas: {
-        paciente: 'Lucas Martins',
-        contexto: 'Toxina botulínica · hoje 12:10',
-        modo: 'assistente',
-        mensagens: [],
-        botoes: [],
-      },
-      helena: {
-        paciente: 'Helena Castro',
-        contexto: 'Profilaxia · hoje 15:00',
-        modo: 'assistente',
-        mensagens: [],
-        botoes: [],
-      },
-    },
-    conversaAtiva: 'carla',
-    decisoes: [],
+    conversas: conversasIniciais(),
+    conversaAtiva: 'a7',
     selecionada: null,
-    recuperadoCentavos: 0,
-    cena: 0,
-    tocando: false,
-    apresentadorEscondido: false,
-    aviso: null,
+    oferta: null,
   };
+}
+
+/**
+ * A conversa de cada confirmação, como ela está quando o dia começa. A mensagem
+ * de confirmação sai como template da Meta com botões, então a resposta volta
+ * como payload fixo — sem IA no meio, que é o que o CLAUDE.md (regra 4) exige da
+ * confirmação.
+ */
+function conversasIniciais(): Record<string, Conversa> {
+  const pergunta = (c: ConsultaDemo): Mensagem => ({
+    de: 'clinica',
+    texto: `Olá, ${primeiroNome(c.paciente)}! Sua ${nomeDoProcedimento(c.procedimentoId).toLowerCase()} na Clínica Aurora é amanhã. Podemos confirmar?`,
+    quando: 'ontem, 18:00',
+  });
+
+  const entradas = CONSULTAS.filter((c) => CONFIRMACOES.some((f) => f.consultaId === c.id)).map<
+    [string, Conversa]
+  >((c) => {
+    const confirmacao = CONFIRMACOES.find((f) => f.consultaId === c.id);
+    const mensagens: Mensagem[] = [pergunta(c)];
+
+    if (confirmacao?.estado === 'confirmou') {
+      mensagens.push({ de: 'paciente', texto: 'Confirmo', quando: 'ontem, 18:12' });
+      mensagens.push({
+        de: 'clinica',
+        texto: 'Combinado, até amanhã. Se precisar mudar, responda por aqui.',
+        quando: 'ontem, 18:12',
+      });
+    }
+    if (confirmacao?.estado === 'recusou') {
+      mensagens.push({ de: 'paciente', texto: 'Não vou poder', quando: 'ontem, 18:25' });
+      mensagens.push({
+        de: 'clinica',
+        texto: 'Sem problema, liberei o horário. Já te chamo com outras opções.',
+        quando: 'ontem, 18:25',
+      });
+    }
+
+    return [c.id, { consultaId: c.id, paciente: c.paciente, mensagens, botoes: [] }];
+  });
+
+  return Object.fromEntries(entradas);
+}
+
+export function primeiroNome(nome: string): string {
+  return nome.split(' ')[0] ?? nome;
+}
+
+export function nomeDoProcedimento(id: string): string {
+  return PROCEDIMENTOS[id]?.nome ?? 'consulta';
 }
 
 // ---------- ajustes, todos imutáveis ----------
 
-export function mudarStatus(e: Estado, id: string, status: StatusConsulta): Estado {
-  return { ...e, consultas: e.consultas.map((c) => (c.id === id ? { ...c, status } : c)) };
+function comConsulta(e: Estado, id: string, f: (c: ConsultaDemo) => ConsultaDemo): Estado {
+  return { ...e, consultas: e.consultas.map((c) => (c.id === id ? f(c) : c)) };
 }
 
-export function mudarEspera(e: Estado, id: string, estado: EsperaDemo['estado']): Estado {
-  return { ...e, fila: e.fila.map((w) => (w.id === id ? { ...w, estado } : w)) };
+/** Recepção marcou a chegada do paciente. */
+export function registrarChegada(e: Estado, id: string, minutoDoDia: number): Estado {
+  return comConsulta(e, id, (c) => ({ ...c, chegouEm: minutoDoDia }));
 }
 
-export function comMensagem(e: Estado, conversa: string, msg: Mensagem): Estado {
-  const atual = e.conversas[conversa];
+/** Profissional começou o atendimento. */
+export function iniciarAtendimento(e: Estado, id: string, minutoDoDia: number): Estado {
+  return comConsulta(e, id, (c) => ({
+    ...c,
+    chegouEm: c.chegouEm ?? minutoDoDia,
+    iniciadaEm: minutoDoDia,
+  }));
+}
+
+/** Atendimento terminou: é aqui que a consulta vira realizada. */
+export function finalizarAtendimento(e: Estado, id: string, minutoDoDia: number): Estado {
+  return comConsulta(e, id, (c) => ({
+    ...c,
+    finalizadaEm: minutoDoDia,
+    status: 'realizado',
+  }));
+}
+
+export function comMensagem(e: Estado, conversaId: string, msg: Mensagem): Estado {
+  const atual = e.conversas[conversaId];
   if (!atual) return e;
   return {
     ...e,
     conversas: {
       ...e.conversas,
-      [conversa]: { ...atual, mensagens: [...atual.mensagens, msg], botoes: [] },
+      [conversaId]: { ...atual, mensagens: [...atual.mensagens, msg], botoes: [] },
     },
   };
 }
 
-export function comBotoes(e: Estado, conversa: string, botoes: BotaoDaMensagem[]): Estado {
-  const atual = e.conversas[conversa];
+export function comBotoes(e: Estado, conversaId: string, botoes: BotaoDoTemplate[]): Estado {
+  const atual = e.conversas[conversaId];
   if (!atual) return e;
-  return { ...e, conversas: { ...e.conversas, [conversa]: { ...atual, botoes } } };
+  return { ...e, conversas: { ...e.conversas, [conversaId]: { ...atual, botoes } } };
 }
 
-export function comModo(e: Estado, conversa: string, modo: Conversa['modo']): Estado {
-  const atual = e.conversas[conversa];
-  if (!atual) return e;
-  return { ...e, conversas: { ...e.conversas, [conversa]: { ...atual, modo } } };
+export function comConfirmacao(
+  e: Estado,
+  consultaId: string,
+  estado: ConfirmacaoDemo['estado'],
+  respondeuEm: number,
+): Estado {
+  return {
+    ...e,
+    confirmacoes: e.confirmacoes.map((f) =>
+      f.consultaId === consultaId ? { ...f, estado, respondeuEm } : f,
+    ),
+  };
 }
 
-export function comDecisao(e: Estado, d: Decisao): Estado {
-  return { ...e, decisoes: [d, ...e.decisoes.filter((x) => x.id !== d.id)] };
+/** O horário saiu da agenda. Cancelada não desenha bloco: o lugar volta a ser hachura. */
+export function liberarHorario(e: Estado, consultaId: string): Estado {
+  return comConsulta(e, consultaId, (c) => ({ ...c, status: 'cancelado' }));
 }
 
-export function semDecisao(e: Estado, id: string): Estado {
-  return { ...e, decisoes: e.decisoes.filter((d) => d.id !== id) };
+export function comEspera(e: Estado, id: string, estado: EsperaDemo['estado']): Estado {
+  return { ...e, fila: e.fila.map((w) => (w.id === id ? { ...w, estado } : w)) };
+}
+
+/**
+ * A vaga reocupada entra como consulta NOVA no mesmo horário, e a cancelada fica
+ * onde está. São dois fatos diferentes do dia, e juntá-los num registro só
+ * apagaria o que a clínica mais quer ver: que o horário não ficou vazio.
+ */
+export function reocuparHorario(
+  e: Estado,
+  consultaCancelada: ConsultaDemo,
+  paciente: string,
+): Estado {
+  const nova: ConsultaDemo = {
+    id: `${consultaCancelada.id}-reocupada`,
+    profissionalId: consultaCancelada.profissionalId,
+    marcadaEm: consultaCancelada.marcadaEm,
+    paciente,
+    procedimentoId: consultaCancelada.procedimentoId,
+    status: 'confirmado',
+  };
+  return { ...e, consultas: [...e.consultas, nova] };
 }
