@@ -42,6 +42,24 @@ jobs:
 
       - run: npm test
 
+  # Separado do `verificar` de propósito: esta conferência não precisa de banco, roda em
+  # segundos, e é a que diz se a tabela de capacidades ainda é verdade. Job próprio para o
+  # vermelho dizer "a tabela mente" em vez de se perder no meio da suíte.
+  capacidades:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run capacidades
+
   demonstracao:
     runs-on: ubuntu-latest
 

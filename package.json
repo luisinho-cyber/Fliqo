@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:core": "vitest run packages/core packages/ai",
     "test:db": "vitest run packages/db",
+    "capacidades": "vitest run tests/capacidades.test.ts",
     "db:migrate": "node packages/db/scripts/migrate.mjs && node packages/db/scripts/fila.mjs",
     "whatsapp:rotacionar-chave": "tsx apps/worker/src/rotacionar-chave.ts",
     "typecheck:demo": "npm --prefix apps/demo run typecheck",
