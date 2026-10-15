@@ -39,6 +39,14 @@ async function resolver(caminho) {
 
 createServer((req, res) => {
   const caminho = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  // O health check do Railway precisa de uma resposta que não dependa do que o
+  // `next build` exportou: se a pasta `out` faltar, a raiz devolve 404 e o
+  // serviço reiniciaria em laço sem dizer por quê.
+  if (caminho === '/health') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end('{"ok":true}');
+    return;
+  }
   void resolver(caminho === '/' ? '/index.html' : caminho).then((arquivo) => {
     if (arquivo === null) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
