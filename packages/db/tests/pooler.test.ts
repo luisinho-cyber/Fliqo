@@ -11,7 +11,6 @@ import {
   refDoProjeto,
   resolverAdminUrl,
   senhaCodificadaDaUrl,
-  urlComSenhaOculta,
   urlDoSessionPooler,
 } from '../scripts/pooler.mjs';
 
@@ -90,32 +89,17 @@ describe('senha extraída da string', () => {
   });
 });
 
-describe('senha oculta na saída', () => {
-  it('troca a senha por asteriscos e mantém o comprimento', () => {
-    const oculta = urlComSenhaOculta(
-      `postgresql://postgres:${SENHA}@db.${REF}.supabase.co:5432/postgres`,
-    );
-    expect(oculta).not.toContain(SENHA);
-    expect(oculta).toContain(`postgres:${'*'.repeat(SENHA.length)}@`);
-    // O resto da URL fica legível: é o que serve para conferir host e usuário.
-    expect(oculta).toContain(`@db.${REF}.supabase.co:5432/postgres`);
-  });
-
-  it('não mexe em URL sem senha', () => {
-    const semSenha = `postgresql://postgres@db.${REF}.supabase.co:5432/postgres`;
-    expect(urlComSenhaOculta(semSenha)).toBe(semSenha);
-  });
-});
-
 describe('pistas da senha quando o host recusa', () => {
   const comSenha = (senha: string) =>
     pistasDaSenha(`postgresql://postgres:${senha}@db.${REF}.supabase.co:5432/postgres`);
 
-  it('conta comprimento e os dois últimos caracteres, nunca a senha', () => {
+  it('conta o comprimento e nenhum caractere da senha', () => {
     const pistas = comSenha('Senha-Ficticia-123');
     expect(pistas).toContain('comprimento 18');
-    expect(pistas).toContain('termina em "23"');
     expect(pistas).not.toContain('Senha-Ficticia-123');
+    // Os dois últimos caracteres saíram em #41: o log do Actions fica guardado.
+    expect(pistas).not.toContain('termina em');
+    expect(pistas).not.toContain('23');
   });
 
   it('aponta espaço colado nas pontas, que é o que ninguém vê na cópia', () => {
@@ -129,8 +113,8 @@ describe('pistas da senha quando o host recusa', () => {
     expect(comSenha('SenhaAbc')).not.toContain('%XX');
   });
 
-  it('não mostra os dois últimos de uma senha curta demais', () => {
-    expect(comSenha('abc')).toBe('comprimento 3');
+  it('numa senha sem nada a apontar, conta só o comprimento', () => {
+    expect(comSenha('SenhaSemNadaDeMais')).toBe('comprimento 18');
   });
 });
 
@@ -218,25 +202,7 @@ describe('diagnóstico antes de conectar', () => {
         return Promise.resolve();
       },
     });
-    expect(ordem).toEqual(['diagnostico', 'diagnostico', 'conexao']);
-  });
-
-  it('mostra o antes e o depois da normalização, com a senha em asteriscos', async () => {
-    const linhas: string[] = [];
-    await resolverAdminUrl(DIRETA, {
-      registrar: (l: string) => linhas.push(l),
-      testar: () => Promise.resolve(),
-    });
-    const [antes, tentativa] = linhas as [string, string];
-    expect(antes).toContain('antes da normalização');
-    expect(antes).toContain(`db.${REF}.supabase.co`);
-    expect(tentativa).toContain('aws-0-sa-east-1.pooler.supabase.com');
-    // O comprimento da senha é o que se compara entre as duas linhas; o valor
-    // nunca aparece em nenhuma delas.
-    for (const linha of [antes, tentativa]) {
-      expect(linha).toContain('*'.repeat(SENHA.length));
-      expect(linha).not.toContain(SENHA);
-    }
+    expect(ordem).toEqual(['diagnostico', 'conexao']);
   });
 
   it('diz por que normalizou, conforme a forma que foi colada', async () => {
@@ -246,8 +212,7 @@ describe('diagnóstico antes de conectar', () => {
         registrar: (l: string) => linhas.push(l),
         testar: () => Promise.resolve(),
       });
-      // A primeira linha é o `antes`; o motivo vem na linha da tentativa.
-      return linhas.find((l) => /normalização (aplicada|só conferiu|pulada)/.test(l)) ?? '';
+      return linhas[0] ?? '';
     };
     expect(await motivoDe(DIRETA)).toContain('IPv6');
     expect(await motivoDe(TRANSACAO)).toContain('modo sessão');
@@ -360,12 +325,10 @@ describe('resolução', () => {
     expect(erro.message).toContain(`postgres.${REF}`);
     expect(erro.message).not.toContain(SENHA);
 
-    // O que a mensagem do Postgres não conta e é o que resolve o caso: tamanho,
-    // espaço nas pontas, os dois últimos caracteres, e o antes/depois da senha
-    // em asteriscos — para ver de uma vez que a normalização não mexeu nela.
+    // O que a mensagem do Postgres não conta: o tamanho da senha extraída. Nem
+    // ela nem caractere nenhum dela entram na mensagem.
     expect(erro.message).toContain(`comprimento ${String(SENHA.length)}`);
-    expect(erro.message).toContain('termina em "23"');
-    expect(erro.message).toContain('*'.repeat(SENHA.length));
+    expect(erro.message).not.toContain('termina em');
   });
 
   it('a senha com espaço no fim é apontada na recusa, em vez de ficar invisível', async () => {

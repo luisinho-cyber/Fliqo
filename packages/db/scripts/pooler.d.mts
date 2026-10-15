@@ -20,10 +20,7 @@ export declare function urlDoSessionPooler(partes: {
 /** A senha exatamente como está escrita na string, sem decodificar nem recodificar. */
 export declare function senhaCodificadaDaUrl(url: string): string;
 
-/** A URL com a senha em asteriscos, no comprimento dela. */
-export declare function urlComSenhaOculta(url: string): string;
-
-/** Comprimento, espaço nas pontas e os dois últimos caracteres da senha — nunca a senha. */
+/** Comprimento, espaço nas pontas e aviso de `%XX` — nunca caractere da senha. */
 export declare function pistasDaSenha(url: string): string;
 
 /** Verdadeiro para erro de host/DNS; falso para credencial errada. */
