@@ -30,6 +30,13 @@ describe('limpeza de segredos na saída dos scripts', () => {
     expect(limpo).toContain('pooler.supabase.com:6543');
   });
 
+  it('deixa passar a senha que já está em asteriscos', () => {
+    // É o antes/depois da normalização: o comprimento é a pista, e trocar os
+    // asteriscos por [removido] apagaria justamente o que se queria comparar.
+    const oculta = 'postgresql://postgres:******************@db.projeto.supabase.co:5432/postgres';
+    expect(semSegredos(`falhou em ${oculta}`, [URL, SENHA])).toContain(oculta);
+  });
+
   it('não estraga um texto sem segredo nenhum', () => {
     expect(semSegredos('role "fliqo_app" does not exist', [URL, SENHA])).toBe(
       'role "fliqo_app" does not exist',
