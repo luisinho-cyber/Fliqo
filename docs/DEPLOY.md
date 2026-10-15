@@ -248,29 +248,70 @@ ele é o webhook do passo 8.
 - **Root Directory**: vazio
 - **Config-as-code file path**: `apps/worker/railway.json`
 
-O worker atende HTTP numa rota só, `/health`, e o `railway.json` dele já aponta o
-health check para lá. **Não gere domínio**: o health check do Railway bate na porta
+O worker atende HTTP em duas rotas, e o `railway.json` dele aponta o health check
+para `/health`. **Não gere domínio**: o health check do Railway bate na porta
 interna do serviço, e o worker não tem nada para servir ao público.
 
-Um worker sem health check morre em silêncio, e silêncio aqui significa nenhuma
-confirmação enviada, nenhuma vaga oferecida e ninguém sabendo. O `/health` responde
-**503** quando um dos laços para de dar sinal — e é esse 503 que faz o Railway
-reiniciar o serviço.
+- `/health` responde 200 enquanto o processo está de pé. O health check do Railway
+  roda só no início do deploy, aceita qualquer 2xx e serve para o deploy novo entrar
+  no ar; ele não roda depois disso e não reinicia nada.
+- `/estado` diz se o trabalho está saindo: `verde`, `degradado` (laço batendo, envio
+  represado) ou `travado` (laço sem sinal), com a causa e os números. Fica fora do
+  health check e **só responde com `Authorization: Bearer <ESTADO_TOKEN>`**. Sem token
+  válido, responde 404 igual a uma rota que não existe; sem `ESTADO_TOKEN` configurado,
+  fica fechado para todos. Ele diz exatamente quando o sistema está fraco, e isso não é
+  para quem sonda a porta — mesmo que alguém gere um domínio para o worker por engano.
+
+O que reinicia o worker é a política `ON_FAILURE`, e ela só age quando o processo
+sai com erro. Um laço travado não faz o processo sair: o worker fica de pé, nada é
+enviado, e o `/estado` diz `travado`. O aviso que chega a alguém é o e-mail do vigia
+de operador.
 
 Em **Variables**:
 
 <!-- ambiente:worker:inicio -->
 
-| Variável            | Obrigatória                     | Formato                                                                            | De onde vem                                                                               |
-| ------------------- | ------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `DATABASE_URL`      | sim                             | postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4) |
-| `WHATSAPP_TOKEN`    | sim                             | —                                                                                  | Meta > WhatsApp > API Setup (token de usuário de sistema, para não expirar em 24 h)       |
-| `ANTHROPIC_API_KEY` | sim                             | —                                                                                  | painel do provedor do modelo; cole direto no Railway, e em nenhum outro lugar             |
-| `ANTHROPIC_MODEL`   | não (padrão `claude-haiku-4-5`) | —                                                                                  | opcional                                                                                  |
-| `PORT`              | não (padrão `3100`)             | —                                                                                  | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                      |
-| `LOG_LEVEL`         | não (padrão `info`)             | —                                                                                  | `info`                                                                                    |
+| Variável             | Obrigatória                                  | Formato                                                                            | De onde vem                                                                               |
+| -------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | sim                                          | postgresql://fliqo_app:senha@host:porta/banco (o papel da aplicação, nunca o dono) | Transaction pooler do Supabase, com o usuário trocado para fliqo_app (DEPLOY.md, passo 4) |
+| `WHATSAPP_TOKEN_KEY` | sim                                          | 32 bytes em base64 (44 caracteres terminando em "=")                               | você gera (DEPLOY.md, logo abaixo da tabela da API)                                       |
+| `ANTHROPIC_API_KEY`  | sim                                          | —                                                                                  | painel do provedor do modelo; cole direto no Railway, e em nenhum outro lugar             |
+| `ANTHROPIC_MODEL`    | não (padrão `claude-haiku-4-5`)              | —                                                                                  | opcional                                                                                  |
+| `EMAIL_API_KEY`      | sim                                          | —                                                                                  | painel do provedor de e-mail; cole direto no serviço worker do Railway                    |
+| `EMAIL_REMETENTE`    | sim                                          | —                                                                                  | um endereço do domínio verificado no provedor de e-mail                                   |
+| `OPERADOR_EMAIL`     | sim                                          | —                                                                                  | o seu endereço                                                                            |
+| `EMAIL_API_URL`      | não (padrão `https://api.resend.com/emails`) | https://… (a barra no fim é tolerada e removida por quem lê)                       | opcional                                                                                  |
+| `OPERADOR_FUSO`      | não (padrão `America/Sao_Paulo`)             | fuso IANA, ex. America/Sao_Paulo                                                   | opcional                                                                                  |
+| `ESTADO_TOKEN`       | não                                          | pelo menos 32 caracteres                                                           | você gera: `openssl rand -base64 32` no seu terminal, e cola só no worker                 |
+| `PORT`               | não (padrão `3100`)                          | —                                                                                  | o Railway injeta; cadastre à mão só se usar "Target port" no domínio                      |
+| `LOG_LEVEL`          | não (padrão `info`)                          | —                                                                                  | `info`                                                                                    |
 
 <!-- ambiente:worker:fim -->
+
+**As três de e-mail são do vigia de operador** (migração 0015). Ele roda de 15 em 15
+minutos em horário comercial e avisa quando uma clínica fica com o WhatsApp fora por
+mais de 20 min, quando passa 3 h com ação vencida e nenhuma mensagem saindo, ou quando
+a qualidade do número cai do verde.
+
+**A `EMAIL_API_KEY` fica SÓ no worker.** Não na api, não no painel, não no CI. Quem
+manda e-mail é o worker; um runner de CI que pode mandar e-mail em nome da Fliqo é
+superfície nova sem nada em troca, e a api não tem o que fazer com ela.
+
+**`ESTADO_TOKEN` é segredo e fica SÓ no worker.** Opcional: sem ele, o `/estado` não
+responde a ninguém. Com menos de 32 caracteres, o worker não sobe.
+
+`EMAIL_API_URL` e `OPERADOR_FUSO` são opcionais: valem `https://api.resend.com/emails`
+e `America/Sao_Paulo`. O fuso é o **seu**, não o da clínica — é a sua caixa de entrada
+que toca, e é ele que decide o que é "horário comercial" para o vigia.
+
+**Não existe mais um token de WhatsApp de ambiente.** Cada clínica manda com a
+credencial dela: a api cifra o token no momento da conexão, e o worker decifra para
+enviar. Por isso o worker precisa da `WHATSAPP_TOKEN_KEY` — sem ela ele não tem como
+mandar mensagem em nome de ninguém, e o start falha dizendo isso.
+
+Um token único de reserva seria pior do que falhar: uma clínica mal configurada
+passaria a mandar mensagem pelo número errado, os pacientes dela receberiam de um
+remetente estranho, e nada apareceria em log nenhum.
 
 `ANTHROPIC_MODEL` é opcional. Sem ela, vale `claude-haiku-4-5`. Trocar de modelo
 é mudar essa variável e reiniciar o worker.
@@ -331,32 +372,37 @@ variáveis daquele serviço.
 
 <!-- ambiente:cruzada:inicio -->
 
-| Variável                    | api | worker | painel | Por quê                                                                                     |
-| --------------------------- | :-: | :----: | :----: | ------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`              |  ✓  |   ✓    |   —    | o painel não fala com o banco (CLAUDE.md, regra 10)                                         |
-| `WHATSAPP_APP_SECRET`       |  ✓  |   —    |   —    | valida a assinatura do webhook, que chega na api                                            |
-| `WHATSAPP_VERIFY_TOKEN`     |  ✓  |   —    |   —    | a Meta a devolve na verificação do webhook                                                  |
-| `SUPABASE_JWT_SECRET`       |  ✓  |   —    |   —    | quem verifica o token do painel é a api                                                     |
-| `META_APP_ID`               |  ✓  |   —    |   ✓    | a api troca o código do Embedded Signup; o painel abre a janela                             |
-| `META_APP_SECRET`           |  ✓  |   —    |   —    | só a api: é o que torna o código do navegador útil                                          |
-| `WHATSAPP_TOKEN_KEY`        |  ✓  |   —    |   —    | a api cifra o token que a clínica conecta; o worker passa a decifrar na fase de resiliência |
-| `PORT`                      |  ✓  |   ✓    |   —    | a porta em que o serviço escuta, e a mesma que o health check consulta                      |
-| `LOG_LEVEL`                 |  ✓  |   ✓    |   —    | nível do logger                                                                             |
-| `WHATSAPP_TOKEN`            |  —  |   ✓    |   —    | quem envia mensagem é o worker                                                              |
-| `ANTHROPIC_API_KEY`         |  —  |   ✓    |   —    | só o worker chama o modelo                                                                  |
-| `ANTHROPIC_MODEL`           |  —  |   ✓    |   —    | o modelo é configuração, não código: trocar não exige publicar de novo                      |
-| `API_URL`                   |  —  |   —    |   ✓    | quem chama a api é o servidor do painel                                                     |
-| `SUPABASE_URL`              |  —  |   —    |   ✓    | autenticação, no servidor do painel                                                         |
-| `SUPABASE_ANON_KEY`         |  —  |   —    |   ✓    | idem                                                                                        |
-| `META_CONFIG_ID`            |  —  |   —    |   ✓    | sem ela a tela de conexão explica que falta configurar, em vez de estourar                  |
-| `NODE_ENV`                  |  —  |   —    |   ✓    | é o que faz o cookie de sessão sair como Secure                                             |
-| `DATABASE_ADMIN_URL`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `FLIQO_APP_PASSWORD`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `SUPABASE_REGION`           |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `WHATSAPP_TOKEN_KEY_ANTIGA` |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `WHATSAPP_WABA_ID`          |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `CHROMIUM_EXECUTAVEL`       |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
-| `CI`                        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                                     |
+| Variável                    | api | worker | painel | Por quê                                                                      |
+| --------------------------- | :-: | :----: | :----: | ---------------------------------------------------------------------------- |
+| `DATABASE_URL`              |  ✓  |   ✓    |   —    | o painel não fala com o banco (CLAUDE.md, regra 10)                          |
+| `WHATSAPP_APP_SECRET`       |  ✓  |   —    |   —    | valida a assinatura do webhook, que chega na api                             |
+| `WHATSAPP_VERIFY_TOKEN`     |  ✓  |   —    |   —    | a Meta a devolve na verificação do webhook                                   |
+| `SUPABASE_JWT_SECRET`       |  ✓  |   —    |   —    | quem verifica o token do painel é a api                                      |
+| `META_APP_ID`               |  ✓  |   —    |   ✓    | a api troca o código do Embedded Signup; o painel abre a janela              |
+| `META_APP_SECRET`           |  ✓  |   —    |   —    | só a api: é o que torna o código do navegador útil                           |
+| `WHATSAPP_TOKEN_KEY`        |  ✓  |   ✓    |   —    | a api cifra o token que a clínica conecta, e o worker decifra para enviar    |
+| `PORT`                      |  ✓  |   ✓    |   —    | a porta em que o serviço escuta, e a mesma que o health check consulta       |
+| `LOG_LEVEL`                 |  ✓  |   ✓    |   —    | nível do logger                                                              |
+| `ANTHROPIC_API_KEY`         |  —  |   ✓    |   —    | só o worker chama o modelo                                                   |
+| `ANTHROPIC_MODEL`           |  —  |   ✓    |   —    | o modelo é configuração, não código: trocar não exige publicar de novo       |
+| `EMAIL_API_KEY`             |  —  |   ✓    |   —    | o vigia de operador avisa por e-mail quando uma clínica fica muda            |
+| `EMAIL_REMETENTE`           |  —  |   ✓    |   —    | remetente não verificado vira spam, e aviso em spam não é aviso              |
+| `OPERADOR_EMAIL`            |  —  |   ✓    |   —    | é a caixa de entrada que toca quando uma clínica para de responder           |
+| `EMAIL_API_URL`             |  —  |   ✓    |   —    | o caminho comum não precisa de configuração; trocar de provedor não é código |
+| `OPERADOR_FUSO`             |  —  |   ✓    |   —    | o fuso de QUEM RECEBE, para o vigia não mandar e-mail às três da manhã       |
+| `ESTADO_TOKEN`              |  —  |   ✓    |   —    | o /estado conta o veredito da fila; o /health continua público e sem token   |
+| `API_URL`                   |  —  |   —    |   ✓    | quem chama a api é o servidor do painel                                      |
+| `SUPABASE_URL`              |  —  |   —    |   ✓    | autenticação, no servidor do painel                                          |
+| `SUPABASE_ANON_KEY`         |  —  |   —    |   ✓    | idem                                                                         |
+| `META_CONFIG_ID`            |  —  |   —    |   ✓    | sem ela a tela de conexão explica que falta configurar, em vez de estourar   |
+| `NODE_ENV`                  |  —  |   —    |   ✓    | é o que faz o cookie de sessão sair como Secure                              |
+| `DATABASE_ADMIN_URL`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `FLIQO_APP_PASSWORD`        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `SUPABASE_REGION`           |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `WHATSAPP_TOKEN_KEY_ANTIGA` |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `WHATSAPP_WABA_ID`          |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `CHROMIUM_EXECUTAVEL`       |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
+| `CI`                        |  —  |   —    |   —    | ferramenta: migração, script ou CI; nenhum serviço a lê                      |
 
 <!-- ambiente:cruzada:fim -->
 
@@ -437,8 +483,10 @@ Abra no navegador:
 https://<o domínio do passo 5>/health
 ```
 
-Tem de aparecer `{"ok":true}`. Se aparecer, a API subiu e o Railway vai mantê-la
-no ar — é esse mesmo endereço que ele consulta para saber se precisa reiniciar.
+Tem de aparecer `{"ok":true}`. Se aparecer, a API subiu. O Railway consulta esse
+mesmo endereço só no início de cada deploy, para decidir se o deploy novo entra no
+ar; depois disso ele não o consulta mais, e quem reinicia a API quando ela cai é a
+política `ON_FAILURE`.
 
 Se o deploy ficar reiniciando sem parar, abra os logs do serviço no Railway: a
 API morre no start de propósito quando falta uma variável, e o log diz o nome da

@@ -11,6 +11,7 @@ import {
   minimoDeCaracteres,
   URL_DA_APLICACAO,
   type AmbienteConhecido,
+  type VariavelDeAmbiente,
 } from '../src/ambiente';
 
 /**
@@ -219,12 +220,22 @@ describe('os outros formatos', () => {
 });
 
 describe('os esquemas descrevem o código de hoje', () => {
-  it('o worker da main envia com WHATSAPP_TOKEN, não com a chave por clínica', () => {
-    // Declarar a chave aqui faria o worker RECUSAR subir por falta de variável que o código
-    // dele não lê. Quando a fase de resiliência entrar, o typecheck cobra a troca.
-    const nomes = AMBIENTE_DO_WORKER.map((v) => v.nome);
-    expect(nomes).toContain('WHATSAPP_TOKEN');
-    expect(nomes).not.toContain('WHATSAPP_TOKEN_KEY');
+  it('o worker envia com a chave por clínica, e não existe mais token único de ambiente', () => {
+    // Um token de ambiente como reserva faria a clínica mal configurada enviar pelo número
+    // errado, calada. Declarar os dois deixaria esse caminho de volta no esquema.
+    const nomes: readonly string[] = AMBIENTE_DO_WORKER.map((v) => v.nome);
+    expect(nomes).toContain('WHATSAPP_TOKEN_KEY');
+    expect(nomes).not.toContain('WHATSAPP_TOKEN');
+  });
+
+  it('o vigia de operador exige as três de e-mail, e o ESTADO_TOKEN é opcional', () => {
+    // Vigia sem e-mail é pior que vigia nenhum: dá a impressão de que alguém está olhando.
+    // Já o `/estado` sem token fica FECHADO, e por isso o deploy não cai por falta dele.
+    const porNome = new Map<string, VariavelDeAmbiente>(AMBIENTE_DO_WORKER.map((v) => [v.nome, v]));
+    for (const nome of ['EMAIL_API_KEY', 'EMAIL_REMETENTE', 'OPERADOR_EMAIL']) {
+      expect(porNome.get(nome)?.obrigatoria, nome).toBe(true);
+    }
+    expect(porNome.get('ESTADO_TOKEN')?.obrigatoria).toBe(false);
   });
 
   it('o painel não lê banco: regra 10 em forma de configuração', () => {

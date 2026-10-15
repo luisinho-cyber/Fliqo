@@ -1,3 +1,4 @@
+import type { CausaDeOperador } from '@fliqo/core';
 import type { ColumnType, Generated } from 'kysely';
 
 /**
@@ -20,7 +21,34 @@ export type StatusConsulta =
   'agendado' | 'confirmado' | 'em_risco' | 'cancelado' | 'faltou' | 'realizado';
 
 export type TipoAcao = 'confirmacao' | 'lembrete_final' | 'marcar_risco' | 'expirar_oferta';
-export type StatusAcao = 'pendente' | 'executando' | 'feito' | 'cancelado' | 'erro';
+/**
+ * `sem_proposito` é terminal e NÃO é falha: a ação venceu durante uma queda de
+ * WhatsApp e não faz mais sentido. Encerrar como `erro` abriria alerta para uma
+ * consequência esperada, e alerta que não pede ação ensina a ignorar alerta.
+ */
+export const STATUS_DE_ACAO = [
+  'pendente',
+  'executando',
+  'feito',
+  'cancelado',
+  'erro',
+  'sem_proposito',
+] as const;
+export type StatusAcao = (typeof STATUS_DE_ACAO)[number];
+
+/**
+ * Quem manda mensagem para o paciente, e quem não manda.
+ *
+ * As duas listas existem para que tipo de ação NOVO não entre sem alguém decidir:
+ * o teste em packages/db/tests exige que a união delas seja exatamente os valores
+ * de `app.action_kind` no pg_enum, e pergunta o veredito de cada valor à função
+ * `app.action_kind_envia` em vez de confiar nesta lista.
+ *
+ * `expirar_oferta` está entre os que enviam porque o NOME engana: expirar não
+ * depende do WhatsApp, mas passar a vaga adiante manda mensagem.
+ */
+export const ACOES_QUE_ENVIAM = ['confirmacao', 'lembrete_final', 'expirar_oferta'] as const;
+export const ACOES_QUE_NAO_ENVIAM = ['marcar_risco'] as const;
 export type ModoFila = 'sequencial' | 'lote';
 export type ModoConversa = 'ia' | 'humano';
 export type DirecaoMensagem = 'entrada' | 'saida';
@@ -165,6 +193,8 @@ export interface TabelaAcoes {
   attempts: ComDefault<number>;
   last_error: ColumnType<string | null, string | null, string | null>;
   created_at: Automatico<Date>;
+  /** Carimbado por `claim_due_actions` (0018). É daqui que o requeue mede "presa". */
+  claimed_at: ColumnType<Date | null, never, Date | null>;
 }
 
 export interface TabelaEspera {
@@ -341,6 +371,8 @@ export interface TabelaEventosConexao {
 }
 
 export type TipoAlerta =
+  /** O WhatsApp da clínica está fora. UM alerta por causa, não um por ação. */
+  | 'whatsapp_fora'
   | 'consulta_em_risco'
   | 'sem_consentimento'
   | 'acao_falhou'
@@ -378,16 +410,45 @@ export interface TabelaConsumoIa {
   created_at: Automatico<Date>;
 }
 
+/**
+ * O estado do reenvio de aviso ao operador (0015).
+ *
+ * Uma linha por (clínica, causa). O worker lê e grava DENTRO de `withClinic`, uma clínica por
+ * vez — a leitura cruzada é da função `app.operator_health`, que é agregada.
+ */
+export interface TabelaAvisosDeOperador {
+  clinic_id: string;
+  cause: CausaDeOperador;
+  first_seen_at: ComDefault<Date>;
+  last_sent_at: ComDefault<Date>;
+  sends: ComDefault<number>;
+}
+
+/** Trava de envio (0017). `wamid` e `enviado_em` vazios só enquanto a reserva está aberta. */
+export interface TabelaEnvios {
+  id: ComDefault<string>;
+  clinic_id: string;
+  appointment_id: string;
+  appointment_starts_at: Date;
+  template_name: string;
+  action_id: string | null;
+  wamid: string | null;
+  enviado_em: Date | null;
+  created_at: Automatico<Date>;
+}
+
 export interface Banco {
   'app.clinics': TabelaClinicas;
   'app.clinic_members': TabelaMembros;
   'app.professionals': TabelaProfissionais;
   'app.procedures': TabelaProcedimentos;
+  'app.operator_notices': TabelaAvisosDeOperador;
   'app.schedule_imports': TabelaImportacoes;
   'app.schedule_import_rows': TabelaLinhasRecusadas;
   'app.patients': TabelaPacientes;
   'app.appointments': TabelaConsultas;
   'app.scheduled_actions': TabelaAcoes;
+  'app.envios': TabelaEnvios;
   'app.waitlist_entries': TabelaEspera;
   'app.slot_offers': TabelaOfertas;
   'app.conversations': TabelaConversas;
@@ -430,6 +491,13 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     waiting_room_alert_minutes: true,
   },
   'app.clinic_members': { clinic_id: true, user_id: true, role: true },
+  'app.operator_notices': {
+    clinic_id: true,
+    cause: true,
+    first_seen_at: true,
+    last_sent_at: true,
+    sends: true,
+  },
   'app.professionals': { id: true, clinic_id: true, name: true, active: true },
   'app.procedures': {
     id: true,
@@ -496,6 +564,17 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     started_at: true,
     finished_at: true,
   },
+  'app.envios': {
+    id: true,
+    clinic_id: true,
+    appointment_id: true,
+    appointment_starts_at: true,
+    template_name: true,
+    action_id: true,
+    wamid: true,
+    enviado_em: true,
+    created_at: true,
+  },
   'app.scheduled_actions': {
     id: true,
     clinic_id: true,
@@ -507,6 +586,7 @@ export const COLUNAS: { [T in keyof Banco]: { [C in keyof Banco[T]]: true } } = 
     attempts: true,
     last_error: true,
     created_at: true,
+    claimed_at: true,
   },
   'app.waitlist_entries': {
     id: true,

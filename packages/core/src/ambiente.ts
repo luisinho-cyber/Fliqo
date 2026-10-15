@@ -178,8 +178,7 @@ const WHATSAPP_TOKEN_KEY = {
   tipo: 'texto',
   obrigatoria: true,
   origem: 'você gera (DEPLOY.md, logo abaixo da tabela da API)',
-  porque:
-    'a api cifra o token que a clínica conecta; o worker passa a decifrar na fase de resiliência',
+  porque: 'a api cifra o token que a clínica conecta, e o worker decifra para enviar',
   formato: CHAVE_BASE64_32,
   segredo: true,
 } as const satisfies VariavelDeAmbiente;
@@ -257,23 +256,16 @@ export const AMBIENTE_DA_API = [
 ] as const satisfies readonly VariavelDeAmbiente[];
 
 /**
- * O worker DE HOJE (main). Ele envia com um token único de ambiente.
+ * O worker.
  *
- * O token por clínica — `WHATSAPP_TOKEN_KEY` no lugar de `WHATSAPP_TOKEN` — e o vigia de
- * operador (as três de e-mail) chegam com a fase de resiliência. Declarar aqui o que ainda
- * não foi mesclado faria o worker RECUSAR subir por falta de variável que o código não lê.
- * Quando aquela fase entrar, o typecheck cobra a troca: o `index.ts` deixa de compilar.
+ * NÃO EXISTE MAIS UM `WHATSAPP_TOKEN` DE AMBIENTE. O token é de cada clínica, cifrado no
+ * banco, e o worker decifra com `WHATSAPP_TOKEN_KEY`. Um token único como reserva seria
+ * pior do que falhar: uma clínica mal configurada passaria a mandar mensagem pelo número
+ * errado, os pacientes dela receberiam de um remetente estranho, e nada apareceria em log.
  */
 export const AMBIENTE_DO_WORKER = [
   DATABASE_URL,
-  {
-    nome: 'WHATSAPP_TOKEN',
-    tipo: 'texto',
-    obrigatoria: true,
-    origem: 'Meta > WhatsApp > API Setup (token de usuário de sistema, para não expirar em 24 h)',
-    porque: 'quem envia mensagem é o worker',
-    segredo: true,
-  },
+  WHATSAPP_TOKEN_KEY,
   {
     nome: 'ANTHROPIC_API_KEY',
     tipo: 'texto',
@@ -289,6 +281,66 @@ export const AMBIENTE_DO_WORKER = [
     padrao: 'claude-haiku-4-5',
     origem: 'opcional',
     porque: 'o modelo é configuração, não código: trocar não exige publicar de novo',
+  },
+  /*
+   * O vigia de operador (0015). As três primeiras andam juntas: sem qualquer uma delas o
+   * e-mail não sai, e um vigia que não avisa é pior do que não ter vigia — ele dá a
+   * impressão de que alguém está olhando.
+   */
+  {
+    nome: 'EMAIL_API_KEY',
+    tipo: 'texto',
+    obrigatoria: true,
+    origem: 'painel do provedor de e-mail; cole direto no serviço worker do Railway',
+    porque: 'o vigia de operador avisa por e-mail quando uma clínica fica muda',
+    segredo: true,
+  },
+  {
+    nome: 'EMAIL_REMETENTE',
+    tipo: 'texto',
+    obrigatoria: true,
+    origem: 'um endereço do domínio verificado no provedor de e-mail',
+    porque: 'remetente não verificado vira spam, e aviso em spam não é aviso',
+  },
+  {
+    nome: 'OPERADOR_EMAIL',
+    tipo: 'texto',
+    obrigatoria: true,
+    origem: 'o seu endereço',
+    porque: 'é a caixa de entrada que toca quando uma clínica para de responder',
+  },
+  {
+    nome: 'EMAIL_API_URL',
+    tipo: 'texto',
+    obrigatoria: false,
+    padrao: 'https://api.resend.com/emails',
+    origem: 'opcional',
+    porque: 'o caminho comum não precisa de configuração; trocar de provedor não é código',
+    formato: ENDERECO_HTTP,
+  },
+  {
+    nome: 'OPERADOR_FUSO',
+    tipo: 'texto',
+    obrigatoria: false,
+    padrao: 'America/Sao_Paulo',
+    origem: 'opcional',
+    porque: 'o fuso de QUEM RECEBE, para o vigia não mandar e-mail às três da manhã',
+    formato: FUSO_IANA,
+  },
+  {
+    /*
+     * Opcional de propósito: ausente, o `/estado` responde 404 a todos — fechado, não
+     * aberto — e o deploy que chega antes de a variável ser criada não cai. Presente e
+     * curto, o worker não sobe: token fraco num painel de operação é pior do que painel
+     * nenhum.
+     */
+    nome: 'ESTADO_TOKEN',
+    tipo: 'texto',
+    obrigatoria: false,
+    origem: 'você gera: `openssl rand -base64 32` no seu terminal, e cola só no worker',
+    porque: 'o /estado conta o veredito da fila; o /health continua público e sem token',
+    formato: minimoDeCaracteres(32),
+    segredo: true,
   },
   PORT(3100),
   LOG_LEVEL,

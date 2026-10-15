@@ -1,8 +1,22 @@
 import { sql } from 'kysely';
-import { agenda, alertas, numeros, withClinic, type Db, type Trx } from '@fliqo/db';
+import { lerAfirmacao, type AfirmacaoDoTemplate } from '@fliqo/core';
+import {
+  acoes,
+  agenda,
+  alertas,
+  conexao,
+  envios,
+  hoje,
+  numeros,
+  pacientes,
+  withClinic,
+  type Db,
+  type Trx,
+} from '@fliqo/db';
 import { TEMPLATES, type ClienteWhatsApp } from '@fliqo/whatsapp';
-import { enviarAtivo } from './envio';
+import { enviarAtivo, type PedidoDeEnvioAtivo, type ResultadoEnvioAtivo } from './envio';
 import { expirarEPassarAdiante } from './ofertas';
+import { tituloDeEnvioIncerto, tituloDeFalha, type ConsultaDoAlerta } from './titulos-de-alerta';
 
 /**
  * Executa as ações agendadas da régua de confirmação.
@@ -26,7 +40,7 @@ export interface AcaoPendente {
 const BACKOFF_MIN = [1, 5, 15];
 export const MAX_TENTATIVAS = BACKOFF_MIN.length + 1;
 
-/** Ação parada em 'executando' por mais que isto foi abandonada por um worker morto. */
+/** Reclamada há mais que isto e ainda em 'executando': o worker que a pegou morreu (0018). */
 export const LIMITE_PRESA_MIN = 5;
 
 export interface Dependencias {
@@ -36,9 +50,9 @@ export interface Dependencias {
   /**
    * Batida de vida, chamada a CADA ação concluída — não ao fim da rodada.
    *
-   * O health check precisa distinguir "está trabalhando devagar" de "travou". Uma
+   * O `/estado` precisa distinguir "está trabalhando devagar" de "travou". Uma
    * rodada de cinquenta ações com envio lento demora minutos legitimamente; se o
-   * sinal só viesse no fim, o Railway reiniciaria o worker no meio do trabalho.
+   * sinal só viesse no fim, ela seria declarada travada no meio do trabalho.
    */
   aoProgredir?: () => void;
 }
@@ -53,8 +67,8 @@ async function reservar(db: Db, limite: number): Promise<AcaoPendente[]> {
  *
  * `claim_due_actions` marca a ação antes de executar. Se o worker morrer no meio,
  * ninguém desmarca, e aquela confirmação nunca mais sai — o paciente simplesmente
- * não é avisado. Como a ação é idempotente do ponto de vista do paciente (ele
- * recebe a confirmação de novo, no pior caso), devolver é mais seguro que deixar.
+ * não é avisado. Devolver é seguro porque o envio tem trava própria (0017): a ação
+ * que já tinha mandado a mensagem e voltou não manda de novo.
  */
 export async function devolverPresas(db: Db, limiteMin = LIMITE_PRESA_MIN): Promise<number> {
   // Pela função security definer: o varredor roda sem clínica na transação, e a
@@ -66,7 +80,77 @@ export async function devolverPresas(db: Db, limiteMin = LIMITE_PRESA_MIN): Prom
   return r.rows[0]?.requeue_stuck_actions ?? 0;
 }
 
-export type SaidaDaAcao = { ok: true } | { ok: false; motivo: string; definitivo: boolean };
+export type SaidaDaAcao =
+  /** `jaSaiu`: a trava de envio achou a mesma mensagem já enviada, e nada foi mandado. */
+  | { ok: true; jaSaiu?: true }
+  /**
+   * A ação venceu: a afirmação do template não é mais verdade. NÃO é falha — é
+   * consequência esperada de o WhatsApp ter ficado fora, e por isso não vira
+   * alerta. O que a recepção precisa saber aparece na tela Hoje como decisão.
+   */
+  | { ok: false; semProposito: true; motivo: string }
+  /**
+   * A credencial da clínica não serve mais. Também não é falha DESTA ação: é a
+   * clínica que está fora. A ação volta a esperar, o número é marcado em erro uma
+   * vez, e um alerta nomeia a causa.
+   */
+  | { ok: false; credencial: true; motivo: string }
+  /**
+   * A mensagem PODE ter saído: a conexão caiu ou o tempo esgotou depois de o pedido sair.
+   * Não repete — repetir é a confirmação duplicada. Vira alerta para a recepção conferir.
+   */
+  | { ok: false; incerto: true; motivo: string }
+  | { ok: false; motivo: string; definitivo: boolean };
+
+/**
+ * A pertinência antes de enviar.
+ *
+ * Retomar não é reexecutar: uma ação represada durante a queda pode não fazer mais
+ * sentido quando o número volta. A decisão é de `lerAfirmacao`, em @fliqo/core, e
+ * sai do que o TEXTO do template afirma — não de um limite em minutos, que acerta
+ * a virada do dia num sentido e erra no outro.
+ */
+async function aindaFazSentido(
+  trx: Trx,
+  clinicId: string,
+  afirmacao: AfirmacaoDoTemplate,
+  inicioDaConsulta: Date,
+  agora: Date,
+): Promise<SaidaDaAcao | undefined> {
+  const { fuso } = await hoje.dadosDaClinica(trx, clinicId);
+  const leitura = lerAfirmacao(afirmacao, inicioDaConsulta, agora, fuso);
+  if (leitura.vale) return undefined;
+  return { ok: false, semProposito: true, motivo: leitura.motivo };
+}
+
+/**
+ * Envia com a trava da 0017: reserva antes, wamid depois, desfaz se não saiu.
+ *
+ * A reserva vem ANTES da chamada à Meta porque é ela que impede a segunda: se a mesma
+ * mensagem para a mesma consulta já saiu — por um requeue, uma retentativa, ou outro
+ * worker com a mesma ação —, o banco recusa e nada é enviado.
+ */
+async function enviarUmaVez(
+  trx: Trx,
+  dep: Dependencias,
+  acao: AcaoPendente,
+  consulta: { id: string; starts_at: Date },
+  pedido: PedidoDeEnvioAtivo,
+): Promise<ResultadoEnvioAtivo | { ok: true; jaSaiu: true }> {
+  const reserva = await envios.reservar(trx, {
+    clinicId: acao.clinic_id,
+    appointmentId: consulta.id,
+    inicioDaConsulta: consulta.starts_at,
+    template: pedido.template,
+    acaoId: acao.id,
+  });
+  if (!reserva.ok) return { ok: true, jaSaiu: true };
+
+  const r = await enviarAtivo(trx, dep.whatsapp, pedido);
+  if (r.ok) await envios.concluir(trx, reserva.id, r.wamid);
+  else await envios.desfazer(trx, reserva.id);
+  return r;
+}
 
 async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Promise<SaidaDaAcao> {
   if (acao.appointment_id === null) return { ok: false, motivo: 'sem consulta', definitivo: true };
@@ -74,12 +158,22 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
   if (!consulta) return { ok: true }; // consulta sumiu: nada a fazer
   if (consulta.status !== 'agendado') return { ok: true }; // já confirmada ou cancelada
 
+  const agora = (dep.agora ?? (() => new Date()))();
+  const venceu = await aindaFazSentido(
+    trx,
+    acao.clinic_id,
+    TEMPLATES.confirmacao.afirma,
+    consulta.starts_at,
+    agora,
+  );
+  if (venceu) return venceu;
+
   const phoneNumberId = await numeros.ativoDaClinica(trx);
   if (phoneNumberId === undefined) {
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
-  const r = await enviarAtivo(trx, dep.whatsapp, {
+  const r = await enviarUmaVez(trx, dep, acao, consulta, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,
@@ -88,7 +182,9 @@ async function confirmacao(trx: Trx, dep: Dependencias, acao: AcaoPendente): Pro
     consultaId: consulta.id,
   });
 
-  if (r.ok) return { ok: true };
+  if (r.ok) return 'jaSaiu' in r ? r : { ok: true };
+  if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
+  if (r.motivo === 'incerto') return { ok: false, incerto: true, motivo: r.detalhe };
   // Sem consentimento o alerta já foi criado; insistir não resolve.
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
@@ -103,12 +199,22 @@ async function lembreteFinal(
   if (!consulta) return { ok: true };
   if (!['agendado', 'confirmado', 'em_risco'].includes(consulta.status)) return { ok: true };
 
+  const agora = (dep.agora ?? (() => new Date()))();
+  const venceu = await aindaFazSentido(
+    trx,
+    acao.clinic_id,
+    TEMPLATES.lembreteFinal.afirma,
+    consulta.starts_at,
+    agora,
+  );
+  if (venceu) return venceu;
+
   const phoneNumberId = await numeros.ativoDaClinica(trx);
   if (phoneNumberId === undefined) {
     return { ok: false, motivo: 'clínica sem número de WhatsApp', definitivo: true };
   }
 
-  const r = await enviarAtivo(trx, dep.whatsapp, {
+  const r = await enviarUmaVez(trx, dep, acao, consulta, {
     clinicId: acao.clinic_id,
     pacienteId: consulta.patient_id,
     phoneNumberId,
@@ -116,7 +222,9 @@ async function lembreteFinal(
     consultaId: consulta.id,
   });
 
-  if (r.ok) return { ok: true };
+  if (r.ok) return 'jaSaiu' in r ? r : { ok: true };
+  if (r.motivo === 'credencial') return { ok: false, credencial: true, motivo: r.detalhe };
+  if (r.motivo === 'incerto') return { ok: false, incerto: true, motivo: r.detalhe };
   return { ok: false, motivo: r.detalhe, definitivo: r.motivo !== 'temporario' };
 }
 
@@ -185,6 +293,44 @@ async function concluir(trx: Trx, acaoId: string): Promise<void> {
 }
 
 /**
+ * Quem e quando, para o título do alerta. Só roda no caminho de falha: são três leituras
+ * a mais por ação que desistiu, não por ação executada.
+ */
+async function consultaDoAlerta(
+  trx: Trx,
+  acao: AcaoPendente,
+): Promise<{ consulta: ConsultaDoAlerta; pacienteId: string } | undefined> {
+  if (acao.appointment_id === null) return undefined;
+  const consulta = await agenda.porId(trx, acao.appointment_id);
+  if (!consulta) return undefined;
+  const paciente = await pacientes.porId(trx, consulta.patient_id);
+  if (!paciente) return undefined;
+  const { fuso } = await hoje.dadosDaClinica(trx, acao.clinic_id);
+  return {
+    consulta: { paciente: paciente.name, inicio: consulta.starts_at, fuso },
+    pacienteId: paciente.id,
+  };
+}
+
+/** O alerta de ação aponta para a consulta e para o paciente, quando há. */
+async function alertaDeAcao(
+  trx: Trx,
+  acao: AcaoPendente,
+  titulo: (c: ConsultaDoAlerta | undefined) => string,
+  corpo: string,
+): Promise<void> {
+  const achada = await consultaDoAlerta(trx, acao);
+  await alertas.criar(trx, acao.clinic_id, {
+    tipo: 'acao_falhou',
+    gravidade: 'urgente',
+    titulo: titulo(achada?.consulta),
+    corpo,
+    ...(acao.appointment_id === null ? {} : { consultaId: acao.appointment_id }),
+    ...(achada === undefined ? {} : { pacienteId: achada.pacienteId }),
+  });
+}
+
+/**
  * Falhou: volta para 'pendente' com espera crescente. Na última tentativa vira
  * 'erro' e alguém precisa olhar — silêncio aqui significa paciente não avisado.
  */
@@ -203,13 +349,12 @@ async function falhar(
       .where('id', '=', acao.id)
       .execute();
 
-    await alertas.criar(trx, acao.clinic_id, {
-      tipo: 'acao_falhou',
-      gravidade: 'urgente',
-      titulo: `Não consegui executar "${acao.kind}"`,
-      corpo: `${motivo}. O paciente pode não ter sido avisado.`,
-      ...(acao.appointment_id === null ? {} : { consultaId: acao.appointment_id }),
-    });
+    await alertaDeAcao(
+      trx,
+      acao,
+      (c) => tituloDeFalha(acao.kind, c),
+      `${motivo}. O paciente pode não ter sido avisado.`,
+    );
     return;
   }
 
@@ -222,21 +367,82 @@ async function falhar(
   `.execute(trx);
 }
 
+/**
+ * O envio pode ter saído e não há como saber. A ação para em 'erro' — sem retentativa,
+ * que é o que duplicaria — e a recepção recebe um alerta que diz exatamente isso.
+ *
+ * O alerta é a outra metade da decisão: sem ele, "não repetir" viraria "paciente sem
+ * confirmação e ninguém sabendo".
+ */
+async function talvezTenhaSaido(trx: Trx, acao: AcaoPendente, motivo: string): Promise<void> {
+  await trx
+    .updateTable('app.scheduled_actions')
+    .set({ status: 'erro', last_error: `envio incerto: ${motivo}` })
+    .where('id', '=', acao.id)
+    .execute();
+
+  await alertaDeAcao(
+    trx,
+    acao,
+    (c) => tituloDeEnvioIncerto(acao.kind, c),
+    'A conexão com o WhatsApp caiu no meio do envio: a mensagem pode ter saído ou não. Confira a conversa antes de reenviar, para o paciente não receber duas vezes.',
+  );
+}
+
+/**
+ * A clínica está fora: marca o número em erro e abre UM alerta.
+ *
+ * A ação volta a esperar — não é falha dela, é a clínica que não tem por onde
+ * falar. A partir daqui `claim_due_actions` deixa de reclamar as ações de envio
+ * desta clínica, então a pilha para de ser consumida e retoma quando o número
+ * voltar. O `attempts` é devolvido: uma queda de WhatsApp não pode comer o
+ * orçamento de retentativa da ação.
+ */
+async function aClinicaEstaFora(trx: Trx, acao: AcaoPendente, motivo: string): Promise<void> {
+  const numero = await conexao.status(trx);
+  if (numero !== undefined) await conexao.marcarErro(trx, numero.id, motivo);
+
+  await alertas.criarSeNaoHouverAberto(trx, acao.clinic_id, {
+    tipo: 'whatsapp_fora',
+    gravidade: 'urgente',
+    titulo: 'O WhatsApp da clínica está fora do ar',
+    corpo:
+      'Nenhuma mensagem sai enquanto isso. As confirmações de amanhã estão esperando e saem quando o número voltar — religue em Configurações › WhatsApp.',
+  });
+
+  await sql`
+    update app.scheduled_actions
+       set status = 'pendente', last_error = ${motivo},
+           attempts = greatest(attempts - 1, 0)
+     where id = ${acao.id}
+  `.execute(trx);
+}
+
 export interface ResumoDaRodada {
   pegas: number;
   feitas: number;
   falhas: number;
   devolvidas: number;
+  semProposito: number;
+  esperandoOWhatsapp: number;
+  /** Envio que pode ter saído: parou sem repetir, e a recepção foi avisada. */
+  incertas: number;
+  /** Ações que voltaram com a mensagem já enviada: a trava segurou a repetição. */
+  repeticoesEvitadas: number;
 }
 
 /** Uma passada: devolve o que ficou preso, pega o lote e executa cada ação. */
 export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<ResumoDaRodada> {
   const devolvidas = await devolverPresas(dep.db);
-  const acoes = await reservar(dep.db, limite);
+  const pendentes = await reservar(dep.db, limite);
   let feitas = 0;
   let falhas = 0;
+  let semProposito = 0;
+  let esperandoOWhatsapp = 0;
+  let repeticoesEvitadas = 0;
+  let incertas = 0;
 
-  for (const acao of acoes) {
+  for (const acao of pendentes) {
     // Cada ação na própria transação: uma falha não derruba o lote inteiro.
     await withClinic(
       acao.clinic_id,
@@ -245,6 +451,17 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
         if (r.ok) {
           await concluir(trx, acao.id);
           feitas++;
+          if (r.jaSaiu === true) repeticoesEvitadas++;
+        } else if ('semProposito' in r) {
+          // Não é falha, e por isso não alerta: a queda venceu a mensagem.
+          await acoes.encerrarSemProposito(trx, acao.id, r.motivo);
+          semProposito++;
+        } else if ('credencial' in r) {
+          await aClinicaEstaFora(trx, acao, r.motivo);
+          esperandoOWhatsapp++;
+        } else if ('incerto' in r) {
+          await talvezTenhaSaido(trx, acao, r.motivo);
+          incertas++;
         } else {
           await falhar(trx, acao, r.motivo, r.definitivo);
           falhas++;
@@ -255,5 +472,14 @@ export async function rodarUmaVez(dep: Dependencias, limite = 50): Promise<Resum
     dep.aoProgredir?.();
   }
 
-  return { pegas: acoes.length, feitas, falhas, devolvidas };
+  return {
+    pegas: pendentes.length,
+    feitas,
+    falhas,
+    devolvidas,
+    semProposito,
+    esperandoOWhatsapp,
+    incertas,
+    repeticoesEvitadas,
+  };
 }

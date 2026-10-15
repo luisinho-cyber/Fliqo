@@ -51,3 +51,26 @@ export async function resolver(trx: Trx, id: string): Promise<Alerta | undefined
     .returningAll()
     .executeTakeFirst();
 }
+
+/**
+ * Cria o alerta só se não houver um aberto do mesmo tipo.
+ *
+ * Existe para o "um alerta por causa, não um por ação": quando o WhatsApp da
+ * clínica cai, as trinta ações de envio daquele dia descobrem a falha uma a uma,
+ * e cada uma chamaria aqui. Trinta alertas dizendo a mesma coisa é a enxurrada
+ * que faz a recepção parar de ler alerta.
+ */
+export async function criarSeNaoHouverAberto(
+  trx: Trx,
+  clinicId: string,
+  a: AlertaNovo,
+): Promise<Alerta | undefined> {
+  const aberto = await trx
+    .selectFrom('app.alerts')
+    .select('id')
+    .where('kind', '=', a.tipo)
+    .where('resolved_at', 'is', null)
+    .executeTakeFirst();
+  if (aberto) return undefined;
+  return criar(trx, clinicId, a);
+}

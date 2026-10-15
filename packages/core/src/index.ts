@@ -9,5 +9,7 @@ export * from './atrasos';
 export * from './pontualidade';
 export * from './hoje';
 export * from './telefone';
+export * from './pertinencia';
+export * from './operador';
 export * from './importacao';
 export * from './ambiente';
