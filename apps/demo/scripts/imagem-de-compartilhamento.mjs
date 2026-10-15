@@ -20,48 +20,44 @@ const tokens = await readFile(join(raiz, 'app', 'tokens.css'), 'utf8');
 
 const pagina = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8" />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&family=Schibsted+Grotesk:wght@700;800&family=Spline+Sans+Mono:wght@400;700&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" />
 <style>
 ${tokens}
 * { box-sizing: border-box; }
 body { margin: 0; width: 1200px; height: 630px; background: var(--ground);
-  color: var(--ink); font-family: var(--texto); display: flex; flex-direction: column;
+  color: var(--ink); font-family: var(--fonte-texto); display: flex; flex-direction: column;
   justify-content: space-between; padding: 60px 72px; }
-.marca { font-family: var(--titulo); font-weight: 800; font-size: 34px; letter-spacing: -0.04em; }
-.marca i { color: var(--late); font-style: normal; }
-h1 { font-family: var(--titulo); font-weight: 700; font-size: 58px; line-height: 1.08;
+.marca { font-family: var(--fonte-titulo); font-weight: 800; font-size: 34px; letter-spacing: -0.04em; }
+.marca i { color: var(--agora); font-style: normal; }
+h1 { font-family: var(--fonte-titulo); font-weight: 700; font-size: 58px; line-height: 1.08;
   letter-spacing: -0.035em; margin: 26px 0 0; max-width: 19ch; }
-h1 b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 700; color: var(--risk); }
-.trilho { position: relative; height: 86px; width: 1034px; border: 1px solid var(--linha);
-  border-radius: 12px; background: var(--paper); margin-top: 34px; overflow: hidden; }
+.trilho { position: relative; height: 86px; width: 1034px; border: 1px solid var(--fio);
+  border-radius: 12px; background-color: var(--paper); margin-top: 34px; overflow: hidden;
+  background-image: repeating-linear-gradient(45deg, var(--hachura) 0 1px, transparent 1px 8px); }
 .bloco { position: absolute; top: 18px; height: 50px; border-radius: 8px; padding: 8px 12px;
-  font-size: 15px; font-weight: 600; background: color-mix(in srgb, var(--ok) 16%, var(--paper));
-  border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); }
-.bloco.atrasado { background: color-mix(in srgb, var(--late) 16%, var(--paper));
-  border-color: color-mix(in srgb, var(--late) 55%, transparent); }
-.fantasma { position: absolute; top: 18px; height: 50px; border-radius: 8px;
-  border: 1px dashed color-mix(in srgb, var(--late) 70%, transparent); }
-.seta { position: absolute; top: 43px; height: 0;
-  border-top: 2px solid color-mix(in srgb, var(--late) 70%, transparent); }
-.nota { color: var(--ink-suave); font-size: 21px; line-height: 1.45; margin: 26px 0 0; max-width: 62ch; }
-.rodape { color: var(--ink-suave); font-size: 19px; display: flex; justify-content: space-between; }
+  font-size: 15px; font-weight: 600; background: var(--ok-tinta); border: 1.5px solid var(--ok); }
+.bloco.deslocado { background: var(--agora-tinta); border-color: var(--agora); }
+.bloco .h { font-family: var(--fonte-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+.marcado { position: absolute; top: 18px; height: 50px; border-radius: 8px;
+  border: 1.5px dashed var(--agora); }
+.nota { color: var(--ink-2); font-size: 21px; line-height: 1.45; margin: 26px 0 0; max-width: 62ch; }
+.rodape { color: var(--ink-2); font-size: 19px; display: flex; justify-content: space-between; }
 </style></head>
 <body>
   <div>
-    <span class="marca">Fliqo<i>.</i></span>
+    <span class="marca">fliqo<i>.</i></span>
     <h1>A agenda da clínica que não perde horário.</h1>
     <div class="trilho">
-      <div class="bloco" style="left:20px;width:190px">09:02 Beatriz</div>
-      <div class="bloco" style="left:226px;width:224px">10:00 Rafael</div>
-      <div class="fantasma" style="left:466px;width:134px"></div>
-      <div class="seta" style="left:466px;width:152px"></div>
-      <div class="bloco atrasado" style="left:618px;width:190px">11:06 Camila</div>
-      <div class="bloco atrasado" style="left:824px;width:190px">12:31 Lucas</div>
+      <div class="bloco" style="left:20px;width:190px"><span class="h">09:02</span> Beatriz</div>
+      <div class="bloco" style="left:226px;width:224px"><span class="h">10:00</span> Rafael</div>
+      <div class="marcado" style="left:466px;width:134px"></div>
+      <div class="bloco deslocado" style="left:618px;width:190px"><span class="h">11:06</span> Camila</div>
+      <div class="bloco deslocado" style="left:824px;width:190px"><span class="h">12:01</span> Lucas</div>
     </div>
   <p class="nota">O contorno tracejado é o horário marcado. O bloco cheio é quando o paciente vai
-  ser atendido de verdade — e ele é avisado antes de sair de casa.</p>
+  ser atendido de verdade, e a distância entre os dois é o atraso.</p>
   </div>
-  <div class="rodape"><span>Confirmação, lista de espera e caixa em um lugar só.</span>
+  <div class="rodape"><span>Confirmação pelo WhatsApp e lista de espera no mesmo lugar.</span>
   <span>Ambiente de demonstração · dados fictícios</span></div>
 </body></html>`;
 
@@ -77,9 +73,11 @@ const aba = await navegador.newPage({
 });
 await aba.goto(`file://${arquivoHtml}`);
 await aba.evaluate(() => document.fonts.ready);
-const temFonte = await aba.evaluate(() => document.fonts.check('700 58px "Schibsted Grotesk"'));
+const temFonte = await aba.evaluate(() => document.fonts.check('700 58px "Sora"'));
 if (!temFonte)
-  throw new Error('A fonte do DESIGN.md não carregou; a imagem sairia com outra tipografia.');
+  throw new Error(
+    'A tipografia da demonstração não carregou; a imagem sairia com outra tipografia.',
+  );
 await aba.screenshot({ path: join(raiz, 'public', 'compartilhar.png') });
 await navegador.close();
 console.log('public/compartilhar.png gerado');

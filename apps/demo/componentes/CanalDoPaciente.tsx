@@ -1,50 +1,54 @@
-import type { ApiDeCena, Conversa } from '../nucleo/estado';
+'use client';
+
+import type { Conversa } from '../nucleo/estado';
+import { Ilustracao } from './Ilustracao';
 
 /**
- * O lado do paciente: o WhatsApp dele, ao lado da tela da clínica.
- * Quem apresenta toca nos botões aqui e a agenda muda atrás — é a demonstração
- * inteira em um gesto.
+ * O lado do paciente: o WhatsApp dele, ao lado da tela da clínica, mostrando o
+ * que ele recebe no momento em que acontece.
+ *
+ * Os botões são os do template aprovado na Meta, e devolvem PAYLOAD fixo — não
+ * texto. É por isso que a confirmação não passa pela assistente: não há o que
+ * interpretar numa resposta que já chega como `CONFIRMAR_CONSULTA`.
  */
-export function CanalDoPaciente({ conversa, api }: { conversa: Conversa; api: ApiDeCena }) {
+export function CanalDoPaciente({
+  conversa,
+  aoResponder,
+}: {
+  conversa: Conversa;
+  aoResponder: (payload: string) => void;
+}) {
   return (
     <div className="celular" data-testid="celular">
-      <div className="tela">
-        <div className="tela-topo">
-          <b>{conversa.paciente}</b>
-          <span>
-            {conversa.contexto} ·{' '}
-            {conversa.modo === 'humano' ? 'com a recepção' : 'com a Assistente Fliqo'}
-          </span>
-        </div>
+      <div className="celular-topo">
+        <b>{conversa.paciente}</b>
+        <Ilustracao>conversa desenhada, sem WhatsApp do outro lado</Ilustracao>
+      </div>
 
-        <div className="msgs" data-testid="mensagens">
-          {conversa.mensagens.length === 0 && (
-            <p className="msg sistema">A conversa aparece aqui quando a cena começa.</p>
-          )}
-          {conversa.mensagens.map((m, i) => (
-            <div className={`msg ${m.de}`} key={`${String(i)}-${m.texto.slice(0, 12)}`}>
-              {m.texto}
-              {m.hora !== undefined && <span className="h mono">{m.hora}</span>}
-            </div>
+      <div className="mensagens" data-testid="mensagens">
+        {conversa.mensagens.map((m, i) => (
+          <div className={`mensagem ${m.de}`} key={`${String(i)}-${m.texto.slice(0, 16)}`}>
+            <p>{m.texto}</p>
+            <span className="quando mono">{m.quando}</span>
+          </div>
+        ))}
+      </div>
+
+      {conversa.botoes.length > 0 && (
+        <div className="botoes-template" data-testid="botoes-do-paciente">
+          {conversa.botoes.map((b) => (
+            <button
+              key={b.payload}
+              className="botao-template"
+              onClick={() => {
+                aoResponder(b.payload);
+              }}
+            >
+              {b.rotulo}
+            </button>
           ))}
         </div>
-
-        {conversa.botoes.length > 0 && (
-          <div className="botoes" data-testid="botoes-do-paciente">
-            {conversa.botoes.map((b) => (
-              <button
-                className="botao-msg"
-                key={b.rotulo}
-                onClick={() => {
-                  void b.aoTocar(api);
-                }}
-              >
-                {b.rotulo}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
