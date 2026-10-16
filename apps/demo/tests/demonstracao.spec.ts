@@ -202,6 +202,30 @@ test('a vaga liberada é oferecida e reocupada', async ({ page }) => {
   // A fila é por procedimento: quem espera profilaxia não recebe oferta de toxina.
   await expect(page.getByTestId('espera-w4')).toContainText('na fila');
 
+  /*
+   * A situação da oferta fica DENTRO da linha dela.
+   *
+   * Isto já quebrou: a situação "oferta enviada" usava a classe `agora`, a mesma
+   * do cursor deste minuto na faixa do dia, e herdava o posicionamento absoluto
+   * dele — virava um risco âmbar da altura da página inteira, com as quatro
+   * situações empilhadas no mesmo ponto. Só aparecia depois de abrir uma vaga,
+   * que é exatamente a tela que a demonstração existe para mostrar.
+   */
+  const linha = await page.getByTestId('espera-w1').boundingBox();
+  const situacao = await page.getByTestId('espera-w1').locator('.estado').boundingBox();
+  expect(linha).not.toBeNull();
+  expect(situacao).not.toBeNull();
+  expect(situacao?.height ?? 0).toBeLessThanOrEqual(linha?.height ?? 0);
+  expect(situacao?.y ?? 0).toBeGreaterThanOrEqual(linha?.y ?? 0);
+
+  const comOferta = await page.evaluate(() => ({
+    conteudo: document.documentElement.scrollWidth,
+    tela: document.documentElement.clientWidth,
+  }));
+  expect(comOferta.conteudo, 'a tela da oferta rola para o lado').toBeLessThanOrEqual(
+    comOferta.tela,
+  );
+
   // Enquanto ninguém aceitou, o horário está livre: nenhum bloco no lugar.
   await page.getByTestId('aba-dia').click();
   await expect(page.getByTestId('bloco-a7')).toHaveCount(0);

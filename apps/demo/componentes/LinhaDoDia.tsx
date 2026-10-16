@@ -52,111 +52,116 @@ export function LinhaDoDia({ consultas, inicioDoDia, agora, selecionada, aoSelec
   const horas = Array.from({ length: Math.floor(janela / 60) + 1 }, (_, i) => de + i * 60);
 
   return (
-    <div data-testid="linha-do-dia">
-      {PROFISSIONAIS.map((prof) => {
-        const doProf = consultasDoProfissional(consultas, prof.id);
-        const previsao = previsaoDoDia(consultas, prof.id, inicioDoDia, agora);
+    <div className="linha-rolagem" data-testid="linha-do-dia">
+      <div className="linha-largura">
+        {PROFISSIONAIS.map((prof) => {
+          const doProf = consultasDoProfissional(consultas, prof.id);
+          const previsao = previsaoDoDia(consultas, prof.id, inicioDoDia, agora);
 
-        return (
-          <section className="faixa" key={prof.id}>
-            <header className="faixa-cab">
-              <b>{prof.nome}</b>
-              <span>{prof.especialidade}</span>
-            </header>
-
-            <div
-              className="trilho"
-              role="list"
-              aria-label={`Agenda de ${prof.nome}`}
-              data-testid={`trilho-${prof.id}`}
-            >
-              {horas.map((m) => (
-                <div key={m} className="tick" style={{ left: `${String(pct(m))}%` }}>
-                  {/*
-                   * A hora cheia colada no cursor do agora sai: as duas etiquetas
-                   * ficam uma em cima da outra e lêem como um horário só. O traço
-                   * da régua continua ali — o que some é o número repetido.
-                   */}
-                  {Math.abs(m - minutoAgora) > MINUTOS_PARA_ESCONDER_A_HORA && (
-                    <span className="mono">{hhmm(instanteDe(inicioDoDia, m))}</span>
-                  )}
-                </div>
-              ))}
+          return (
+            <section className="faixa" key={prof.id}>
+              <header className="faixa-cab">
+                <b>{prof.nome}</b>
+                <span>{prof.especialidade}</span>
+              </header>
 
               <div
-                className="agora"
-                style={{ left: `${String(pct(minutoAgora))}%` }}
-                data-testid={`agora-${prof.id}`}
+                className="trilho"
+                role="list"
+                aria-label={`Agenda de ${prof.nome}`}
+                data-testid={`trilho-${prof.id}`}
               >
-                <span className="agora-etiqueta mono">{hhmm(agora)}</span>
-              </div>
-
-              {doProf.map((c) => {
-                // Cancelada é hachura, e a hachura é o fundo da faixa: nada a desenhar.
-                if (c.status === 'cancelado') return null;
-
-                const proc = PROCEDIMENTOS[c.procedimentoId];
-                const p = previsao.get(c.id);
-                const minutoPrevisto = p
-                  ? Math.round((p.inicioPrevisto.getTime() - inicioDoDia.getTime()) / 60_000)
-                  : c.marcadaEm;
-                const deslocado =
-                  (p?.atrasoMin ?? 0) >= LIMIAR_DE_DESLOCAMENTO_MIN && p?.situacao !== 'finalizada';
-
-                const classes = [
-                  'bloco',
-                  c.status === 'agendado' ? 'sem-confirmar' : '',
-                  c.status === 'confirmado' ? 'confirmado' : '',
-                  c.status === 'faltou' ? 'faltou' : '',
-                  p?.situacao === 'em_atendimento' ? 'atendendo' : '',
-                  p?.situacao === 'finalizada' ? 'finalizada' : '',
-                  deslocado ? 'deslocado' : '',
-                  selecionada === c.id ? 'sel' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ');
-
-                return (
-                  <div key={c.id} role="listitem">
-                    {deslocado && (
-                      <div
-                        className="marcado"
-                        style={{
-                          left: `${String(pct(c.marcadaEm))}%`,
-                          width: `${String(largura(proc?.duracaoAgendaMin ?? 30))}%`,
-                        }}
-                        data-testid={`marcado-${c.id}`}
-                        aria-hidden="true"
-                      />
+                {horas.map((m) => (
+                  <div key={m} className="tick" style={{ left: `${String(pct(m))}%` }}>
+                    {/*
+                     * A hora cheia colada no cursor do agora sai: as duas etiquetas
+                     * ficam uma em cima da outra e lêem como um horário só. O traço
+                     * da régua continua ali — o que some é o número repetido.
+                     */}
+                    {Math.abs(m - minutoAgora) > MINUTOS_PARA_ESCONDER_A_HORA && (
+                      <span className="mono">{hhmm(instanteDe(inicioDoDia, m))}</span>
                     )}
-                    <button
-                      className={classes}
-                      style={{
-                        left: `${String(pct(minutoPrevisto))}%`,
-                        width: `${String(largura(duracaoEsperada(c.procedimentoId)))}%`,
-                      }}
-                      onClick={() => {
-                        aoSelecionar(selecionada === c.id ? null : c.id);
-                      }}
-                      data-testid={`bloco-${c.id}`}
-                      aria-label={`${c.paciente}, ${proc?.nome ?? 'consulta'}, marcado para ${hhmm(
-                        instanteDe(inicioDoDia, c.marcadaEm),
-                      )}${
-                        deslocado ? `, começa ${hhmm(instanteDe(inicioDoDia, minutoPrevisto))}` : ''
-                      }`}
-                    >
-                      <span className="bloco-hora mono">
-                        {hhmm(instanteDe(inicioDoDia, minutoPrevisto))}
-                      </span>
-                      <span className="bloco-nome">{c.paciente.split(' ')[0]}</span>
-                    </button>
                   </div>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
+                ))}
+
+                <div
+                  className="agora"
+                  style={{ left: `${String(pct(minutoAgora))}%` }}
+                  data-testid={`agora-${prof.id}`}
+                >
+                  <span className="agora-etiqueta mono">{hhmm(agora)}</span>
+                </div>
+
+                {doProf.map((c) => {
+                  // Cancelada é hachura, e a hachura é o fundo da faixa: nada a desenhar.
+                  if (c.status === 'cancelado') return null;
+
+                  const proc = PROCEDIMENTOS[c.procedimentoId];
+                  const p = previsao.get(c.id);
+                  const minutoPrevisto = p
+                    ? Math.round((p.inicioPrevisto.getTime() - inicioDoDia.getTime()) / 60_000)
+                    : c.marcadaEm;
+                  const deslocado =
+                    (p?.atrasoMin ?? 0) >= LIMIAR_DE_DESLOCAMENTO_MIN &&
+                    p?.situacao !== 'finalizada';
+
+                  const classes = [
+                    'bloco',
+                    c.status === 'agendado' ? 'sem-confirmar' : '',
+                    c.status === 'confirmado' ? 'confirmado' : '',
+                    c.status === 'faltou' ? 'faltou' : '',
+                    p?.situacao === 'em_atendimento' ? 'atendendo' : '',
+                    p?.situacao === 'finalizada' ? 'finalizada' : '',
+                    deslocado ? 'deslocado' : '',
+                    selecionada === c.id ? 'sel' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
+
+                  return (
+                    <div key={c.id} role="listitem">
+                      {deslocado && (
+                        <div
+                          className="marcado"
+                          style={{
+                            left: `${String(pct(c.marcadaEm))}%`,
+                            width: `${String(largura(proc?.duracaoAgendaMin ?? 30))}%`,
+                          }}
+                          data-testid={`marcado-${c.id}`}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <button
+                        className={classes}
+                        style={{
+                          left: `${String(pct(minutoPrevisto))}%`,
+                          width: `${String(largura(duracaoEsperada(c.procedimentoId)))}%`,
+                        }}
+                        onClick={() => {
+                          aoSelecionar(selecionada === c.id ? null : c.id);
+                        }}
+                        data-testid={`bloco-${c.id}`}
+                        aria-label={`${c.paciente}, ${proc?.nome ?? 'consulta'}, marcado para ${hhmm(
+                          instanteDe(inicioDoDia, c.marcadaEm),
+                        )}${
+                          deslocado
+                            ? `, começa ${hhmm(instanteDe(inicioDoDia, minutoPrevisto))}`
+                            : ''
+                        }`}
+                      >
+                        <span className="bloco-hora mono">
+                          {hhmm(instanteDe(inicioDoDia, minutoPrevisto))}
+                        </span>
+                        <span className="bloco-nome">{c.paciente.split(' ')[0]}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }
