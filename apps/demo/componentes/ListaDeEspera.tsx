@@ -16,7 +16,7 @@ import { Ilustracao } from './Ilustracao';
 
 const ROTULO: Record<EsperaDemo['estado'], { texto: string; classe: string }> = {
   aguardando: { texto: 'na fila', classe: 'neutro' },
-  ofertado: { texto: 'oferta enviada', classe: 'agora' },
+  ofertado: { texto: 'oferta enviada', classe: 'urgente' },
   ficou_com_a_vaga: { texto: 'ficou com a vaga', classe: 'ok' },
   segue_na_fila: { texto: 'segue na fila', classe: 'neutro' },
 };
@@ -31,7 +31,7 @@ export function ListaDeEspera({ fila, oferta }: { fila: EsperaDemo[]; oferta: Of
 
       <p className="apoio" data-testid="estado-da-oferta">
         {oferta === null
-          ? 'Nenhuma vaga aberta agora. Quando um horário for liberado, a oferta sai para as três primeiras da fila.'
+          ? 'Nenhuma vaga aberta agora. Uma vaga abre quando alguém diz que não vem: em Confirmação, abra um paciente e toque em “Não vou poder”. A oferta sai na hora para as três primeiras da fila.'
           : `Oferta aberta para ${String(oferta.quantos)} pacientes, válida até ${hhmm(oferta.expiraEm)}. Quem responder primeiro fica com o horário.`}
       </p>
 

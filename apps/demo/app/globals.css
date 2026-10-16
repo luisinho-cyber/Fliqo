@@ -189,6 +189,23 @@ button {
   font-size: 14px;
 }
 
+/*
+ * No celular as abas descem para a própria linha. Deixadas no meio, elas empurram
+ * o nome da clínica para duas linhas e a terceira aba cai sozinha embaixo do
+ * logotipo — o topo vira três alturas diferentes e a tela começa torta.
+ */
+@media (max-width: 640px) {
+  .topo {
+    flex-wrap: wrap;
+    gap: var(--e-3);
+  }
+
+  .abas {
+    order: 3;
+    width: 100%;
+  }
+}
+
 .corpo {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -267,6 +284,26 @@ button {
 }
 
 /* ---------- a faixa do dia ---------- */
+
+/*
+ * A faixa tem uma largura mínima e rola dentro do painel.
+ *
+ * Espremer o dia inteiro numa tela de celular não encolhe o desenho: ele apaga o
+ * que o desenho existe para mostrar. A 412px cada bloco ficava com dois
+ * caracteres ("09:0", "B…"), e uma demonstração em que ninguém lê o nome do
+ * paciente nem a hora não demonstra nada. Rolar para o lado custa um gesto; o
+ * corte custa a tela toda. Os dois profissionais rolam JUNTOS, num envelope só,
+ * porque a comparação entre as duas agendas depende de as horas ficarem
+ * alinhadas uma embaixo da outra.
+ */
+.linha-rolagem {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.linha-largura {
+  min-width: 680px;
+}
 
 .faixa + .faixa {
   margin-top: var(--e-5);
@@ -353,7 +390,8 @@ button {
   top: 30px;
   height: 40px;
   text-align: left;
-  padding: var(--e-1) var(--e-2);
+  /* Respiro lateral curto: num bloco de meia hora, cada pixel é letra do nome. */
+  padding: var(--e-1);
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--color-marca);
   background: var(--color-marca-tinta);
@@ -570,10 +608,14 @@ button {
   vertical-align: baseline;
 }
 
-/* Medida alinha à direita; nome não. */
+/*
+ * Medida alinha à direita; nome não. O respiro à direita existe porque a coluna
+ * seguinte começa com um glifo de estado: sem ele, "10:40" e a bolinha encostam
+ * e leem como um símbolo só.
+ */
 .tabela .num {
   text-align: right;
-  padding-right: 0;
+  padding-right: var(--e-4);
 }
 
 .linha-abrir {
@@ -628,7 +670,13 @@ button {
   background: currentcolor;
 }
 
-.estado.agora {
+/*
+ * `urgente`, e não `agora`: `.agora` é o cursor deste minuto na faixa do dia —
+ * absoluto, de ponta a ponta da faixa. Reusar o nome aqui fazia a situação
+ * "oferta enviada" herdar aquele posicionamento e virar um risco âmbar atravessando
+ * a página inteira, com as quatro situações empilhadas no mesmo ponto.
+ */
+.estado.urgente {
   color: var(--color-agora);
 }
 
@@ -650,7 +698,14 @@ button {
   gap: var(--e-3);
 }
 
+/*
+ * `min-width: 0` porque este é item de grade dentro de uma coluna de 320px, e
+ * item de grade não encolhe abaixo do próprio conteúdo por padrão: sem isto, a
+ * nota da ilustração estica o painel para fora da tela e a PÁGINA passa a rolar
+ * para o lado.
+ */
 .celular-topo {
+  min-width: 0;
   display: grid;
   gap: var(--e-1);
   padding-bottom: var(--e-3);
